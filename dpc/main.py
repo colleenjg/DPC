@@ -5,7 +5,7 @@ import re
 import argparse
 import numpy as np
 from tqdm import tqdm
-from tensorboardX import SummaryWriter
+#from tensorboardX import SummaryWriter
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 
@@ -138,13 +138,13 @@ def main():
     # setup tools
     global de_normalize; de_normalize = denorm()
     global img_path; img_path, model_path = set_path(args)
-    global writer_train
-    try: # old version
-        writer_val = SummaryWriter(log_dir=os.path.join(img_path, 'val'))
-        writer_train = SummaryWriter(log_dir=os.path.join(img_path, 'train'))
-    except: # v1.7
-        writer_val = SummaryWriter(logdir=os.path.join(img_path, 'val'))
-        writer_train = SummaryWriter(logdir=os.path.join(img_path, 'train'))
+#    global writer_train
+#    try: # old version
+#        writer_val = SummaryWriter(log_dir=os.path.join(img_path, 'val'))
+#        writer_train = SummaryWriter(log_dir=os.path.join(img_path, 'train'))
+#    except: # v1.7
+#        writer_val = SummaryWriter(logdir=os.path.join(img_path, 'val'))
+#        writer_train = SummaryWriter(logdir=os.path.join(img_path, 'train'))
     
     ### main loop ###
     for epoch in range(args.start_epoch, args.epochs):
@@ -152,16 +152,16 @@ def main():
         val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch)
 
         # save curve
-        writer_train.add_scalar('global/loss', train_loss, epoch)
-        writer_train.add_scalar('global/accuracy', train_acc, epoch)
-        writer_val.add_scalar('global/loss', val_loss, epoch)
-        writer_val.add_scalar('global/accuracy', val_acc, epoch)
-        writer_train.add_scalar('accuracy/top1', train_accuracy_list[0], epoch)
-        writer_train.add_scalar('accuracy/top3', train_accuracy_list[1], epoch)
-        writer_train.add_scalar('accuracy/top5', train_accuracy_list[2], epoch)
-        writer_val.add_scalar('accuracy/top1', val_accuracy_list[0], epoch)
-        writer_val.add_scalar('accuracy/top3', val_accuracy_list[1], epoch)
-        writer_val.add_scalar('accuracy/top5', val_accuracy_list[2], epoch)
+#        writer_train.add_scalar('global/loss', train_loss, epoch)
+#        writer_train.add_scalar('global/accuracy', train_acc, epoch)
+#        writer_val.add_scalar('global/loss', val_loss, epoch)
+#        writer_val.add_scalar('global/accuracy', val_acc, epoch)
+#        writer_train.add_scalar('accuracy/top1', train_accuracy_list[0], epoch)
+#        writer_train.add_scalar('accuracy/top3', train_accuracy_list[1], epoch)
+#        writer_train.add_scalar('accuracy/top5', train_accuracy_list[2], epoch)
+#        writer_val.add_scalar('accuracy/top1', val_accuracy_list[0], epoch)
+#        writer_val.add_scalar('accuracy/top3', val_accuracy_list[1], epoch)
+#        writer_val.add_scalar('accuracy/top5', val_accuracy_list[2], epoch)
 
         # save check_point
         is_best = val_acc > best_acc; best_acc = max(val_acc, best_acc)
@@ -197,22 +197,21 @@ def train(data_loader, model, optimizer, epoch):
         B = input_seq.size(0)
         [score_, mask_] = model(input_seq)
         # visualize
-        if (iteration == 0) or (iteration == args.print_freq):
-            if B > 2: input_seq = input_seq[0:2,:]
-            writer_train.add_image('input_seq',
-                                   de_normalize(vutils.make_grid(
-                                       input_seq.transpose(2,3).contiguous().view(-1,3,args.img_dim,args.img_dim), 
-                                       nrow=args.num_seq*args.seq_len)),
-                                   iteration)
+#        if (iteration == 0) or (iteration == args.print_freq):
+#            if B > 2: input_seq = input_seq[0:2,:]
+#            writer_train.add_image('input_seq',
+#                                   de_normalize(vutils.make_grid(
+#                                       input_seq.transpose(2,3).contiguous().view(-1,3,args.img_dim,args.img_dim), 
+#                                       nrow=args.num_seq*args.seq_len)),
+#                                   iteration)
         del input_seq
         
         if idx == 0: target_, (_, B2, NS, NP, SQ) = process_output(mask_)
 
-        # score is a 6d tensor: [B, P, SQ, B2, N, SQ]
-        # similarity matrix is computed inside each gpu, thus here B == num_gpu * B2
+        # score is a 6d tensor: [B, P, SQ, B, N, SQ]
         score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
-        target_flattened = target_.view(B*NP*SQ, B2*NS*SQ).to(cuda)
-        target_flattened = target_flattened.to(int).argmax(dim=1)
+        target_flattened = target_.view(B*NP*SQ, B2*NS*SQ)
+        target_flattened = target_flattened.argmax(dim=1)
 
         loss = criterion(score_flattened, target_flattened)
         top1, top3, top5 = calc_topk_accuracy(score_flattened, target_flattened, (1,3,5))
@@ -238,8 +237,8 @@ def train(data_loader, model, optimizer, epoch):
                   'Acc: top1 {3:.4f}; top3 {4:.4f}; top5 {5:.4f} T:{6:.2f}\t'.format(
                    epoch, idx, len(data_loader), top1, top3, top5, time.time()-tic, loss=losses))
 
-            writer_train.add_scalar('local/loss', losses.val, iteration)
-            writer_train.add_scalar('local/accuracy', accuracy.val, iteration)
+#            writer_train.add_scalar('local/loss', losses.val, iteration)
+#            writer_train.add_scalar('local/accuracy', accuracy.val, iteration)
 
             iteration += 1
 
@@ -263,8 +262,8 @@ def validate(data_loader, model, epoch):
 
             # [B, P, SQ, B, N, SQ]
             score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
-            target_flattened = target_.view(B*NP*SQ, B2*NS*SQ).to(cuda)
-            target_flattened = target_flattened.to(int).argmax(dim=1)
+            target_flattened = target_.view(B*NP*SQ, B2*NS*SQ)
+            target_flattened = target_flattened.argmax(dim=1)
 
             loss = criterion(score_flattened, target_flattened)
             top1, top3, top5 = calc_topk_accuracy(score_flattened, target_flattened, (1,3,5))
@@ -325,7 +324,7 @@ def get_data(transform, mode='train'):
 def set_path(args):
     if args.resume: exp_path = os.path.dirname(os.path.dirname(args.resume))
     else:
-        exp_path = 'log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
+        exp_path = os.getenv('SLURM_TMPDIR')+'log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
 bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
 train-{args.train_what}{2}'.format(
                     'r%s' % args.net[6::], \

@@ -391,7 +391,7 @@ def get_data(transform, mode='train'):
 def set_path(args):
     if args.resume: exp_path = os.path.dirname(os.path.dirname(args.resume))
     else:
-        exp_path = 'log_{args.prefix}/{args.dataset}-{args.img_dim}-\
+        exp_path = os.getenv('SLURM_TMPDIR')+'log_{args.prefix}/{args.dataset}-{args.img_dim}-\
 sp{args.split}_{0}_{args.model}_bs{args.batch_size}_\
 lr{1}_wd{args.wd}_ds{args.ds}_seq{args.num_seq}_len{args.seq_len}_\
 dp{args.dropout}_train-{args.train_what}{2}'.format(
