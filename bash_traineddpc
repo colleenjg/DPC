@@ -14,16 +14,29 @@ source $CONDA_ACTIVATE
 conda activate $HOME/cn-dpc/condaenv-dpc/
 
 # 2. Copy your dataset on the compute node
-cp $HOME/DenseCPC/UCF101.zip $SLURM_TMPDIR
-unzip -q $SLURM_TMPDIR/UCF101.zip -d $SLURM_TMPDIR
-cd ./process_data/src
-python write_csv.py
+#cp $HOME/DenseCPC/UCF101.zip $SLURM_TMPDIR
+#unzip -q $SLURM_TMPDIR/UCF101.zip -d $SLURM_TMPDIR
+#cd ./process_data/src
+#python write_csv.py
 
+# 2. Copy pre-trained model to SLURM_TMPDIR
+cp /network/home/wilmeska/DenseCPC/k400_128_r18_dpc-rnn.pth.tar $SLURM_TMPDIR/
 # 3. Launch your job, tell it to save the model in $SLURM_TMPDIR
 #    and look for the dataset into $SLURM_TMPDIR
-cd ../../dpc
-python test.py --gpu 0,1 --net resnet18 --dataset ucf101 --batch_size 10 --img_dim 128 --pretrain {k400_128_r18_dpc-rnn.pth.tar} --train_what ft --epochs 100
+#cd ../../eval
+echo 'copied pretrained net'
+
+SEED=2
+SE=5
+PE=0.1
+EPOS='D'
+
+cd ./dpc
+python test_gabors.py --gpu 0,1 --net resnet18 --dataset gabors --batch_size 10 --num_seq 4 --seq_len 5 --img_dim 128 --pretrain {$SLURM_TMPDIR/k400_128_r18_dpc-rnn.pth.tar} --train_what ft --epochs 25 --surprise_epoch $SE --pred_step 1 --print_freq 1 --roll 'True' --seed $SEED --p_E $PE
 
 # 4. Copy whatever you want to save on $SCRATCH
-#cp $SLURM_TMPDIR/training.pt /network/tmp1/wilmeska/
+
+cp $SLURM_TMPDIR/loss_$SE\_$SEED.yaml /network/tmp1/wilmeska/pretrained_noblanks_numseq4_Elast_bothED_batch10/
+cp $SLURM_TMPDIR/seq_$SE\_$SEED.yaml /network/tmp1/wilmeska/pretrained_noblanks_numseq4_Elast_bothED_batch10/
+cp $SLURM_TMPDIR/loss_foreach_$SE\_$SEED.yaml /network/tmp1/wilmeska/pretrained_noblanks_numseq4_Elast_bothED_batch10/
 
