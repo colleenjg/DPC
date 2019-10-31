@@ -5,7 +5,7 @@ import argparse
 import re
 import numpy as np
 from tqdm import tqdm
-from tensorboardX import SummaryWriter
+#from tensorboardX import SummaryWriter
 
 sys.path.append('../utils')
 sys.path.append('../backbone')
@@ -181,13 +181,13 @@ def main():
     # setup tools
     global de_normalize; de_normalize = denorm()
     global img_path; img_path, model_path = set_path(args)
-    global writer_train
-    try: # old version
-        writer_val = SummaryWriter(log_dir=os.path.join(img_path, 'val'))
-        writer_train = SummaryWriter(log_dir=os.path.join(img_path, 'train'))
-    except: # v1.7
-        writer_val = SummaryWriter(logdir=os.path.join(img_path, 'val'))
-        writer_train = SummaryWriter(logdir=os.path.join(img_path, 'train'))
+    #global writer_train
+    #try: # old version
+    #    writer_val = SummaryWriter(log_dir=os.path.join(img_path, 'val'))
+    #    writer_train = SummaryWriter(log_dir=os.path.join(img_path, 'train'))
+    #except: # v1.7
+    #    writer_val = SummaryWriter(logdir=os.path.join(img_path, 'val'))
+    #    writer_train = SummaryWriter(logdir=os.path.join(img_path, 'train'))
 
     ### main loop ###
     for epoch in range(args.start_epoch, args.epochs):
@@ -195,10 +195,10 @@ def main():
         val_loss, val_acc = validate(val_loader, model)
         scheduler.step(epoch)
 
-        writer_train.add_scalar('global/loss', train_loss, epoch)
-        writer_train.add_scalar('global/accuracy', train_acc, epoch)
-        writer_val.add_scalar('global/loss', val_loss, epoch)
-        writer_val.add_scalar('global/accuracy', val_acc, epoch)
+        #writer_train.add_scalar('global/loss', train_loss, epoch)
+        #writer_train.add_scalar('global/accuracy', train_acc, epoch)
+        #writer_val.add_scalar('global/loss', val_loss, epoch)
+        #writer_val.add_scalar('global/accuracy', val_acc, epoch)
 
         # save check_point
         is_best = val_acc > best_acc
@@ -229,13 +229,13 @@ def train(data_loader, model, optimizer, epoch):
         output, _ = model(input_seq)
 
         # visualize
-        if (iteration == 0) or (iteration == args.print_freq):
-            if B > 2: input_seq = input_seq[0:2,:]
-            writer_train.add_image('input_seq', 
-                                   de_normalize(vutils.make_grid(
-                                       input_seq.transpose(2,3).contiguous().view(-1,3,args.img_dim,args.img_dim), 
-                                       nrow=args.num_seq*args.seq_len)), 
-                                   iteration)
+        #if (iteration == 0) or (iteration == args.print_freq):
+            #if B > 2: input_seq = input_seq[0:2,:]
+            #writer_train.add_image('input_seq', 
+            #                       de_normalize(vutils.make_grid(
+            #                           input_seq.transpose(2,3).contiguous().view(-1,3,args.img_dim,args.img_dim), 
+            #                           nrow=args.num_seq*args.seq_len)), 
+            #                       iteration)
         del input_seq
 
         [_, N, D] = output.size()
@@ -268,8 +268,8 @@ def train(data_loader, model, optimizer, epoch):
                 total_weight += m.norm(2).data
             print('Decay weight / Total weight: %.3f/%.3f' % (decay_weight, total_weight))
             
-            writer_train.add_scalar('local/loss', losses.val, iteration)
-            writer_train.add_scalar('local/accuracy', accuracy.val, iteration)
+            #writer_train.add_scalar('local/loss', losses.val, iteration)
+            #writer_train.add_scalar('local/accuracy', accuracy.val, iteration)
 
             iteration += 1
 
