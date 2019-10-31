@@ -21,8 +21,8 @@ python write_csv.py
 
 # 3. Launch your job, tell it to save the model in $SLURM_TMPDIR
 #    and look for the dataset into $SLURM_TMPDIR
-cd ../../dpc
-python test.py --gpu 0,1 --net resnet18 --dataset ucf101 --batch_size 10 --img_dim 128 --pretrain {k400_128_r18_dpc-rnn.pth.tar} --train_what ft --epochs 100
+cd ../../eval
+python test.py --gpu 0,1 --net resnet18 --dataset ucf101 --batch_size 10 --img_dim 128 --pretrain {$HOME/DenseCPC/k400_128_r18_dpc-rnn.pth.tar} --train_what ft --epochs 100
 
 # 4. Copy whatever you want to save on $SCRATCH
 #cp $SLURM_TMPDIR/training.pt /network/tmp1/wilmeska/
