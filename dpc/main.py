@@ -146,10 +146,19 @@ def main():
 #        writer_val = SummaryWriter(logdir=os.path.join(img_path, 'val'))
 #        writer_train = SummaryWriter(logdir=os.path.join(img_path, 'train'))
     
+    loss_dict = {'Training' : {},
+                 'Validation' : {}}
+    
     ### main loop ###
     for epoch in range(args.start_epoch, args.epochs):
         train_loss, train_acc, train_accuracy_list = train(train_loader, model, optimizer, epoch)
         val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch)
+        
+        loss_dict['Training'][epoch] = train_loss
+        loss_dict['Validation'][epoch] = val_loss
+        
+        # Save to yaml
+        
 
         # save curve
 #        writer_train.add_scalar('global/loss', train_loss, epoch)
