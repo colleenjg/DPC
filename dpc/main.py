@@ -147,7 +147,10 @@ def main():
 #    except: # v1.7
 #        writer_val = SummaryWriter(logdir=os.path.join(img_path, 'val'))
 #        writer_train = SummaryWriter(logdir=os.path.join(img_path, 'train'))
-    
+
+    if args.resume:
+        loss_dict = yaml.load(open(model_path + 'loss.yaml', 'r'))
+
     loss_dict = {'Training' : {},
                  'Validation' : {}}
     
@@ -160,7 +163,7 @@ def main():
         loss_dict['Validation'][epoch] = val_loss
         
         # Save to yaml
-        yaml.dump(open(model_path))
+        yaml.dump(loss_dict, open(model_path + 'loss.yaml', 'w'))
 
         # save curve
 #        writer_train.add_scalar('global/loss', train_loss, epoch)
