@@ -133,6 +133,11 @@ def main():
             ToTensor(),
             Normalize()
         ])
+        
+    elif args.dataset == 'gabors':
+        transform = transforms.Compose([
+            Normalize()
+        ])
 
     train_loader = get_data(transform, 'train')
     val_loader = get_data(transform, 'val')
@@ -150,9 +155,9 @@ def main():
 
     if args.resume:
         loss_dict = yaml.load(open(model_path + 'loss.yaml', 'r'))
-
-    loss_dict = {'Training' : {},
-                 'Validation' : {}}
+    else:
+        loss_dict = {'Training' : {},
+                     'Validation' : {}}
     
     ### main loop ###
     for epoch in range(args.start_epoch, args.epochs):

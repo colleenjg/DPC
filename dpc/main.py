@@ -114,28 +114,32 @@ def main():
             print("=> no checkpoint found at '{}'".format(args.pretrain))
 
     ### load data ###
-    if args.dataset == 'ucf101': # designed for ucf101, short size=256, rand crop to 224x224 then scale to 128x128
-        transform = transforms.Compose([
-            RandomHorizontalFlip(consistent=True),
-            RandomCrop(size=224, consistent=True),
-            Scale(size=(args.img_dim,args.img_dim)),
-            RandomGray(consistent=False, p=0.5),
-            ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
-            ToTensor(),
-            Normalize()
-        ])
-    elif args.dataset == 'k400': # designed for kinetics400, short size=150, rand crop to 128x128
-        transform = transforms.Compose([
-            RandomSizedCrop(size=args.img_dim, consistent=True, p=1.0),
-            RandomHorizontalFlip(consistent=True),
-            RandomGray(consistent=False, p=0.5),
-            ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
-            ToTensor(),
-            Normalize()
-        ])
-
-    train_loader = get_data(transform, 'train')
-    val_loader = get_data(transform, 'val')
+    if args.dataset == 'gabors':
+        train_loader = Gabor
+    
+    else:
+        if args.dataset == 'ucf101': # designed for ucf101, short size=256, rand crop to 224x224 then scale to 128x128
+            transform = transforms.Compose([
+                RandomHorizontalFlip(consistent=True),
+                RandomCrop(size=224, consistent=True),
+                Scale(size=(args.img_dim,args.img_dim)),
+                RandomGray(consistent=False, p=0.5),
+                ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
+                ToTensor(),
+                Normalize()
+            ])
+        elif args.dataset == 'k400': # designed for kinetics400, short size=150, rand crop to 128x128
+            transform = transforms.Compose([
+                RandomSizedCrop(size=args.img_dim, consistent=True, p=1.0),
+                RandomHorizontalFlip(consistent=True),
+                RandomGray(consistent=False, p=0.5),
+                ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
+                ToTensor(),
+                Normalize()
+            ])
+        
+        train_loader = get_data(transform, 'train')
+        val_loader = get_data(transform, 'val')
 
     # setup tools
     global de_normalize; de_normalize = denorm()
@@ -150,9 +154,9 @@ def main():
 
     if args.resume:
         loss_dict = yaml.load(open(model_path + 'loss.yaml', 'r'))
-
-    loss_dict = {'Training' : {},
-                 'Validation' : {}}
+    else:
+        loss_dict = {'Training' : {},
+                     'Validation' : {}}
     
     ### main loop ###
     for epoch in range(args.start_epoch, args.epochs):

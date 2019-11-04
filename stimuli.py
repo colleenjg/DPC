@@ -18,6 +18,8 @@ class GaborSequenceGenerator(object):
         self.device         = device
         self.seed           = seed
         
+        self.prev_seq
+        
         np.random.seed(self.seed)
         torch.manual_seed(self.seed)
         torch.cuda.manual_seed(self.seed)
@@ -41,6 +43,8 @@ class GaborSequenceGenerator(object):
             seq = ['A', 'B', 'C']
             seq += ['D'] if np.random.rand() < 0.9 else ['E']
             
+        self.prev_seq.append(seq)
+            
         for trial in self.gabor_info.keys():            
             ori   = torch.Tensor([self.gabor_info[trial]['orientation_mean'] for trial in seq])
 
@@ -61,7 +65,6 @@ class GaborSequenceGenerator(object):
             G = G.permute(4, 0, 1, 2, 3)
             G = G.sum(dim=-1)
             
-            self.seq = seq
             return G
             
     def __getitem__(self, ix):
