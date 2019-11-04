@@ -3,8 +3,13 @@ import torch
 from math import pi
 
 class GaborSequenceGenerator(object):
-    def __init__(self, batch_size, num_trials, mode='reg', NUM_GABORS=30, WIDTH=160, HEIGHT=90, sigma_base = 50, kappa = 100, lam = 1, gamma=0.2, seed=1000, device='cpu'):
+    def __init__(self, batch_size, num_blocks, num_trials, mode='reg',
+                 NUM_GABORS=30, WIDTH=128, HEIGHT=128,
+                 sigma_base = 50, kappa = 100, lam = 1, gamma=0.2,
+                 seed=1000, device='cpu'):
+        
         self.batch_size     = batch_size
+        self.num_blocks     = num_blocks
         self.num_trials     = num_trials
         self.__next_trial__ = 0
         self.mode           = mode
@@ -51,8 +56,8 @@ class GaborSequenceGenerator(object):
             ori   = torch.Tensor([self.gabor_info[trial]['orientation_mean'] for trial in seq])
 
             X, Y  = torch.meshgrid((torch.linspace(-1, 1, self.WIDTH), torch.linspace(-1, 1, self.HEIGHT)))
-            X     = (X.unsqueeze(-1)*torch.ones(1, self.batch_size)).permute(2, 0, 1).unsqueeze(-1).unsqueeze(-1)
-            Y     = (Y.unsqueeze(-1)*torch.ones(1, self.batch_size)).permute(2, 0, 1).unsqueeze(-1).unsqueeze(-1)
+            X     = (X.unsqueeze(-1)*torch.ones(1, self.batch_size * self.num_blocks)).permute(2, 0, 1).unsqueeze(-1).unsqueeze(-1)
+            Y     = (Y.unsqueeze(-1)*torch.ones(1, self.batch_size * self.num_blocks)).permute(2, 0, 1).unsqueeze(-1).unsqueeze(-1)
 
             theta = torch.Tensor(np.random.vonmises(mu=ori.repeat(self.NUM_GABORS).reshape(self.NUM_GABORS, len(ori)), kappa= self.kappa))
 
@@ -64,8 +69,11 @@ class GaborSequenceGenerator(object):
             y_theta = -(X - xpos)*theta.sin() + (Y - ypos)*theta.cos()
 
             G = torch.exp(-((x_theta.pow(2) + self.gamma * y_theta.pow(2))/2*sigma**2))*torch.sin(2*pi*x_theta/self.lam)
-            G = G.permute(4, 0, 1, 2, 3)
+            G = G.permute(0, 4, 1, 2, 3)
             G = G.sum(dim=-1)
+            
+            G = G.unsqueeze(2)
+            G = G.reshape(self.batch_size, self.num_blocks, len(seq), 1, self.WIDTH, self.HEIGHT)
             
             return G
             
