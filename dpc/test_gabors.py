@@ -166,7 +166,9 @@ def main():
         loss_dict['Validation'][epoch] = val_loss
         
         # Save to yaml
-        yaml.dump(open(model_path))
+        yaml.dump(loss_dict, open(model_path + 'loss.yaml', 'w'))
+        yaml.dump(train_loader.prev_seq, open(model_path + 'seq.yaml', 'w'))
+
 
         # save curve
 #        writer_train.add_scalar('global/loss', train_loss, epoch)
