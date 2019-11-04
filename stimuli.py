@@ -1,3 +1,6 @@
+import numpy as np
+import torch
+
 class GaborSequenceGenerator(object):
     def __init__(self, batch_size, num_trials, mode='reg', NUM_GABORS=30, WIDTH=160, HEIGHT=90, sigma_base = 50, kappa = 100, gamma=0.2, seed=1000, device='cpu'):
         self.batch_size     = batch_size
@@ -57,6 +60,8 @@ class GaborSequenceGenerator(object):
             G = torch.exp(-((x_theta.pow(2) + self.gamma * y_theta.pow(2))/2*sigma**2))*torch.sin(2*pi*x_theta/lam)
             G = G.permute(4, 0, 1, 2, 3)
             G = G.sum(dim=-1)
+            
+            self.seq = seq
             return G
             
     def __getitem__(self, ix):
