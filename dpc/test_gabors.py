@@ -137,8 +137,8 @@ def main():
             Normalize()
         ])
     if args.dataset == 'gabors':
-        train_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=100, WIDTH=128, HEIGHT=128)
-        val_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=100, WIDTH=128, HEIGHT=128)
+        train_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=20, num_blocks = args.num_seq, WIDTH=128, HEIGHT=128)
+        val_loader = GaborSequenceGenerator(batch_size=1, num_trials=20, num_blocks = args.num_seq, WIDTH=128, HEIGHT=128)
     else:
         train_loader = get_data(transform, 'train')
         val_loader = get_data(transform, 'val')
@@ -320,7 +320,7 @@ def get_data(transform, mode='train'):
         raise ValueError('dataset not supported')
 
     if args.dataset == 'gabors':
-        data_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=100, WIDTH=128, HEIGHT=128)
+        data_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_blocks = args.num_seq, num_trials=20, WIDTH=128, HEIGHT=128)
     else:
         sampler = data.RandomSampler(dataset)
 
