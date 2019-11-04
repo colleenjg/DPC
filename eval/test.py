@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 sys.path.append('../utils')
 sys.path.append('../backbone')
+sys.path.append('../')
 from dataset_3d_lc import UCF101_3d, HMDB51_3d
 from model_3d_lc import *
 from resnet_2d3d import neq_load_customized
@@ -21,6 +22,8 @@ from torch.utils import data
 import torch.nn as nn  
 from torchvision import datasets, models, transforms
 import torchvision.utils as vutils
+
+from stimuli import GaborSequenceGenerator
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--net', default='resnet18', type=str)
@@ -91,11 +94,12 @@ def main():
     if params is None: params = model.parameters()
 
     optimizer = optim.Adam(params, lr=args.lr, weight_decay=args.wd)
-    if args.dataset == 'hmdb51':
-        lr_lambda = lambda ep: MultiStepLR_Restart_Multiplier(ep, gamma=0.1, step=[150,250,300], repeat=1)
-    elif args.dataset == 'ucf101':
+    if args.dataset == 'ucf101':
         if args.img_dim == 224: lr_lambda = lambda ep: MultiStepLR_Restart_Multiplier(ep, gamma=0.1, step=[300,400,500], repeat=1)
         else: lr_lambda = lambda ep: MultiStepLR_Restart_Multiplier(ep, gamma=0.1, step=[60, 80, 100], repeat=1)
+    else:
+        lr_lambda = lambda ep: MultiStepLR_Restart_Multiplier(ep, gamma=0.1, step=[150,250,300], repeat=1)
+    
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
     args.old_lr = None
@@ -363,29 +367,32 @@ def get_data(transform, mode='train'):
         pass
     else:
         raise ValueError('dataset not supported')
-    my_sampler = data.RandomSampler(dataset)
-    
+
     if args.dataset == 'gabors':
-        data _loader = 
-    
-    if mode == 'train':
-        data_loader = data.DataLoader(dataset,
+        if mode == 'test':
+            data_loader = GaborSequenceGenerator(batch_size=1, num_trials=100, WIDTH=128, HEIGHT=128)
+        else:
+            data_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=100, WIDTH=128, HEIGHT=128)
+    else:
+        my_sampler = data.RandomSampler(dataset)
+        if mode == 'train':
+            data_loader = data.DataLoader(dataset,
                                       batch_size=args.batch_size,
                                       sampler=my_sampler,
                                       shuffle=False,
                                       num_workers=16,
                                       pin_memory=True,
                                       drop_last=True)
-    elif mode == 'val':
-        data_loader = data.DataLoader(dataset,
+        elif mode == 'val':
+            data_loader = data.DataLoader(dataset,
                                       batch_size=args.batch_size,
                                       sampler=my_sampler,
                                       shuffle=False,
                                       num_workers=16,
                                       pin_memory=True,
                                       drop_last=True)
-    elif mode == 'test':
-        data_loader = data.DataLoader(dataset,
+        elif mode == 'test':
+            data_loader = data.DataLoader(dataset,
                                       batch_size=1,
                                       sampler=my_sampler,
                                       shuffle=False,
@@ -393,7 +400,7 @@ def get_data(transform, mode='train'):
                                       pin_memory=True)
     print('"%s" dataset size: %d' % (mode, len(dataset)))
     return data_loader
-
+        
 def set_path(args):
     if args.resume: exp_path = os.path.dirname(os.path.dirname(args.resume))
     else:
