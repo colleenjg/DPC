@@ -166,8 +166,8 @@ def main():
         loss_dict['Validation'][epoch] = val_loss
         
         # Save to yaml
-        yaml.dump(loss_dict, open(model_path + 'loss.yaml', 'w'))
-        yaml.dump(train_loader.prev_seq, open(model_path + 'seq.yaml', 'w'))
+        yaml.dump(loss_dict, open(os.get_env('SLURM_TMPDIR') + '/loss.yaml', 'w'))
+        yaml.dump(train_loader.prev_seq, open(os.get_env('SLURM_TMPDIR') + '/seq.yaml', 'w'))
 
 
         # save curve
