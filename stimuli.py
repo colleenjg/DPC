@@ -72,7 +72,7 @@ class GaborSequenceGenerator(object):
             G = G.permute(0, 4, 1, 2, 3)
             G = G.sum(dim=-1)
             
-            G.unsqueeze(2)
+            G = G.unsqueeze(2)
             G = G.reshape(self.batch_size, self.num_blocks, 1, len(seq), self.WIDTH, self.HEIGHT)
             G = G.repeat(1, 1, 3, 1, 1, 1)
             
