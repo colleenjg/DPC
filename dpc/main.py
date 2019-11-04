@@ -22,6 +22,8 @@ from torch.utils import data
 from torchvision import datasets, models, transforms
 import torchvision.utils as vutils
 
+import yaml
+
 torch.backends.cudnn.benchmark = True
 
 parser = argparse.ArgumentParser()
