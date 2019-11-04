@@ -18,7 +18,7 @@ class GaborSequenceGenerator(object):
         self.device         = device
         self.seed           = seed
         
-        self.prev_seq
+        self.prev_seq       = []
         
         np.random.seed(self.seed)
         torch.manual_seed(self.seed)

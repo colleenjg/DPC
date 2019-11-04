@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 
 sys.path.append('../utils')
+sys.path.append('../')
 from dataset_3d import *
 from model_3d import *
 from resnet_2d3d import neq_load_customized
@@ -22,6 +23,7 @@ from torch.utils import data
 from torchvision import datasets, models, transforms
 import torchvision.utils as vutils
 
+from stimuli import GaborSequenceGenerator
 import yaml
 
 torch.backends.cudnn.benchmark = True
@@ -115,7 +117,8 @@ def main():
 
     ### load data ###
     if args.dataset == 'gabors':
-        train_loader = Gabor
+        train_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=100, WIDTH=128, HEIGHT=128)
+        val_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=10, WIDTH=128, HEIGHT=128)
     
     else:
         if args.dataset == 'ucf101': # designed for ucf101, short size=256, rand crop to 224x224 then scale to 128x128
@@ -168,6 +171,8 @@ def main():
         
         # Save to yaml
         yaml.dump(loss_dict, open(model_path + 'loss.yaml', 'w'))
+        if args.dataset == gabors:
+            yaml.dump(train_loader.prev_seq, open(model_path + 'seq.yaml', 'w'))
 
         # save curve
 #        writer_train.add_scalar('global/loss', train_loss, epoch)
