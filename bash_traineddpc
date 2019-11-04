@@ -19,13 +19,17 @@ conda activate $HOME/cn-dpc/condaenv-dpc/
 #cd ./process_data/src
 #python write_csv.py
 
+# 2. Copy pre-trained model to SLURM_TMPDIR
+cp /network/home/wilmeska/DenseCPC/k400_128_r18_dpc-rnn.pth.tar $SLURM_TMPDIR/
 # 3. Launch your job, tell it to save the model in $SLURM_TMPDIR
 #    and look for the dataset into $SLURM_TMPDIR
 #cd ../../eval
+echo 'copied pretrained net'
+
 cd ./dpc
-python test_gabors.py --gpu 0,1 --net resnet18 --dataset gabors --batch_size 10 --num_seq 10 --seq_len 4 --img_dim 128 --pretrain {$HOME/DenseCPC/k400_128_r18_dpc-rnn.pth.tar} --train_what ft --epochs 100
+python test_gabors.py --gpu 0,1 --net resnet18 --dataset gabors --batch_size 10 --num_seq 10 --seq_len 4 --img_dim 128 --pretrain {$SLURM_TMPDIR/k400_128_r18_dpc-rnn.pth.tar} --train_what ft --epochs 100
 
 # 4. Copy whatever you want to save on $SCRATCH
-cp -r $SLURM_TMPDIR/loss.yaml /network/tmp1/wilmeska/
-cp -r $SLURM_TMPDIR/seq.yaml /network/tmp1/wilmeska/
+#cp -r $SLURM_TMPDIR/loss.yaml /network/tmp1/wilmeska/
+#cp -r $SLURM_TMPDIR/seq.yaml /network/tmp1/wilmeska/
 
