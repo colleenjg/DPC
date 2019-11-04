@@ -359,9 +359,15 @@ def get_data(transform, mode='train'):
                          num_seq=args.num_seq,
                          downsample=args.ds,
                          which_split=args.split)
+    elif args.dataset == 'gabors':
+        pass
     else:
         raise ValueError('dataset not supported')
     my_sampler = data.RandomSampler(dataset)
+    
+    if args.dataset == 'gabors':
+        data _loader = 
+    
     if mode == 'train':
         data_loader = data.DataLoader(dataset,
                                       batch_size=args.batch_size,
