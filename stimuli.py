@@ -57,8 +57,6 @@ class GaborSequenceGenerator(object):
         X, Y  = torch.meshgrid((torch.linspace(-1, 1, self.WIDTH), torch.linspace(-1, 1, self.HEIGHT)))
         X     = X.unsqueeze(-1).unsqueeze(-1)
         Y     = Y.unsqueeze(-1).unsqueeze(-1)
-#         X     = (X.unsqueeze(-1)*torch.ones(1, self.batch_size * self.num_frames)).permute(2, 0, 1).unsqueeze(-1).unsqueeze(-1)
-#         Y     = (Y.unsqueeze(-1)*torch.ones(1, self.batch_size * self.num_frames)).permute(2, 0, 1).unsqueeze(-1).unsqueeze(-1)
 
         theta = torch.Tensor(np.random.vonmises(mu=ori_mean * np.ones((self.NUM_GABORS, len(seq), self.batch_size)), kappa= self.kappa))
         if 'E' in seq:
