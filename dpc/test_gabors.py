@@ -50,6 +50,7 @@ parser.add_argument('--reset_lr', action='store_true', help='Reset learning rate
 parser.add_argument('--prefix', default='tmp', type=str, help='prefix of checkpoint filename')
 parser.add_argument('--train_what', default='all', type=str)
 parser.add_argument('--img_dim', default=128, type=int)
+parser.add_argument('--surprise_epoch', default=10, type=int)
 
 def main():
     torch.manual_seed(0)
@@ -63,6 +64,7 @@ def main():
         model = DPC_RNN(sample_size=args.img_dim, 
                         num_seq=args.num_seq, 
                         seq_len=args.seq_len, 
+
                         network=args.net, 
                         pred_step=args.pred_step)
     else: raise ValueError('wrong model!')
@@ -112,7 +114,7 @@ def main():
             checkpoint = torch.load(args.pretrain, map_location=torch.device('cpu'))
             model = neq_load_customized(model, checkpoint['state_dict'])
             print("=> loaded pretrained checkpoint '{}' (epoch {})"
-                  .format(args.pretrain, checkpoint['epoch']))
+                  .format(args.pretrain, checkpoint['epoch']),flush=True)
         else: 
             print("=> no checkpoint found at '{}'".format(args.pretrain))
 
@@ -159,6 +161,10 @@ def main():
     
     ### main loop ###
     for epoch in range(args.start_epoch, args.epochs):
+        if epoch > args.surprise_epoch:
+            train_loader.mode = 'surp'
+            print('mode: '+train_loader.mode)
+    
         train_loss, train_acc, train_accuracy_list = train(train_loader, model, optimizer, epoch)
         val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch)
         
@@ -168,9 +174,9 @@ def main():
         # Save to yaml
         #yaml.dump(loss_dict, open(os.getenv('SLURM_TMPDIR') + '/loss.yaml', 'w'))
         #yaml.dump(train_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq.yaml', 'w'))
-        print('train_loss '+str(train_loss))
-        print('val_loss: '+str(val_loss))
-        print(train_loader.prev_seq[-1])
+        print('train_loss '+str(train_loss),flush=True)
+        print('val_loss: '+str(val_loss),flush=True)
+        print(train_loader.prev_seq[-1],flush=True)
 
         # save curve
 #        writer_train.add_scalar('global/loss', train_loss, epoch)
@@ -256,7 +262,9 @@ def train(data_loader, model, optimizer, epoch):
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Loss {loss.val:.6f} ({loss.local_avg:.4f})\t'
                   'Acc: top1 {3:.4f}; top3 {4:.4f}; top5 {5:.4f} T:{6:.2f}\t'.format(
-                   epoch, idx, len(data_loader), top1, top3, top5, time.time()-tic, loss=losses))
+                   epoch, idx, len(data_loader), top1, top3, top5, time.time()-tic, loss=losses), flush=True)
+            if args.dataset == 'gabors':
+                print(data_loader.prev_seq[-1],flush=True)
 
 #            writer_train.add_scalar('local/loss', losses.val, iteration)
 #            writer_train.add_scalar('local/accuracy', accuracy.val, iteration)

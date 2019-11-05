@@ -3,7 +3,7 @@
 #SBATCH --cpus-per-task=1                     # Ask for 1 CPUs
 #SBATCH --gres=gpu:2                          # Ask for 1 GPU
 #SBATCH --mem=10G                             # Ask for 10 GB of RAM
-#SBATCH --time=1:00:00                        # The job will run for 3 hours
+#SBATCH --time=5:00:00                        # The job will run for 3 hours
 #SBATCH -o /network/tmp1/wilmeska/slurm-%j.out  # Write the log on tmp1
 
 module purge
@@ -27,7 +27,7 @@ cp /network/home/wilmeska/DenseCPC/k400_128_r18_dpc-rnn.pth.tar $SLURM_TMPDIR/
 echo 'copied pretrained net'
 
 cd ./dpc
-python test_gabors.py --gpu 0,1 --net resnet18 --dataset gabors --batch_size 10 --num_seq 10 --seq_len 4 --img_dim 128 --pretrain {$SLURM_TMPDIR/k400_128_r18_dpc-rnn.pth.tar} --train_what ft --epochs 100
+python test_gabors.py --gpu 0,1 --net resnet18 --dataset gabors --batch_size 10 --num_seq 10 --seq_len 4 --img_dim 128 --pretrain {$SLURM_TMPDIR/k400_128_r18_dpc-rnn.pth.tar} --train_what ft --epochs 50 --surprise_epoch 5 --pred_step 1 --print_freq 1
 
 # 4. Copy whatever you want to save on $SCRATCH
 #cp -r $SLURM_TMPDIR/loss.yaml /network/tmp1/wilmeska/
