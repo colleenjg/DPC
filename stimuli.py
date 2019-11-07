@@ -76,11 +76,11 @@ class GaborSequenceGenerator(object):
         Y       = (Y - ypos).unsqueeze(-1)
         
         # Generate gabor orientations (P x N x B)
-        theta = torch.Tensor(np.random.vonmises(mu=ori_mean * np.ones((self.NUM_GABORS, len(seq), self.batch_size)), kappa= self.kappa))
+        theta = torch.FloatTensor(np.random.vonmises(mu=ori_mean * np.ones((self.NUM_GABORS, len(seq), self.batch_size)), kappa= self.kappa))
         
         # Adjust if A comes late in sequence (new trial)
         if 'A' in seq[-2:]:
-            theta[:, -2:] = (theta[:, -2:] + torch.randint(4, size=(self.batch_size,)) * pi/4) % pi
+            theta[:, -2:] = (theta[:, -2:] + torch.randint(4, size=(self.batch_size,), dtype=torch.float32) * pi/4) % pi
         # Adjust if E is in sequence
         if 'E' in seq:
             ii = [ix for ix, s in enumerate(seq) if s=='E'][0] # Get index of E in sequence
