@@ -36,7 +36,8 @@ class GaborSequenceGenerator(object):
                            'B' : {},
                            'C' : {},
                            'D' : {},
-                           'E' : {}}
+                           'E' : {},
+                           'X' : {}} # placeholder, I know it's wasteful, but I ain't spending any more time on it
         
         for trial in self.gabor_info.keys():
             self.gabor_info[trial]['xpos'] = 0.8 * (torch.rand(size=(self.NUM_GABORS,))*2 - 1)
@@ -44,45 +45,75 @@ class GaborSequenceGenerator(object):
             self.gabor_info[trial]['size'] = 1.0 +  torch.rand(size=(self.NUM_GABORS,))
         
     def generate_batch(self):
-        ori_mean = np.random.randint(4, size=self.batch_size) * pi/4
         
+        # Generate regular or surprise sequence
         if self.mode == 'reg':
-            seq = ['A', 'B', 'C', 'D']
+            seq = ['A', 'B', 'C', 'D', 'X']
         elif self.mode == 'surp':
             seq = ['A', 'B', 'C']
-            seq += ['D'] if np.random.rand() <= 0.9 else ['E']
-        
+            seq += ['D', 'X'] if np.random.rand() <= 0.9 else ['E', 'X']
+            
+        # Shift sequence to random starting point and take 4 elements in sequence
+        seq = list(np.roll(seq, np.random.randint(5)))[:4]        
+        # Save sequence
         self.prev_seq.append(seq)
         
+        # Generate mean orientation
+        ori_mean = np.random.randint(4, size=self.batch_size) * pi/4
+        
+        # Setup mesh of coordinates to generate gabor patches from (W x H)
         X, Y  = torch.meshgrid((torch.linspace(-1, 1, self.WIDTH), torch.linspace(-1, 1, self.HEIGHT)))
+        # Create singleton patch and sequence dimension (W x H x P x N)
         X     = X.unsqueeze(-1).unsqueeze(-1)
         Y     = Y.unsqueeze(-1).unsqueeze(-1)
-
-        theta = torch.Tensor(np.random.vonmises(mu=ori_mean * np.ones((self.NUM_GABORS, len(seq), self.batch_size)), kappa= self.kappa))
-        if 'E' in seq:
-            theta[:, -1] = (theta[:, -1] + pi/2) % pi
         
+        # Get gabor patch locations (P x N)
         xpos    = torch.stack([self.gabor_info[trial]['xpos'] for trial in seq]).permute(1, 0)
         ypos    = torch.stack([self.gabor_info[trial]['ypos'] for trial in seq]).permute(1, 0)
         
+        # Re-centre coordinates by patch locations ([W x H x P x N] + [P x N] broadcast) and add singleton batch dimension (W x H x P x N x B)
         X       = (X - xpos).unsqueeze(-1)
         Y       = (Y - ypos).unsqueeze(-1)
         
-        sigma   = torch.stack([self.sigma_base / self.gabor_info[trial]['size'] for trial in seq]).permute(1, 0)
-
+        # Generate gabor orientations (P x N x B)
+        theta = torch.Tensor(np.random.vonmises(mu=ori_mean * np.ones((self.NUM_GABORS, len(seq), self.batch_size)), kappa= self.kappa))
+        
+        # Adjust if A comes late in sequence (new trial)
+        if 'A' in seq[-2:]:
+            theta[:, -2:] = (theta[:, -2:] + torch.randint(4, size=(self.batch_size,)) * pi/4) % pi
+        # Adjust if E is in sequence
+        if 'E' in seq:
+            ii = [ix for ix, s in enumerate(seq) if s=='E'][0] # Get index of E in sequence
+            theta[:, ii] = (theta[:, ii] + pi/2) % pi          # Adjust E orientations
+        
+        # Rotate coordinates (W x H x P x N x B)
         x_theta =  X*theta.cos() + Y*theta.sin()
         y_theta = -X*theta.sin() + Y*theta.cos()
 
+        # Re-order dimensions (B x W x H x P x N)
         x_theta = x_theta.permute(4, 0, 1, 2, 3)
         y_theta = y_theta.permute(4, 0, 1, 2, 3)
         
-        G = torch.exp(-((x_theta.pow(2) + self.gamma * y_theta.pow(2))/2*sigma**2))*torch.sin(2*pi*x_theta/self.lam)
-        G = G.permute(0, 4, 1, 2, 3)
-        G = G.sum(dim=-1)
+        # Generate patch sizes via sigma (P x N)
+        sigma   = torch.stack([self.sigma_base / self.gabor_info[trial]['size'] for trial in seq]).permute(1, 0)
         
+        # Create gabor patches ([B x W x H x P x N] * [P x N] broadcast)
+        G = torch.exp(-((x_theta.pow(2) + self.gamma * y_theta.pow(2))/2*sigma**2))*torch.sin(2*pi*x_theta/self.lam)
+        
+        # Reorder dimensions (B x N x W x H x P)
+        G = G.permute(0, 4, 1, 2, 3)
+        # Sum across patch dimension to collapse all patches into one frame (B x N x W x H)
+        G = G.sum(dim=-1)
+        # Find location of X in sequence and replace with blank frame
+        if 'X' in seq:
+            ii = [ix for ix,s in enumerate(seq) if s == 'X'][0]
+            G[:, ii] = torch.zeros(self.batch_size, self.WIDTH, self.HEIGHT)
+        # Create singleton Channel dimension
         G = G.unsqueeze(2)
+        # Create singleton Frame dimension
         G = G.unsqueeze(2)
-
+        
+        # Repeat across frame and channel dimensions (B x N x F x C x W x H)
         G = G.repeat(1, 1, self.NUM_FRAMES, 3, 1, 1)
             
         return G
