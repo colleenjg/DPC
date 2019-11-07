@@ -108,13 +108,13 @@ class GaborSequenceGenerator(object):
         if 'X' in seq:
             ii = [ix for ix,s in enumerate(seq) if s == 'X'][0]
             G[:, ii] = torch.zeros(self.batch_size, self.WIDTH, self.HEIGHT)
-        # Create singleton Channel dimension
-        G = G.unsqueeze(2)
         # Create singleton Frame dimension
         G = G.unsqueeze(2)
+        # Create singleton Channel dimension
+        G = G.unsqueeze(2)
         
-        # Repeat across frame and channel dimensions (B x N x F x C x W x H)
-        G = G.repeat(1, 1, self.NUM_FRAMES, 3, 1, 1)
+        # Repeat across frame and channel dimensions (B x N x C x F x W x H)
+        G = G.repeat(1, 1, 3, self.NUM_FRAMES, 1, 1)
             
         return G
             
