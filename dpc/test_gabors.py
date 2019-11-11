@@ -5,6 +5,7 @@ import re
 import argparse
 import numpy as np
 from tqdm import tqdm
+import copy
 #from tensorboardX import SummaryWriter
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
@@ -35,7 +36,7 @@ parser.add_argument('--model', default='dpc-rnn', type=str)
 parser.add_argument('--dataset', default='ucf101', type=str)
 parser.add_argument('--seq_len', default=5, type=int, help='number of frames in each video block')
 parser.add_argument('--num_seq', default=8, type=int, help='number of video blocks')
-parser.add_argument('--pred_step', default=3, type=int)
+parser.add_argument('--pred_step', default=1, type=int)
 parser.add_argument('--ds', default=3, type=int, help='frame downsampling rate')
 parser.add_argument('--batch_size', default=4, type=int)
 parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
@@ -85,6 +86,11 @@ def main():
     print('=================================\n')
 
     params = model.parameters()
+    old_backbone_weights = {k: v.clone() for k, v in model.module.backbone.named_parameters()}
+    old_agg_weights = {k: v.clone() for k, v in model.module.agg.named_parameters()}
+    old_network_pred_weights = {k: v.clone() for k, v in model.module.network_pred.named_parameters()}
+
+    
     optimizer = optim.Adam(params, lr=args.lr, weight_decay=args.wd)
     args.old_lr = None
 
@@ -139,8 +145,8 @@ def main():
             Normalize()
         ])
     if args.dataset == 'gabors':
-        train_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=20, num_blocks = args.num_seq, WIDTH=128, HEIGHT=128)
-        val_loader = GaborSequenceGenerator(batch_size=1, num_trials=20, num_blocks = args.num_seq, WIDTH=128, HEIGHT=128)
+        train_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=20, WIDTH=128, HEIGHT=128)
+        val_loader = GaborSequenceGenerator(batch_size=1, num_trials=20, WIDTH=128, HEIGHT=128)
     else:
         train_loader = get_data(transform, 'train')
         val_loader = get_data(transform, 'val')
@@ -172,12 +178,15 @@ def main():
         loss_dict['Validation'][epoch] = val_loss
         
         # Save to yaml
-        #yaml.dump(loss_dict, open(os.getenv('SLURM_TMPDIR') + '/loss.yaml', 'w'))
-        #yaml.dump(train_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq.yaml', 'w'))
+        yaml.dump(loss_dict, open(os.getenv('SLURM_TMPDIR') + '/loss.yaml', 'w'))
+        yaml.dump(train_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq.yaml', 'w'))
+        print(os.getenv('SLURM_TMPDIR') + '/loss.yaml',flush=True)
         print('train_loss '+str(train_loss),flush=True)
         print('val_loss: '+str(val_loss),flush=True)
         print(train_loader.prev_seq[-1],flush=True)
 
+
+        
         # save curve
 #        writer_train.add_scalar('global/loss', train_loss, epoch)
 #        writer_train.add_scalar('global/accuracy', train_acc, epoch)
@@ -200,6 +209,41 @@ def main():
                          'iteration': iteration}, 
                          is_best, filename=os.path.join(model_path, 'epoch%s.pth.tar' % str(epoch+1)), keep_all=False)
 
+        if epoch == 4:
+            new_weights_backbone = {k: v.clone() for k, v in model.module.backbone.named_parameters()}
+            new_weights_agg = {k: v.clone() for k, v in model.module.agg.named_parameters()}
+            new_weights_network_pred = {k: v.clone() for k, v in model.module.network_pred.named_parameters()}
+            
+            weight_changes_backbone = {k: new_weights_backbone[k] - old_backbone_weights[k] for k in old_backbone_weights}
+            weight_changes_agg = {k: new_weights_agg[k] - old_agg_weights[k] for k in old_agg_weights}
+            weight_changes_network_pred = {k: new_weights_network_pred[k] - old_network_pred_weights[k] for k in old_network_pred_weights}
+
+            sum_changes_backbone = {k: torch.sum(new_weights_backbone[k] - old_backbone_weights[k]) for k in old_backbone_weights}
+            sum_changes_agg = {k: torch.sum(new_weights_agg[k] - old_agg_weights[k]) for k in old_agg_weights}
+            sum_changes_network_pred = {k: torch.sum(new_weights_network_pred[k] - old_network_pred_weights[k]) for k in old_network_pred_weights}
+            
+            mean_changes_backbone = {k: torch.mean(torch.abs(new_weights_backbone[k] - old_backbone_weights[k])) for k in old_backbone_weights}
+            mean_changes_agg = {k: torch.mean(torch.abs(new_weights_agg[k] - old_agg_weights[k])) for k in old_agg_weights}
+            mean_changes_network_pred = {k: torch.mean(torch.abs(new_weights_network_pred[k] - old_network_pred_weights[k])) for k in old_network_pred_weights}
+            #print(sum_changes_backbone+'\n',flush=True)
+            #print(sum_changes_agg+'\n',flush=True)
+            #print(sum_changes_network_pred+'\n',flush=True)
+
+            print('%%%%%%%%%%%%%%%%%%%%%%%%%%%')
+            
+            backbone_means = [mean_changes_backbone[key] for key in mean_changes_backbone]
+
+ 
+            agg_means = [mean_changes_agg[key] for key in mean_changes_agg]
+            print(backbone_means)
+            print(agg_means)            
+            mean_backbone = torch.mean(torch.stack(backbone_means), dim=0)
+            mean_agg = torch.mean(torch.stack(agg_means), dim=0)
+            print(mean_backbone)
+            print(mean_agg)            
+            
+
+           
     print('Training from ep %d to ep %d finished' % (args.start_epoch, args.epochs))
 
 def process_output(mask):
@@ -332,7 +376,7 @@ def get_data(transform, mode='train'):
         raise ValueError('dataset not supported')
 
     if args.dataset == 'gabors':
-        data_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_blocks = args.num_seq, num_trials=20, WIDTH=128, HEIGHT=128)
+        data_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=20, WIDTH=128, HEIGHT=128)
     else:
         sampler = data.RandomSampler(dataset)
 

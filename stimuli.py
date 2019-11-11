@@ -3,7 +3,7 @@ import torch
 from math import pi
 
 class GaborSequenceGenerator(object):
-    def __init__(self, batch_size, num_trials, mode='reg',
+    def __init__(self, batch_size, num_trials, mode='reg', blank=False,
                  NUM_FRAMES=5, NUM_GABORS=30, WIDTH=128, HEIGHT=128,
                  sigma_base = 50, kappa = 50, lam = 1, gamma=0.2,
                  seed=1000, device='cpu'):
@@ -12,6 +12,7 @@ class GaborSequenceGenerator(object):
         self.num_trials     = num_trials
         self.__next_trial__ = 0
         self.mode           = mode
+        self.blank          = blank
         
         self.sigma_base     = sigma_base
         self.kappa          = kappa
@@ -47,14 +48,21 @@ class GaborSequenceGenerator(object):
     def generate_batch(self):
         
         # Generate regular or surprise sequence
-        if self.mode == 'reg':
-            seq = ['A', 'B', 'C', 'D', 'X']
-        elif self.mode == 'surp':
-            seq = ['A', 'B', 'C']
-            seq += ['D', 'X'] if np.random.rand() <= 0.9 else ['E', 'X']
+        if self.blank == True:    
+            if self.mode == 'reg':
+                seq = ['A', 'B', 'C', 'D', 'X']
+            elif self.mode == 'surp':
+                seq = ['A', 'B', 'C']
+                seq += ['D', 'X'] if np.random.rand() <= 0.9 else ['E', 'X']
+        else:
+            if self.mode == 'reg':
+                seq = ['A', 'B', 'C', 'D']
+            elif self.mode == 'surp':
+                seq = ['A', 'B', 'C']
+                seq += ['D'] if np.random.rand() <= 0.9 else ['E']
             
         # Shift sequence to random starting point and take 4 elements in sequence
-        seq = list(np.roll(seq, np.random.randint(5)))[:4]        
+        seq = list(np.roll(seq, np.random.randint(len(seq))))[:4]        
         # Save sequence
         self.prev_seq.append(seq)
         

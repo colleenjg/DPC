@@ -14,16 +14,18 @@ source $CONDA_ACTIVATE
 conda activate $HOME/cn-dpc/condaenv-dpc/
 
 # 2. Copy your dataset on the compute node
-cp $HOME/DenseCPC/UCF101.zip $SLURM_TMPDIR
-unzip -q $SLURM_TMPDIR/UCF101.zip -d $SLURM_TMPDIR
-cd ./process_data/src
-python write_csv.py
+#cp $HOME/DenseCPC/UCF101.zip $SLURM_TMPDIR
+#unzip -q $SLURM_TMPDIR/UCF101.zip -d $SLURM_TMPDIR
+#cd ./process_data/src
+#python write_csv.py
 
 # 3. Launch your job, tell it to save the model in $SLURM_TMPDIR
 #    and look for the dataset into $SLURM_TMPDIR
-cd ../../dpc
-python main.py --gpu 0,1 --net resnet18 --batch_size 4 --img_dim 48 --epochs 100
+cd ./dpc
+python test_gabors.py --gpu 0,1 --net resnet18 --dataset gabors --batch_size 10 --num_seq 5 --seq_len 5 --img_dim 128 --train_what ft --epochs 1 --surprise_epoch 50 --pred_step 1 --print_freq 1
 
 # 4. Copy whatever you want to save on $SCRATCH
-#cp $SLURM_TMPDIR/training.pt /network/tmp1/wilmeska/
+cp $SLURM_TMPDIR/loss.yaml /network/tmp1/wilmeska/
+cp $SLURM_TMPDIR/seq.yaml /network/tmp1/wilmeska/
+
 
