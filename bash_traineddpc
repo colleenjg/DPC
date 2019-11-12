@@ -27,9 +27,9 @@ cp /network/home/wilmeska/DenseCPC/k400_128_r18_dpc-rnn.pth.tar $SLURM_TMPDIR/
 echo 'copied pretrained net'
 
 cd ./dpc
-python test_gabors.py --gpu 0,1 --net resnet18 --dataset gabors --batch_size 10 --num_seq 2 --seq_len 5 --img_dim 128 --pretrain {$SLURM_TMPDIR/k400_128_r18_dpc-rnn.pth.tar} --train_what ft --epochs 70 --surprise_epoch 50 --pred_step 1 --print_freq 1 --roll True
+python test_gabors.py --gpu 0,1 --net resnet18 --dataset gabors --batch_size 10 --num_seq 4 --seq_len 5 --img_dim 128 --pretrain {$SLURM_TMPDIR/k400_128_r18_dpc-rnn.pth.tar} --train_what ft --epochs 25 --surprise_epoch 5 --pred_step 1 --print_freq 1 --roll True
 
 # 4. Copy whatever you want to save on $SCRATCH
-cp $SLURM_TMPDIR/loss.yaml /network/tmp1/wilmeska/pretrained_noblanks_numseq2/
-cp $SLURM_TMPDIR/seq.yaml /network/tmp1/wilmeska/pretrained_noblanks_numseq2/
+cp $SLURM_TMPDIR/loss.yaml /network/tmp1/wilmeska/pretrained_noblanks_numseq4_Elast_earlysurprise/
+cp $SLURM_TMPDIR/seq.yaml /network/tmp1/wilmeska/pretrained_noblanks_numseq4_Elast_earlysurprise/
 

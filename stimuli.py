@@ -97,7 +97,9 @@ class GaborSequenceGenerator(object):
         # Adjust if E is in sequence
         if 'E' in seq:
             ii = [ix for ix, s in enumerate(seq) if s=='E'][0] # Get index of E in sequence
-            theta[:, ii] = (theta[:, ii] + pi/2) % pi          # Adjust E orientations
+            
+            if ii == len(seq)-1:
+                theta[:, ii] = (theta[:, ii] + pi/2) % pi          # Adjust E orientations if they are last in sequence
         
         # Rotate coordinates (W x H x P x N x B)
         x_theta =  X*theta.cos() + Y*theta.sin()
