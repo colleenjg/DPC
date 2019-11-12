@@ -52,6 +52,8 @@ parser.add_argument('--prefix', default='tmp', type=str, help='prefix of checkpo
 parser.add_argument('--train_what', default='all', type=str)
 parser.add_argument('--img_dim', default=128, type=int)
 parser.add_argument('--surprise_epoch', default=10, type=int)
+parser.add_argument('--blank', default=False, type=bool)
+parser.add_argument('--roll', default=False, type=bool)
 
 def main():
     torch.manual_seed(0)
@@ -145,8 +147,8 @@ def main():
             Normalize()
         ])
     if args.dataset == 'gabors':
-        train_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=20, WIDTH=128, HEIGHT=128)
-        val_loader = GaborSequenceGenerator(batch_size=1, num_trials=20, WIDTH=128, HEIGHT=128)
+        train_loader = GaborSequenceGenerator(batch_size=args.batch_size, blank=args.blank, roll=args.roll, num_seq=args.num_seq, num_trials=20, WIDTH=128, HEIGHT=128)
+        val_loader = GaborSequenceGenerator(batch_size=1, num_seq=args.num_seq, num_trials=20, WIDTH=128, HEIGHT=128)
     else:
         train_loader = get_data(transform, 'train')
         val_loader = get_data(transform, 'val')
@@ -165,25 +167,29 @@ def main():
     loss_dict = {'Training' : {},
                  'Validation' : {}}
     
+    detailed_loss_dict = {}
+    
     ### main loop ###
     for epoch in range(args.start_epoch, args.epochs):
         if epoch > args.surprise_epoch:
             train_loader.mode = 'surp'
             print('mode: '+train_loader.mode)
     
-        train_loss, train_acc, train_accuracy_list = train(train_loader, model, optimizer, epoch)
+        train_loss, train_acc, train_accuracy_list, detailed_loss = train(train_loader, model, optimizer, epoch)
         val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch)
-        
+                
         loss_dict['Training'][epoch] = train_loss
         loss_dict['Validation'][epoch] = val_loss
         
+        detailed_loss_dict[epoch] = detailed_loss 
+        
         # Save to yaml
-        yaml.dump(loss_dict, open(os.getenv('SLURM_TMPDIR') + '/loss.yaml', 'w'))
-        yaml.dump(train_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq.yaml', 'w'))
         print(os.getenv('SLURM_TMPDIR') + '/loss.yaml',flush=True)
-        print('train_loss '+str(train_loss),flush=True)
-        print('val_loss: '+str(val_loss),flush=True)
-        print(train_loader.prev_seq[-1],flush=True)
+        yaml.dump(detailed_loss_dict, open(os.getenv('SLURM_TMPDIR') + '/loss.yaml', 'w'))
+        yaml.dump(train_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq.yaml', 'w'))
+        #print('train_loss '+str(train_loss),flush=True)
+        #print('val_loss: '+str(val_loss),flush=True)
+        #print(train_loader.prev_seq[-1],flush=True)
 
 
         
@@ -262,6 +268,7 @@ def train(data_loader, model, optimizer, epoch):
     model.train()
     global iteration
 
+    detailed_loss = []
     for idx, input_seq in enumerate(data_loader):
         tic = time.time()
         input_seq = input_seq.to(cuda)
@@ -301,7 +308,7 @@ def train(data_loader, model, optimizer, epoch):
         optimizer.step()
 
         del loss
-
+        
         if idx % args.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Loss {loss.val:.6f} ({loss.local_avg:.4f})\t'
@@ -309,13 +316,17 @@ def train(data_loader, model, optimizer, epoch):
                    epoch, idx, len(data_loader), top1, top3, top5, time.time()-tic, loss=losses), flush=True)
             if args.dataset == 'gabors':
                 print(data_loader.prev_seq[-1],flush=True)
+                detailed_loss.append(losses.val)
+                #yaml.dump(losses.val, open(os.getenv('SLURM_TMPDIR') + '/loss.yaml', 'w'))
+                #yaml.dump(data_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq.yaml', 'w'))
+        
 
 #            writer_train.add_scalar('local/loss', losses.val, iteration)
 #            writer_train.add_scalar('local/accuracy', accuracy.val, iteration)
 
             iteration += 1
 
-    return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list]
+    return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list], detailed_loss
 
 
 def validate(data_loader, model, epoch):
@@ -376,7 +387,7 @@ def get_data(transform, mode='train'):
         raise ValueError('dataset not supported')
 
     if args.dataset == 'gabors':
-        data_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=20, WIDTH=128, HEIGHT=128)
+        data_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=20, num_seq=args.num_seq, blank=args.blank, roll=args.roll, WIDTH=128, HEIGHT=128)
     else:
         sampler = data.RandomSampler(dataset)
 
