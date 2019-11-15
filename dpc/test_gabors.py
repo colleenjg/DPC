@@ -53,12 +53,16 @@ parser.add_argument('--train_what', default='all', type=str)
 parser.add_argument('--img_dim', default=128, type=int)
 parser.add_argument('--surprise_epoch', default=10, type=int)
 parser.add_argument('--blank', default=False, type=bool)
-parser.add_argument('--roll', default=False, type=bool)
+parser.add_argument('--roll', default='False', type=str)
+parser.add_argument('--seed', default=0, type=int)
+parser.add_argument('--p_E', default=0.1, type=float)
+parser.add_argument('--e_pos', default='E', type=str)
 
 def main():
-    torch.manual_seed(0)
-    np.random.seed(0)
     global args; args = parser.parse_args()
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
     os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
     global cuda; cuda = torch.device('cuda')
 
@@ -147,7 +151,7 @@ def main():
             Normalize()
         ])
     if args.dataset == 'gabors':
-        train_loader = GaborSequenceGenerator(batch_size=args.batch_size, blank=args.blank, roll=args.roll, num_seq=args.num_seq, num_trials=20, WIDTH=128, HEIGHT=128)
+        train_loader = GaborSequenceGenerator(batch_size=args.batch_size, blank=args.blank, roll=args.roll, p_E=args.p_E, e_pos=args.e_pos, num_seq=args.num_seq, num_trials=20, WIDTH=128, HEIGHT=128)
         val_loader = GaborSequenceGenerator(batch_size=1, num_seq=args.num_seq, num_trials=20, WIDTH=128, HEIGHT=128)
     else:
         train_loader = get_data(transform, 'train')
@@ -185,8 +189,8 @@ def main():
         
         # Save to yaml
         print(os.getenv('SLURM_TMPDIR') + '/loss.yaml',flush=True)
-        yaml.dump(detailed_loss_dict, open(os.getenv('SLURM_TMPDIR') + '/loss.yaml', 'w'))
-        yaml.dump(train_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq.yaml', 'w'))
+        yaml.dump(detailed_loss_dict, open(os.getenv('SLURM_TMPDIR') + '/loss_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
+        yaml.dump(train_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
         #print('train_loss '+str(train_loss),flush=True)
         #print('val_loss: '+str(val_loss),flush=True)
         #print(train_loader.prev_seq[-1],flush=True)
@@ -387,7 +391,7 @@ def get_data(transform, mode='train'):
         raise ValueError('dataset not supported')
 
     if args.dataset == 'gabors':
-        data_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=20, num_seq=args.num_seq, blank=args.blank, roll=args.roll, WIDTH=128, HEIGHT=128)
+        data_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=20, num_seq=args.num_seq, blank=args.blank, roll=args.roll, p_E=args.p_E, e_pos=args.e_pos, WIDTH=128, HEIGHT=128)
     else:
         sampler = data.RandomSampler(dataset)
 

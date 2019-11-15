@@ -4,7 +4,7 @@ from math import pi
 
 class GaborSequenceGenerator(object):
     def __init__(self, batch_size, num_trials, mode='reg', blank=False, 
-                 roll=False, num_seq=4, NUM_FRAMES=5, NUM_GABORS=30, WIDTH=128, HEIGHT=128,
+                 roll='False', p_E = 0.1, e_pos='E', num_seq=4, NUM_FRAMES=5, NUM_GABORS=30, WIDTH=128, HEIGHT=128,
                  sigma_base = 50, kappa = 50, lam = 1, gamma=0.2,
                  seed=1000, device='cpu'):
         
@@ -14,6 +14,8 @@ class GaborSequenceGenerator(object):
         self.mode           = mode
         self.blank          = blank
         self.roll           = roll
+        self.p_E            = p_E
+        self.e_pos          = e_pos
         
         self.sigma_base     = sigma_base
         self.kappa          = kappa
@@ -43,10 +45,24 @@ class GaborSequenceGenerator(object):
                            'X' : {}} # placeholder, I know it's wasteful, but I ain't spending any more time on it
         
         for trial in self.gabor_info.keys():
-            self.gabor_info[trial]['xpos'] = 0.8 * (torch.rand(size=(self.NUM_GABORS,))*2 - 1)
-            self.gabor_info[trial]['ypos'] = 0.8 * (torch.rand(size=(self.NUM_GABORS,))*2 - 1)
-            self.gabor_info[trial]['size'] = 1.0 +  torch.rand(size=(self.NUM_GABORS,))
+            if self.e_pos == 'D':
+                if trial == 'E':
+                    self.gabor_info[trial]['xpos'] = self.gabor_info['D']['xpos']
+                    self.gabor_info[trial]['ypos'] = self.gabor_info['D']['ypos']
+                    self.gabor_info[trial]['size'] = self.gabor_info['D']['size']
+                else:
+                    self.gabor_info[trial]['xpos'] = 0.8 * (torch.rand(size=(self.NUM_GABORS,))*2 - 1)
+                    self.gabor_info[trial]['ypos'] = 0.8 * (torch.rand(size=(self.NUM_GABORS,))*2 - 1)
+                    self.gabor_info[trial]['size'] = 1.0 +  torch.rand(size=(self.NUM_GABORS,))
+            else:
+                self.gabor_info[trial]['xpos'] = 0.8 * (torch.rand(size=(self.NUM_GABORS,))*2 - 1)
+                self.gabor_info[trial]['ypos'] = 0.8 * (torch.rand(size=(self.NUM_GABORS,))*2 - 1)
+                self.gabor_info[trial]['size'] = 1.0 +  torch.rand(size=(self.NUM_GABORS,))
         
+        print('check')
+        print(self.gabor_info['E']['xpos'])
+        print(self.gabor_info['D']['xpos'])
+                
     def generate_batch(self):
         
         # Generate regular or surprise sequence
@@ -55,16 +71,17 @@ class GaborSequenceGenerator(object):
                 seq = ['A', 'B', 'C', 'D', 'X']
             elif self.mode == 'surp':
                 seq = ['A', 'B', 'C']
-                seq += ['D', 'X'] if np.random.rand() <= 0.9 else ['E', 'X']
+                seq += ['D', 'X'] if np.random.rand() <= (1-self.p_E) else ['E', 'X']
         else:
             if self.mode == 'reg':
                 seq = ['A', 'B', 'C', 'D']
             elif self.mode == 'surp':
                 seq = ['A', 'B', 'C']
-                seq += ['D'] if np.random.rand() <= 0.9 else ['E']
+                seq += ['D'] if np.random.rand() <= (1-self.p_E) else ['E']
             
         # Shift sequence to random starting point and take 4 elements in sequence
-        if self.roll is True:
+        if self.roll == 'True':
+            ('roll is True')
             seq = list(np.roll(seq, np.random.randint(len(seq))))[:self.num_seq]        
         else:
             pass
