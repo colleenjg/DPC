@@ -80,13 +80,13 @@ class GaborSequenceGenerator(object):
                 seq += ['D'] if np.random.rand() <= (1-self.p_E) else ['E']
             
         # Shift sequence to random starting point and take 4 elements in sequence
-        if self.roll == 'True':
-            ('roll is True')
-            seq = list(np.roll(seq, np.random.randint(len(seq))))[:self.num_seq]        
-        else:
-            pass
+       # if self.roll == 'True':
+        #    ('roll is True')
+        #    seq = list(np.roll(seq, np.random.randint(len(seq))))[:self.num_seq]        
+        #else:
+        #    pass
         # Save sequence
-        self.prev_seq.append(seq)
+        #self.prev_seq.append(seq)
         
         # Generate mean orientation
         ori_mean = np.random.randint(4, size=self.batch_size) * pi/4
@@ -94,19 +94,35 @@ class GaborSequenceGenerator(object):
         # Setup mesh of coordinates to generate gabor patches from (W x H)
         X, Y  = torch.meshgrid((torch.linspace(-1, 1, self.WIDTH), torch.linspace(-1, 1, self.HEIGHT)))
         # Create singleton patch and sequence dimension (W x H x P x N)
-        X     = X.unsqueeze(-1).unsqueeze(-1)
-        Y     = Y.unsqueeze(-1).unsqueeze(-1)
+        X     = X.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        Y     = Y.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
         
-        # Get gabor patch locations (P x N)
-        xpos    = torch.stack([self.gabor_info[trial]['xpos'] for trial in seq]).permute(1, 0)
-        ypos    = torch.stack([self.gabor_info[trial]['ypos'] for trial in seq]).permute(1, 0)
+        # Get gabor patch locations (P x N x B)
+        xpos = torch.zeros([self.NUM_GABORS,self.num_seq,self.batch_size])
+        ypos = torch.zeros([self.NUM_GABORS,self.num_seq,self.batch_size])
+        sigma = torch.zeros([self.NUM_GABORS,self.num_seq,self.batch_size])
         
+        if self.roll == 'True':
+            for i in range(self.batch_size): 
+                # Shift sequence to random starting point and take 4 elements in sequence
+                seq = list(np.roll(seq, np.random.randint(len(seq))))[:self.num_seq]        
+                # Get gabor patch locations (P x N x B)
+                xpos[:,:,i]    = torch.stack([self.gabor_info[trial]['xpos'] for trial in seq]).permute(1, 0)
+                ypos[:,:,i]    = torch.stack([self.gabor_info[trial]['ypos'] for trial in seq]).permute(1, 0)
+                # Generate patch sizes via sigma (P x N x B)
+                sigma[:,:,i]   = torch.stack([self.sigma_base / self.gabor_info[trial]['size'] for trial in seq]).permute(1, 0)
+                # Store sequences
+                self.prev_seq.append(seq)
+        
+                
         # Re-centre coordinates by patch locations ([W x H x P x N] + [P x N] broadcast) and add singleton batch dimension (W x H x P x N x B)
-        X       = (X - xpos).unsqueeze(-1)
-        Y       = (Y - ypos).unsqueeze(-1)
+        X       = (X - xpos)
+        Y       = (Y - ypos)
+        
         
         # Generate gabor orientations (P x N x B)
         theta = torch.FloatTensor(np.random.vonmises(mu=ori_mean * np.ones((self.NUM_GABORS, len(seq), self.batch_size)), kappa= self.kappa))
+        
         
         # Adjust if A comes late in sequence (new trial)
         if 'A' in seq[-2:]:
@@ -118,25 +134,20 @@ class GaborSequenceGenerator(object):
             if ii == len(seq)-1:
                 theta[:, ii] = (theta[:, ii] + pi/2) % pi          # Adjust E orientations if they are last in sequence
         
+
         # Rotate coordinates (W x H x P x N x B)
         x_theta =  X*theta.cos() + Y*theta.sin()
         y_theta = -X*theta.sin() + Y*theta.cos()
-
-        # Re-order dimensions (B x W x H x P x N)
-        x_theta = x_theta.permute(4, 0, 1, 2, 3)
-        y_theta = y_theta.permute(4, 0, 1, 2, 3)
-        
-        # Generate patch sizes via sigma (P x N)
-        sigma   = torch.stack([self.sigma_base / self.gabor_info[trial]['size'] for trial in seq]).permute(1, 0)
         
         # Create gabor patches ([B x W x H x P x N] * [P x N] broadcast)
         G = torch.exp(-((x_theta.pow(2) + self.gamma * y_theta.pow(2))/2*sigma**2))*torch.sin(2*pi*x_theta/self.lam)
         
+        
         # Reorder dimensions (B x N x W x H x P)
-        G = G.permute(0, 4, 1, 2, 3)
+        G = G.permute(4, 3, 0, 1, 2)
         # Sum across patch dimension to collapse all patches into one frame (B x N x W x H)
         G = G.sum(dim=-1)
-        # Find location of X in sequence and replace with blank frame
+        # Find location of X in sequence and replace with blank frame        
         if 'X' in seq:
             ii = [ix for ix,s in enumerate(seq) if s == 'X'][0]
             G[:, ii] = torch.zeros(self.batch_size, self.WIDTH, self.HEIGHT)
@@ -144,11 +155,16 @@ class GaborSequenceGenerator(object):
         G = G.unsqueeze(2)
         # Create singleton Channel dimension
         G = G.unsqueeze(2)
-        
         # Repeat across frame and channel dimensions (B x N x C x F x W x H)
         G = G.repeat(1, 1, 3, self.NUM_FRAMES, 1, 1)
             
+        print(self.prev_seq[-self.batch_size:])
         return G
+    
+    #def generate_batch():
+        
+    #    generate_block
+        
             
     def __getitem__(self, ix):
         if ix < self.__len__():
