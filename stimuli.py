@@ -65,29 +65,6 @@ class GaborSequenceGenerator(object):
                 
     def generate_batch(self):
         
-        # Generate regular or surprise sequence
-        if self.blank == True:    
-            if self.mode == 'reg':
-                seq = ['A', 'B', 'C', 'D', 'X']
-            elif self.mode == 'surp':
-                seq = ['A', 'B', 'C']
-                seq += ['D', 'X'] if np.random.rand() <= (1-self.p_E) else ['E', 'X']
-        else:
-            if self.mode == 'reg':
-                seq = ['A', 'B', 'C', 'D']
-            elif self.mode == 'surp':
-                seq = ['A', 'B', 'C']
-                seq += ['D'] if np.random.rand() <= (1-self.p_E) else ['E']
-            
-        # Shift sequence to random starting point and take 4 elements in sequence
-       # if self.roll == 'True':
-        #    ('roll is True')
-        #    seq = list(np.roll(seq, np.random.randint(len(seq))))[:self.num_seq]        
-        #else:
-        #    pass
-        # Save sequence
-        #self.prev_seq.append(seq)
-        
         # Generate mean orientation
         ori_mean = np.random.randint(4, size=self.batch_size) * pi/4
         
@@ -104,6 +81,19 @@ class GaborSequenceGenerator(object):
         
         if self.roll == 'True':
             for i in range(self.batch_size): 
+                # Generate regular or surprise sequence
+                if self.blank == True:    
+                    if self.mode == 'reg':
+                        seq = ['A', 'B', 'C', 'D', 'X']
+                    elif self.mode == 'surp':
+                        seq = ['A', 'B', 'C']
+                        seq += ['D', 'X'] if np.random.rand() <= (1-self.p_E) else ['E', 'X']
+                else:
+                    if self.mode == 'reg':
+                        seq = ['A', 'B', 'C', 'D']
+                    elif self.mode == 'surp':
+                        seq = ['A', 'B', 'C']
+                        seq += ['D'] if np.random.rand() <= (1-self.p_E) else ['E']
                 # Shift sequence to random starting point and take 4 elements in sequence
                 seq = list(np.roll(seq, np.random.randint(len(seq))))[:self.num_seq]        
                 # Get gabor patch locations (P x N x B)
@@ -113,7 +103,20 @@ class GaborSequenceGenerator(object):
                 sigma[:,:,i]   = torch.stack([self.sigma_base / self.gabor_info[trial]['size'] for trial in seq]).permute(1, 0)
                 # Store sequences
                 self.prev_seq.append(seq)
-        
+        else:
+            if self.blank == True:    
+                if self.mode == 'reg':
+                    seq = ['A', 'B', 'C', 'D', 'X']
+                elif self.mode == 'surp':
+                    seq = ['A', 'B', 'C']
+                    seq += ['D', 'X'] if np.random.rand() <= (1-self.p_E) else ['E', 'X']
+            else:
+                if self.mode == 'reg':
+                    seq = ['A', 'B', 'C', 'D']
+                elif self.mode == 'surp':
+                    seq = ['A', 'B', 'C']
+                    seq += ['D'] if np.random.rand() <= (1-self.p_E) else ['E']
+            self.prev_seq.append(seq)
                 
         # Re-centre coordinates by patch locations ([W x H x P x N] + [P x N] broadcast) and add singleton batch dimension (W x H x P x N x B)
         X       = (X - xpos)
