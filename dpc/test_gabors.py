@@ -172,6 +172,7 @@ def main():
                  'Validation' : {}}
     
     detailed_loss_dict = {}
+    loss_foreach_bigdict = {}
     
     ### main loop ###
     for epoch in range(args.start_epoch, args.epochs):
@@ -179,18 +180,20 @@ def main():
             train_loader.mode = 'surp'
             print('mode: '+train_loader.mode)
     
-        train_loss, train_acc, train_accuracy_list, detailed_loss = train(train_loader, model, optimizer, epoch)
+        train_loss, train_acc, train_accuracy_list, detailed_loss, loss_foreach_dict = train(train_loader, model, optimizer, epoch)
         val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch)
                 
         loss_dict['Training'][epoch] = train_loss
         loss_dict['Validation'][epoch] = val_loss
-        
+        loss_foreach_bigdict[epoch] = loss_foreach_dict
         detailed_loss_dict[epoch] = detailed_loss 
         
         # Save to yaml
         print(os.getenv('SLURM_TMPDIR') + '/loss.yaml',flush=True)
         yaml.dump(detailed_loss_dict, open(os.getenv('SLURM_TMPDIR') + '/loss_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
         yaml.dump(train_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
+        yaml.dump(loss_foreach_bigdict, open(os.getenv('SLURM_TMPDIR') + '/loss_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
+
         #print('train_loss '+str(train_loss),flush=True)
         #print('val_loss: '+str(val_loss),flush=True)
         #print(train_loader.prev_seq[-1],flush=True)
@@ -273,6 +276,7 @@ def train(data_loader, model, optimizer, epoch):
     global iteration
 
     detailed_loss = []
+    loss_foreach_dict = {}
     for idx, input_seq in enumerate(data_loader):
         tic = time.time()
         input_seq = input_seq.to(cuda)
@@ -289,12 +293,12 @@ def train(data_loader, model, optimizer, epoch):
         del input_seq
         
         if idx == 0: target_, (_, B2, NS, NP, SQ) = process_output(mask_)
-
+        
         # score is a 6d tensor: [B, P, SQ, B, N, SQ]
         score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
         target_flattened = target_.view(B*NP*SQ, B2*NS*SQ)
         target_flattened = target_flattened.argmax(dim=1)
-
+        
         loss = criterion(score_flattened, target_flattened)
         top1, top3, top5 = calc_topk_accuracy(score_flattened, target_flattened, (1,3,5))
 
@@ -312,6 +316,9 @@ def train(data_loader, model, optimizer, epoch):
         optimizer.step()
 
         del loss
+
+        criterion_measure = nn.CrossEntropyLoss(reduction='none')       
+        loss_foreach_dict[idx] = criterion_measure(score_flattened, target_flattened).view(B,SQ).mean(axis=1)
         
         if idx % args.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
@@ -320,6 +327,8 @@ def train(data_loader, model, optimizer, epoch):
                    epoch, idx, len(data_loader), top1, top3, top5, time.time()-tic, loss=losses), flush=True)
             if args.dataset == 'gabors':
                 print(data_loader.prev_seq[-1],flush=True)
+                print(data_loader.prev_seq[-args.batch_size:])
+                print(loss_foreach_dict[idx],flush=True)
                 detailed_loss.append(losses.val)
                 #yaml.dump(losses.val, open(os.getenv('SLURM_TMPDIR') + '/loss.yaml', 'w'))
                 #yaml.dump(data_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq.yaml', 'w'))
@@ -330,7 +339,7 @@ def train(data_loader, model, optimizer, epoch):
 
             iteration += 1
 
-    return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list], detailed_loss
+    return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list], detailed_loss, loss_foreach_dict
 
 
 def validate(data_loader, model, epoch):

@@ -161,7 +161,6 @@ class GaborSequenceGenerator(object):
         # Repeat across frame and channel dimensions (B x N x C x F x W x H)
         G = G.repeat(1, 1, 3, self.NUM_FRAMES, 1, 1)
             
-        print(self.prev_seq[-self.batch_size:])
         return G
     
     #def generate_batch():
