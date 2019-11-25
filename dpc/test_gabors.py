@@ -76,7 +76,7 @@ def main():
                         pred_step=args.pred_step)
     else: raise ValueError('wrong model!')
 
-    model = nn.DataParallel(model)
+    #model = nn.DataParallel(model)
     model = model.to(cuda)
     global criterion; criterion = nn.CrossEntropyLoss()
 
@@ -92,9 +92,9 @@ def main():
     print('=================================\n')
 
     params = model.parameters()
-    old_backbone_weights = {k: v.clone() for k, v in model.module.backbone.named_parameters()}
-    old_agg_weights = {k: v.clone() for k, v in model.module.agg.named_parameters()}
-    old_network_pred_weights = {k: v.clone() for k, v in model.module.network_pred.named_parameters()}
+    #old_backbone_weights = {k: v.clone() for k, v in model.module.backbone.named_parameters()}
+    #old_agg_weights = {k: v.clone() for k, v in model.module.agg.named_parameters()}
+    #old_network_pred_weights = {k: v.clone() for k, v in model.module.network_pred.named_parameters()}
 
     
     optimizer = optim.Adam(params, lr=args.lr, weight_decay=args.wd)
@@ -173,6 +173,8 @@ def main():
     
     detailed_loss_dict = {}
     loss_foreach_bigdict = {}
+    dot_foreach_dict = {}
+    target_foreach_dict = {}
     
     ### main loop ###
     for epoch in range(args.start_epoch, args.epochs):
@@ -180,19 +182,23 @@ def main():
             train_loader.mode = 'surp'
             print('mode: '+train_loader.mode)
     
-        train_loss, train_acc, train_accuracy_list, detailed_loss, loss_foreach_dict = train(train_loader, model, optimizer, epoch)
-        val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch)
-                
+        train_loss, train_acc, train_accuracy_list, detailed_loss, loss_foreach_dict, dot_foreach, target_foreach = train(train_loader, model, optimizer, epoch)
+        #val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch)
+        val_acc = 0
         loss_dict['Training'][epoch] = train_loss
-        loss_dict['Validation'][epoch] = val_loss
+        #loss_dict['Validation'][epoch] = val_loss
         loss_foreach_bigdict[epoch] = loss_foreach_dict
+        dot_foreach_dict[epoch] = dot_foreach        
+        target_foreach_dict[epoch] = target_foreach
         detailed_loss_dict[epoch] = detailed_loss 
         
         # Save to yaml
-        print(os.getenv('SLURM_TMPDIR') + '/loss.yaml',flush=True)
+        #print(os.getenv('SLURM_TMPDIR') + '/loss.yaml',flush=True)
         yaml.dump(detailed_loss_dict, open(os.getenv('SLURM_TMPDIR') + '/loss_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
         yaml.dump(train_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
         yaml.dump(loss_foreach_bigdict, open(os.getenv('SLURM_TMPDIR') + '/loss_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
+        yaml.dump(dot_foreach_dict, open(os.getenv('SLURM_TMPDIR') + '/dot_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
+        yaml.dump(target_foreach_dict, open(os.getenv('SLURM_TMPDIR') + '/target_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
 
         #print('train_loss '+str(train_loss),flush=True)
         #print('val_loss: '+str(val_loss),flush=True)
@@ -222,38 +228,38 @@ def main():
                          'iteration': iteration}, 
                          is_best, filename=os.path.join(model_path, 'epoch%s.pth.tar' % str(epoch+1)), keep_all=False)
 
-        if epoch == 4:
-            new_weights_backbone = {k: v.clone() for k, v in model.module.backbone.named_parameters()}
-            new_weights_agg = {k: v.clone() for k, v in model.module.agg.named_parameters()}
-            new_weights_network_pred = {k: v.clone() for k, v in model.module.network_pred.named_parameters()}
+        #if epoch == 4:
+            #new_weights_backbone = {k: v.clone() for k, v in model.module.backbone.named_parameters()}
+            #new_weights_agg = {k: v.clone() for k, v in model.module.agg.named_parameters()}
+            #new_weights_network_pred = {k: v.clone() for k, v in model.module.network_pred.named_parameters()}
             
-            weight_changes_backbone = {k: new_weights_backbone[k] - old_backbone_weights[k] for k in old_backbone_weights}
-            weight_changes_agg = {k: new_weights_agg[k] - old_agg_weights[k] for k in old_agg_weights}
-            weight_changes_network_pred = {k: new_weights_network_pred[k] - old_network_pred_weights[k] for k in old_network_pred_weights}
+            #weight_changes_backbone = {k: new_weights_backbone[k] - old_backbone_weights[k] for k in old_backbone_weights}
+            #weight_changes_agg = {k: new_weights_agg[k] - old_agg_weights[k] for k in old_agg_weights}
+            #weight_changes_network_pred = {k: new_weights_network_pred[k] - old_network_pred_weights[k] for k in old_network_pred_weights}
 
-            sum_changes_backbone = {k: torch.sum(new_weights_backbone[k] - old_backbone_weights[k]) for k in old_backbone_weights}
-            sum_changes_agg = {k: torch.sum(new_weights_agg[k] - old_agg_weights[k]) for k in old_agg_weights}
-            sum_changes_network_pred = {k: torch.sum(new_weights_network_pred[k] - old_network_pred_weights[k]) for k in old_network_pred_weights}
+            #sum_changes_backbone = {k: torch.sum(new_weights_backbone[k] - old_backbone_weights[k]) for k in old_backbone_weights}
+            #sum_changes_agg = {k: torch.sum(new_weights_agg[k] - old_agg_weights[k]) for k in old_agg_weights}
+            #sum_changes_network_pred = {k: torch.sum(new_weights_network_pred[k] - old_network_pred_weights[k]) for k in old_network_pred_weights}
             
-            mean_changes_backbone = {k: torch.mean(torch.abs(new_weights_backbone[k] - old_backbone_weights[k])) for k in old_backbone_weights}
-            mean_changes_agg = {k: torch.mean(torch.abs(new_weights_agg[k] - old_agg_weights[k])) for k in old_agg_weights}
-            mean_changes_network_pred = {k: torch.mean(torch.abs(new_weights_network_pred[k] - old_network_pred_weights[k])) for k in old_network_pred_weights}
+            #mean_changes_backbone = {k: torch.mean(torch.abs(new_weights_backbone[k] - old_backbone_weights[k])) for k in old_backbone_weights}
+            #mean_changes_agg = {k: torch.mean(torch.abs(new_weights_agg[k] - old_agg_weights[k])) for k in old_agg_weights}
+            #mean_changes_network_pred = {k: torch.mean(torch.abs(new_weights_network_pred[k] - old_network_pred_weights[k])) for k in old_network_pred_weights}
             #print(sum_changes_backbone+'\n',flush=True)
             #print(sum_changes_agg+'\n',flush=True)
             #print(sum_changes_network_pred+'\n',flush=True)
 
-            print('%%%%%%%%%%%%%%%%%%%%%%%%%%%')
+            #print('%%%%%%%%%%%%%%%%%%%%%%%%%%%')
             
-            backbone_means = [mean_changes_backbone[key] for key in mean_changes_backbone]
+            #backbone_means = [mean_changes_backbone[key] for key in mean_changes_backbone]
 
  
-            agg_means = [mean_changes_agg[key] for key in mean_changes_agg]
-            print(backbone_means)
-            print(agg_means)            
-            mean_backbone = torch.mean(torch.stack(backbone_means), dim=0)
-            mean_agg = torch.mean(torch.stack(agg_means), dim=0)
-            print(mean_backbone)
-            print(mean_agg)            
+            #agg_means = [mean_changes_agg[key] for key in mean_changes_agg]
+            #print(backbone_means)
+            #print(agg_means)            
+            #mean_backbone = torch.mean(torch.stack(backbone_means), dim=0)
+            #mean_agg = torch.mean(torch.stack(agg_means), dim=0)
+            #print(mean_backbone)
+            #print(mean_agg)            
             
 
            
@@ -277,11 +283,22 @@ def train(data_loader, model, optimizer, epoch):
 
     detailed_loss = []
     loss_foreach_dict = {}
+    dot_foreach = {}
+    target_foreach = {}
+
     for idx, input_seq in enumerate(data_loader):
         tic = time.time()
         input_seq = input_seq.to(cuda)
         B = input_seq.size(0)
+        print(input_seq.shape) #[10, 4, 3, 5, 128, 128]
+        print(B) #10
+        print('model called next')
         [score_, mask_] = model(input_seq)
+        print('score')
+        print(score_.shape)
+
+        print('mask')
+        print(mask_.shape)
         # visualize
 #        if (iteration == 0) or (iteration == args.print_freq):
 #            if B > 2: input_seq = input_seq[0:2,:]
@@ -298,7 +315,7 @@ def train(data_loader, model, optimizer, epoch):
         score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
         target_flattened = target_.view(B*NP*SQ, B2*NS*SQ)
         target_flattened = target_flattened.argmax(dim=1)
-        
+
         loss = criterion(score_flattened, target_flattened)
         top1, top3, top5 = calc_topk_accuracy(score_flattened, target_flattened, (1,3,5))
 
@@ -309,8 +326,6 @@ def train(data_loader, model, optimizer, epoch):
         losses.update(loss.item(), B)
         accuracy.update(top1.item(), B)
 
-        del score_
-
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -319,6 +334,12 @@ def train(data_loader, model, optimizer, epoch):
 
         criterion_measure = nn.CrossEntropyLoss(reduction='none')       
         loss_foreach_dict[idx] = criterion_measure(score_flattened, target_flattened).view(B,SQ).mean(axis=1)
+        
+        dot_foreach[idx] = score_
+        target_foreach[idx] = target_
+        
+        del score_
+
         
         if idx % args.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
@@ -339,7 +360,7 @@ def train(data_loader, model, optimizer, epoch):
 
             iteration += 1
 
-    return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list], detailed_loss, loss_foreach_dict
+    return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list], detailed_loss, loss_foreach_dict, dot_foreach, target_foreach
 
 
 def validate(data_loader, model, epoch):
@@ -362,6 +383,7 @@ def validate(data_loader, model, epoch):
             target_flattened = target_.view(B*NP*SQ, B2*NS*SQ)
             target_flattened = target_flattened.argmax(dim=1)
 
+            
             loss = criterion(score_flattened, target_flattened)
             top1, top3, top5 = calc_topk_accuracy(score_flattened, target_flattened, (1,3,5))
 
