@@ -160,7 +160,8 @@ class GaborSequenceGenerator(object):
         G = G.unsqueeze(2)
         # Repeat across frame and channel dimensions (B x N x C x F x W x H)
         G = G.repeat(1, 1, 3, self.NUM_FRAMES, 1, 1)
-            
+        print('G')
+        print(G.shape)
         return G
     
     #def generate_batch():
