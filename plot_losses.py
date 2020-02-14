@@ -10,6 +10,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 
+
+def tsplot(ax,x,mean,std,**kwargs):
+    cis = (mean - std, mean + std)
+    ax.fill_between(x,cis[0],cis[1],alpha=0.2,**kwargs)
+    ax.plot(x,mean,lw=2,**kwargs)
+    #ax.margins(x=0)
+
 def get_losses(seq,loss,epoch_size):
     losses = {'A':{'val':[],'timestep':[]},
               'B':{'val':[],'timestep':[]},
@@ -26,15 +33,18 @@ def get_losses(seq,loss,epoch_size):
                 epoch+=1
     return losses
 
-def get_simple_loss_array(seq,loss,epoch_size):
+def get_simple_loss_array(seq,loss,epoch_size,batch_size):
     losses = np.zeros(len(seq))
-    print(loss)
+    #print(loss)
     epoch=0
-    for i in np.arange(len(seq)):
-        losses[i]=loss[epoch][i%epoch_size]
+    #print(len(seq))
 
-        if (i!=0) & (i%epoch_size==0):
+    for i in np.arange(len(seq)):
+        j = int(i/batch_size)
+        losses[i] = loss[epoch][j%epoch_size]
+        if (j!=0) & (i%(epoch_size*batch_size)==0):
                 epoch+=1
+
     return losses, np.arange(len(seq))
 
 
@@ -138,12 +148,14 @@ def plot_noblanks(losses,seq, save_path, name,Ecount=None):
 
 
 def plot_average_loss(losses,save_path, name):
-    print(losses)
+    #print(losses)
     losses = np.array(losses)
-    print(np.shape(losses))
-    print(len(losses))
+    #print(np.shape(losses))
+    #print(np.shape(np.mean(losses,0)))
+    #print(len(losses))
     plt.figure(figsize=(3,3))
-    plt.plot(np.arange(len(losses)),np.mean(losses), color = 'k')
+    ax=plt.subplot(111)
+    tsplot(ax,np.arange(np.shape(losses)[1]),np.mean(losses,0),np.std(losses,0), color = 'k')
     plt.ylabel('loss')
     plt.xlabel('frame number')
     plt.tight_layout()
@@ -361,12 +373,6 @@ def get_dotproduct(dot_foreach,seq,loss,epoch_size,batch_size, surp_epoch, plot,
     return dot
 
 
-def tsplot(ax,x,mean,std,**kwargs):
-    cis = (mean - std, mean + std)
-    ax.fill_between(x,cis[0],cis[1],alpha=0.2,**kwargs)
-    ax.plot(x,mean,lw=2,**kwargs)
-    #ax.margins(x=0)
-
 def plot_average(dot_list,epoch_size,num_epochs,name):
     
     all_E_matches = np.zeros((len(dot_list),epoch_size*num_epochs))
@@ -453,7 +459,7 @@ def plot_average(dot_list,epoch_size,num_epochs,name):
     plt.figure(figsize=(3,3))
     ax = plt.subplot(111)
     for i in range(np.shape(all_D_matches)[0]):
-        plt.plot(all_D_matches[i,:],color='badgerblue')
+        plt.plot(all_D_matches[i,:],color='dodgerblue')
         plt.plot(all_E_matches[i,:],color='red')
     plt.xlabel('batch of batch number')    
     plt.ylabel('<z_hat_i,z_i> over %d batches'%interval)    
@@ -482,7 +488,7 @@ def plot_average(dot_list,epoch_size,num_epochs,name):
     
     plt.figure(figsize=(3,3))
     ax = plt.subplot(111)
-    tsplot(ax,all_batches[0,:][mean_D_matches!=0],mean_D_matches[mean_D_matches!=0],std_D_matches[mean_D_matches!=0],color='badgerblue')
+    tsplot(ax,all_batches[0,:][mean_D_matches!=0],mean_D_matches[mean_D_matches!=0],std_D_matches[mean_D_matches!=0],color='dodgerblue')
     tsplot(ax,all_batches[0,:][mean_E_matches!=0],mean_E_matches[mean_E_matches!=0],std_E_matches[mean_E_matches!=0],color='red')
     plt.xlabel('batch of batch number')    
     plt.ylabel('<z_hat_i,z_i> over %d batches'%interval)    
@@ -492,8 +498,9 @@ def plot_average(dot_list,epoch_size,num_epochs,name):
     plt.savefig('%s%s%s.pdf'%(save_path,'average_E_versus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 
     plt.figure(figsize=(3,3))
-    plt.plot(all_batches[0,:],mean_nonsmooth_D_matches,'badgerblue',markersize=7)
-    plt.plot(all_batches[0,:],mean_nonsmooth_E_matches,'red',markersize=7)
+    plt.plot(all_batches[0,:],mean_nonsmooth_D_matches,color='dodgerblue',markersize=7)
+    
+    plt.plot(all_batches[0,:],mean_nonsmooth_E_matches,color='red',markersize=7)
     plt.xlabel('batch of batch number')    
     plt.ylabel('<z_hat_i,z_i>')    
     plt.legend(['D','E'])
@@ -602,26 +609,26 @@ plot_noblanks(loss_dict,seq,save_path,name+'%d%d'%(SE,SEED))
 #print('here')
 dot_list = []
 loss_list = []
-for SEED in range(2):
+for SEED in range(31):
     with open(r'%sseq_%d_%d.yaml'%(save_path,SE,SEED)) as file:
         seq = yaml.load(file, Loader=yaml.Loader)
 
     with open(r'%sloss_%d_%d.yaml'%(save_path,SE,SEED)) as file:
         loss = yaml.load(file, Loader=yaml.Loader)
-    loss_array = get_simple_loss_array(seq,loss,epoch_size)
+    loss_array, len_seq = get_simple_loss_array(seq,loss,epoch_size,batch_size)
     loss_list.append(loss_array)
 
 
     #with open(r'%sseq_%d_%d.yaml'%(save_path,SE,SEED)) as file:
     #    seq = yaml.load(file, Loader=yaml.Loader)
-    #with open(r'%sdot_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
-    #    dot_foreach = yaml.load(file, Loader=yaml.Loader)
-    #print('loaded dotforeach')
-    #with open(r'%sloss_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
-    #    loss_foreach = yaml.load(file, Loader=yaml.Loader)
-    #print('loaded lossforeach')
-    #dot_list.append(get_dotproduct(dot_foreach,seq,loss_foreach,epoch_size,batch_size, surp_epoch, False, name+'%d%d'%(SE,SEED)))
-    #print('appended')
-#plot_average(dot_list,epoch_size,num_epochs,name)
+    with open(r'%sdot_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
+        dot_foreach = yaml.load(file, Loader=yaml.Loader)
+    print('loaded dotforeach')
+    with open(r'%sloss_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
+        loss_foreach = yaml.load(file, Loader=yaml.Loader)
+    print('loaded lossforeach')
+    dot_list.append(get_dotproduct(dot_foreach,seq,loss_foreach,epoch_size,batch_size, surp_epoch, False, name+'%d%d'%(SE,SEED)))
+    print('appended')
+plot_average(dot_list,epoch_size,num_epochs,name)
 plot_average_loss(loss_list,save_path,name+'%d%d'%(SE,SEED))
 
