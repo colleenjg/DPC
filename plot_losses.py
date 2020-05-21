@@ -142,7 +142,7 @@ def plot_noblanks(losses,seq, save_path, name,Ecount=None):
                 plt.plot(losses[key]['timestep'],losses[key]['val'], '.',markersize=2,label=key,color='k')
     plt.legend(losses.keys())
     plt.ylabel('loss')
-    plt.xlabel('frame number')
+    plt.xlabel('batch number')
     plt.tight_layout()
     plt.savefig('%s%s%s.pdf'%(save_path,'scatter_big',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 
@@ -150,20 +150,23 @@ def plot_noblanks(losses,seq, save_path, name,Ecount=None):
 def plot_average_loss(losses,save_path, name):
     #print(losses)
     losses = np.array(losses)
-    #print(np.shape(losses))
-    #print(np.shape(np.mean(losses,0)))
+    print(np.shape(losses))
+    print(np.shape(np.mean(losses,0)))
     #print(len(losses))
     plt.figure(figsize=(3,3))
-    ax=plt.subplot(111)
-    tsplot(ax,np.arange(np.shape(losses)[1]),np.mean(losses,0),np.std(losses,0), color = 'k')
+    ax13=plt.subplot(111)
+    tsplot(ax13,np.arange(np.shape(losses)[1]),np.mean(losses,0),np.std(losses,0), color = 'k')
     plt.ylabel('loss')
-    plt.xlabel('frame number')
+    plt.xticks(np.arange(0,np.shape(losses)[1],2000),np.arange(0,int(np.shape(losses)[1]/10),200))
+    plt.xlabel('batch number')
     plt.tight_layout()
     plt.savefig('%s%s%s.pdf'%(save_path,'lossovertime',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
+    print('average loss')
+    print(np.mean(losses,0))
 
 
 def plot_EversusDloss(losses,seq,save_path, name):
-    print(losses)
+    #print(losses)
     plt.figure(figsize=(3,3))
     for key in losses:
         if key == 'E':
@@ -337,7 +340,7 @@ def get_dotproduct(dot_foreach,seq,loss,epoch_size,batch_size, surp_epoch, plot,
         plt.figure(figsize=(3,3))
         plt.plot(batches[smooth_D_matches!=0],smooth_D_matches[smooth_D_matches!=0],'k',markersize=7)
         plt.plot(batches[smooth_E_matches!=0],smooth_E_matches[smooth_E_matches!=0],'r',markersize=7)
-        plt.xlabel('batch of batch number')    
+        plt.xlabel('batch number')    
         plt.ylabel('<z_hat_i,z_i> over %d batches'%interval)    
         plt.legend(['D','E'])
         plt.xlim(100,200)
@@ -347,7 +350,7 @@ def get_dotproduct(dot_foreach,seq,loss,epoch_size,batch_size, surp_epoch, plot,
         plt.figure(figsize=(3,3))
         plt.plot(batches[smooth_D_negatives!=0],smooth_D_negatives[smooth_D_negatives!=0],'k',markersize=7)
         plt.plot(batches[smooth_E_negatives!=0],smooth_E_negatives[smooth_E_negatives!=0],'r',markersize=7)
-        plt.xlabel('batch of batch number')    
+        plt.xlabel('batch number')    
         plt.ylabel('<z_hat_i,z_j> i!=j over %d batches'%interval)    
         plt.legend(['D','E'])
         plt.xlim(100,200)
@@ -396,50 +399,61 @@ def plot_average(dot_list,epoch_size,num_epochs,name):
 
         Neg_Diff = np.zeros((np.max(E_match['batch'])+1))
         batches = np.zeros((np.max(E_match['batch'])+1))
+        Ebatches = np.zeros((np.max(E_match['batch'])+1))
+        Dbatches = np.zeros((np.max(E_match['batch'])+1))
+        Sbatches = np.zeros((np.max(E_match['batch'])+1))
         for batch in np.unique(E_match['batch']):
             batches[batch] = batch
             Dbatchidx = np.nonzero((batch==D_match['batch']))
             Ebatchidx = np.nonzero((batch==E_match['batch']))
             if len(Dbatchidx[0])>0:
+                Dbatches[batch] = batch
                 Dbatchmin = np.min(Dbatchidx)
                 Dbatchmax = np.max(Dbatchidx)
-                nonsmooth_D_matches[batch] = np.mean(D_match['match'][Dbatchmin:Dbatchmax])
+                nonsmooth_D_matches[batch] = np.mean(D_match['match'][Dbatchmin:Dbatchmax+1])
             if len(Ebatchidx[0])>0:
+                Ebatches[batch] = batch
                 Ebatchmin = np.min(Ebatchidx)
                 Ebatchmax = np.max(Ebatchidx)
-                nonsmooth_E_matches[batch] = np.nanmean(E_match['match'][Ebatchmin:Ebatchmax])
+                nonsmooth_E_matches[batch] = np.nanmean(E_match['match'][Ebatchmin:Ebatchmax+1])
                 #print(E_match['match'][Ebatchmin:Ebatchmax])
                 #print(nonsmooth_E_matches)
                 Eidxs = np.nonzero((batch<=E_match['batch'])&(E_match['batch']<batch+interval))
                 Didxs = np.nonzero((batch<=D_match['batch'])&(D_match['batch']<batch+interval))
             if len(Eidxs[0]>0):
-                Dminidx = np.min(Didxs)
-                Dmaxidx = np.max(Didxs)
-                smooth_D_matches[batch] = np.mean(D_match['match'][Dminidx:Dmaxidx])
-                smooth_D_negatives[batch] = np.mean(D_match['negatives'][Dminidx:Dmaxidx])
-                #print(Eidxs)
-                Eminidx = np.min(Eidxs)
-                Emaxidx = np.max(Eidxs)        
-                smooth_E_matches[batch] = np.mean(E_match['match'][Eminidx:Emaxidx])            
-                smooth_E_negatives[batch] = np.mean(E_match['negatives'][Eminidx:Emaxidx])            
-                Diff[batch]= np.mean(E_match['match'][Eminidx:Emaxidx]) - np.mean(D_match['match'][Dminidx:Dmaxidx])
-                Neg_Diff[batch]= np.mean(E_match['negatives'][Eminidx:Emaxidx]) - np.mean(D_match['negatives'][Dminidx:Dmaxidx])
-    
+                #print('Didxs')
+                #print(Didxs)
+                if len(Didxs[0]>0):
+                    
+                    Sbatches[batch] = batch
+                    #print('if fulfilled')
+                    Dminidx = np.min(Didxs)
+                    Dmaxidx = np.max(Didxs)
+                    smooth_D_matches[batch] = np.mean(D_match['match'][Dminidx:Dmaxidx+1])
+                    smooth_D_negatives[batch] = np.mean(D_match['negatives'][Dminidx:Dmaxidx+1])
+                    #print(Eidxs)
+                    Eminidx = np.min(Eidxs)
+                    Emaxidx = np.max(Eidxs)        
+                    smooth_E_matches[batch] = np.mean(E_match['match'][Eminidx:Emaxidx+1])            
+                    smooth_E_negatives[batch] = np.mean(E_match['negatives'][Eminidx:Emaxidx+1])            
+                    Diff[batch]= np.mean(E_match['match'][Eminidx:Emaxidx+1]) - np.mean(D_match['match'][Dminidx:Dmaxidx+1])
+                    Neg_Diff[batch]= np.mean(E_match['negatives'][Eminidx:Emaxidx+1]) - np.mean(D_match['negatives'][Dminidx:Dmaxidx+1])
+
         all_E_matches[i,:len(smooth_E_matches[smooth_E_matches!=0])] = smooth_E_matches[smooth_E_matches!=0]
-        print(all_E_matches)
+        #print(all_E_matches)
         all_D_matches[i,:len(smooth_D_matches[smooth_D_matches!=0])] = smooth_D_matches[smooth_D_matches!=0]
-        all_batches[i,:len(smooth_E_matches[smooth_E_matches!=0])] = batches[smooth_E_matches!=0]
+        all_batches[i,:len(smooth_E_matches[smooth_E_matches!=0])] = Sbatches[smooth_E_matches!=0]
         all_nonsmooth_E_matches[i,:len(nonsmooth_E_matches[nonsmooth_E_matches!=0])] = nonsmooth_E_matches[nonsmooth_E_matches!=0]
         all_nonsmooth_D_matches[i,:len(nonsmooth_D_matches[nonsmooth_E_matches!=0])] = nonsmooth_D_matches[nonsmooth_E_matches!=0]
         
 
-    print(np.unique(E_match['batch']))
-    print('%%%%%%%%%%%%%5')
-    print(np.shape(all_E_matches))
-    print(all_E_matches)
-    print(all_D_matches)
-    print(all_batches[0,:])
-    print(np.shape(all_batches[0,:]))
+    #print(np.unique(E_match['batch']))
+    #print('%%%%%%%%%%%%%5')
+    #print(np.shape(all_E_matches))
+    #print(all_E_matches)
+    #print(all_D_matches)
+    #print(all_batches[0,:])
+    #print(np.shape(all_batches[0,:]))
     mean_E_matches = np.nanmean(all_E_matches,0)
     mean_D_matches = np.nanmean(all_D_matches,0)
     mean_nonsmooth_E_matches = np.nanmean(all_nonsmooth_E_matches,0)
@@ -453,91 +467,103 @@ def plot_average(dot_list,epoch_size,num_epochs,name):
     diff = all_E_matches[:,mean_E_matches!=0]-all_D_matches[:,mean_E_matches!=0]
     mean_diff = np.nanmean(diff,0)
     std_diff = np.nanstd(diff,0)
-    print(mean_diff)
+    #print(mean_diff)
     mean_diff1 = np.nanmean(diff1,0)
     std_diff1 = np.nanstd(diff1,0)
     plt.figure(figsize=(3,3))
-    ax = plt.subplot(111)
-    for i in range(np.shape(all_D_matches)[0]):
-        plt.plot(all_D_matches[i,:],color='dodgerblue')
-        plt.plot(all_E_matches[i,:],color='red')
-    plt.xlabel('batch of batch number')    
-    plt.ylabel('<z_hat_i,z_i> over %d batches'%interval)    
+    #ax11 = plt.subplot(111)
+    #for i in range(np.shape(all_D_matches)[0]):
+    #    plt.plot(all_D_matches[i,:],color='dodgerblue')
+    #    plt.plot(all_E_matches[i,:],color='red')
+    #plt.xlabel('batch of batch number')    
+    #plt.ylabel('<z_hat_i,z_i> over %d batches'%interval)    
     #plt.legend(['D','E'])
-    plt.xlim(0,100)
-    plt.tight_layout()
-    plt.savefig('%s%s%s.pdf'%(save_path,'all_E_versus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
+    #plt.xlim(0,100)
+    #plt.tight_layout()
+    #plt.savefig('%s%s%s.pdf'%(save_path,'all_E_versus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 
     
-    print('mean matches')
+    #print('mean matches')
     #print(mean_batches)
-    print(np.shape(mean_E_matches))
-    print(np.shape(mean_D_matches))
-    print(np.shape(mean_E_matches[mean_E_matches!=0]))
-    print(np.shape(mean_D_matches[mean_D_matches!=0]))
-    print('all_batches')
+    #print(np.shape(mean_E_matches))
+    #print(np.shape(mean_D_matches))
+    #print(np.shape(mean_E_matches[mean_E_matches!=0]))
+    #print(np.shape(std_E_matches[mean_E_matches!=0]))
+    #print(np.shape(mean_D_matches[mean_D_matches!=0]))
+    #print(np.shape(std_D_matches[mean_D_matches!=0]))
+    #print('all_batches')
 
-    print(all_batches[0,:][mean_D_matches!=0])
-    print(all_batches[0,:][mean_E_matches!=0])
+    #print(np.shape(all_batches[0,:][mean_D_matches!=0]))
+    #print(all_batches[0,:][mean_D_matches!=0])
+    #print(all_batches[0,:][mean_E_matches!=0])
 
-    print(mean_E_matches)
-    print(mean_D_matches[mean_D_matches!=0])
+    #print(mean_E_matches)
+    #print(mean_D_matches[mean_D_matches!=0])
+    #print(mean_E_matches[mean_E_matches!=0])
     #print(np.shape(std_D_matches))
-    
-    
-    
+
+    D_x_values = all_batches[0,:][mean_D_matches!=0]
+    E_x_values = all_batches[0,:][mean_E_matches!=0]
+    D_mean_values = mean_D_matches[mean_D_matches!=0]
+    E_mean_values = mean_E_matches[mean_E_matches!=0]
+    D_std_values = std_D_matches[mean_D_matches!=0]
+    E_std_values = std_E_matches[mean_E_matches!=0]
+
     plt.figure(figsize=(3,3))
-    ax = plt.subplot(111)
-    tsplot(ax,all_batches[0,:][mean_D_matches!=0],mean_D_matches[mean_D_matches!=0],std_D_matches[mean_D_matches!=0],color='dodgerblue')
-    tsplot(ax,all_batches[0,:][mean_E_matches!=0],mean_E_matches[mean_E_matches!=0],std_E_matches[mean_E_matches!=0],color='red')
-    plt.xlabel('batch of batch number')    
+    ax14 = plt.subplot(111)
+    tsplot(ax14,D_x_values[D_x_values!=0],D_mean_values[D_x_values!=0],D_std_values[D_x_values!=0],color='dodgerblue')
+    tsplot(ax14,E_x_values[E_x_values!=0],E_mean_values[E_x_values!=0],E_std_values[D_x_values!=0],color='red')
+    #tsplot(ax14,all_batches[0,:][mean_E_matches!=0],mean_E_matches[mean_E_matches!=0],std_E_matches[mean_E_matches!=0],color='red')
+    plt.xlabel('batch number')    
     plt.ylabel('<z_hat_i,z_i> over %d batches'%interval)    
     plt.legend(['D','E'])
-    plt.xlim(100,200)
+    plt.xlim(np.min(E_x_values[E_x_values!=0]),200)
+    #plt.xlim(100,200)
     plt.tight_layout()
     plt.savefig('%s%s%s.pdf'%(save_path,'average_E_versus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 
-    plt.figure(figsize=(3,3))
-    plt.plot(all_batches[0,:],mean_nonsmooth_D_matches,color='dodgerblue',markersize=7)
+   # plt.figure(figsize=(3,3)
+   # plt.plot(all_batches[0,:],mean_nonsmooth_D_matches,color='dodgerblue',markersize=7)
     
-    plt.plot(all_batches[0,:],mean_nonsmooth_E_matches,color='red',markersize=7)
-    plt.xlabel('batch of batch number')    
-    plt.ylabel('<z_hat_i,z_i>')    
-    plt.legend(['D','E'])
-    plt.xlim(100,200)
-    plt.tight_layout()
-    plt.savefig('%s%s%s.pdf'%(save_path,'average_E_versus_D_nonsmooth_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
+   # plt.plot(all_batches[0,:],mean_nonsmooth_E_matches,color='red',markersize=7)
+   # plt.xlabel('batch of batch number')    
+   # plt.ylabel('<z_hat_i,z_i>')    
+   # plt.legend(['D','E'])
+   # plt.xlim(100,200)
+   # plt.tight_layout()
+   # plt.savefig('%s%s%s.pdf'%(save_path,'average_E_versus_D_nonsmooth_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 
     #print(np.shape(mean_diff))
     #print(mean_diff)
-    plt.figure(figsize=(3,3))
-    plt.plot(all_batches[0,:],mean_E_matches-mean_D_matches,'k',markersize=7)
-    plt.xlabel('batch of batch number')    
-    plt.ylabel('E minus D matches over %d batches'%interval)    
+    #plt.figure(figsize=(3,3))
+    #plt.plot(all_batches[0,:],mean_E_matches-mean_D_matches,'k',markersize=7)
+    #plt.xlabel('batch of batch number')    
+    #plt.ylabel('E minus D matches over %d batches'%interval)    
     #plt.legend(['D','E'])
-    plt.xlim(100,200)
-    plt.tight_layout()
-    plt.savefig('%s%s%s.pdf'%(save_path,'average_E_minus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
-    print(np.shape(mean_diff)[0])
+    #plt.xlim(100,200)
+    #plt.tight_layout()
+    #plt.savefig('%s%s%s.pdf'%(save_path,'average_E_minus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
+    #print(np.shape(mean_diff)[0])
     
     plt.figure(figsize=(3,3))
     ax3 = plt.subplot(111)
-    tsplot(ax3,all_batches[0,mean_E_matches!=0],mean_diff,std_diff,color='k')
-    plt.xlabel('batch of batch number')    
+    tsplot(ax3,E_x_values[E_x_values!=0],mean_diff[E_x_values!=0],std_diff[E_x_values!=0],color='k')
+    plt.xlabel('batch number')    
     plt.ylabel('E minus D matches over %d batches'%interval)    
     #plt.legend(['D','E'])
-    plt.xlim(100,200)
+    plt.xlim(np.min(E_x_values[E_x_values!=0]),200)
     plt.tight_layout()
     plt.savefig('%s%s%s.pdf'%(save_path,'average_diff_E_minus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 
-    plt.figure(figsize=(3,3))
-    tsplot(ax,all_batches[0,:],mean_diff1,std_diff1,color='k')
-    plt.xlabel('batch of batch number')    
-    plt.ylabel('E minus D matches over %d batches'%interval)    
+    #plt.figure(figsize=(3,3))
+    #ax12 = plt.subplot(111)
+    #tsplot(ax12,all_batches[0,:],mean_diff1,std_diff1,color='k')
+    #plt.xlabel('batch of batch number')    
+    #plt.ylabel('E minus D matches over %d batches'%interval)    
     #plt.legend(['D','E'])
     #plt.xlim(0,100)
-    plt.tight_layout()
-    plt.savefig('%s%s%s.pdf'%(save_path,'average_diff1_E_minus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
+    #plt.tight_layout()
+    #plt.savefig('%s%s%s.pdf'%(save_path,'average_diff1_E_minus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 
 
 
@@ -554,20 +580,23 @@ def plot_average(dot_list,epoch_size,num_epochs,name):
 #    plt.savefig('%s%s%s.pdf'%(save_path,'E_minus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 #       
 #                 
-
+import sys
 name = 'pretrained_noblanks_noroll'
 name = 'pretrained_noblanks'
 #name = 'pretrained_noblanks_numseq2'
 #name = 'pretrained_noblanks_numseq4_Elast'
 #name = 'pretrained_noblanks_numseq4_Elast_earlysurprise'
 name = 'pretrained_noblanks_numseq4_Elast'
-name = 'pretrained_noblanks_numseq4_Elast_bothED_batch10'
+name = 'Spretrained_noblanks_numseq4_Elast_bothED_batch10'
 
 #name = 'pretrained_noblanks_noroll_numseq4_Elast'
 print('start')
 save_path = '/network/tmp1/wilmeska/'+name+'/'
 SE=5
 SEED=5
+
+np.set_printoptions(threshold=sys.maxsize)
+
 
 with open(r'%sloss_%d_%d.yaml'%(save_path,SE,SEED)) as file:
     loss = yaml.load(file, Loader=yaml.Loader)
@@ -609,7 +638,7 @@ plot_noblanks(loss_dict,seq,save_path,name+'%d%d'%(SE,SEED))
 #print('here')
 dot_list = []
 loss_list = []
-for SEED in range(31):
+for SEED in np.arange(2,31):
     with open(r'%sseq_%d_%d.yaml'%(save_path,SE,SEED)) as file:
         seq = yaml.load(file, Loader=yaml.Loader)
 
@@ -618,15 +647,15 @@ for SEED in range(31):
     loss_array, len_seq = get_simple_loss_array(seq,loss,epoch_size,batch_size)
     loss_list.append(loss_array)
 
-
+    #print(np.shape(loss_array))
     #with open(r'%sseq_%d_%d.yaml'%(save_path,SE,SEED)) as file:
     #    seq = yaml.load(file, Loader=yaml.Loader)
     with open(r'%sdot_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
         dot_foreach = yaml.load(file, Loader=yaml.Loader)
-    print('loaded dotforeach')
+    #print('loaded dotforeach')
     with open(r'%sloss_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
         loss_foreach = yaml.load(file, Loader=yaml.Loader)
-    print('loaded lossforeach')
+    #print('loaded lossforeach')
     dot_list.append(get_dotproduct(dot_foreach,seq,loss_foreach,epoch_size,batch_size, surp_epoch, False, name+'%d%d'%(SE,SEED)))
     print('appended')
 plot_average(dot_list,epoch_size,num_epochs,name)
