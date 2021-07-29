@@ -448,12 +448,12 @@ def get_data(transform, mode='train'):
 def set_path(args):
     if args.resume: exp_path = os.path.dirname(os.path.dirname(args.resume))
     else:
-        exp_path = os.getenv('SLURM_TMPDIR')+'log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
+        exp_path = os.getenv('SLURM_TMPDIR')+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
 bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
 train-{args.train_what}{2}'.format(
                     'r%s' % args.net[6::], \
                     args.old_lr if args.old_lr is not None else args.lr, \
-                    '_pt=%s' % args.pretrain.replace('/','-') if args.pretrain else '', \
+                    '_pt%s' % args.pretrain.replace('/','-').replace('.pth.tar', '') if args.pretrain else '', \
                     args=args)
     img_path = os.path.join(exp_path, 'img')
     model_path = os.path.join(exp_path, 'model')

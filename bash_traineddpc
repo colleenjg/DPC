@@ -1,42 +1,101 @@
 #!/bin/bash
-#SBATCH --qos=high                      # Ask for unkillable job
-#SBATCH --cpus-per-task=1                     # Ask for 1 CPUs
-#SBATCH --gres=gpu:2                          # Ask for 1 GPU
-#SBATCH --mem=10G                             # Ask for 10 GB of RAM
-#SBATCH --time=1:00:00                        # The job will run for 3 hours
-#SBATCH -o /network/tmp1/wilmeska/slurm-%j.out  # Write the log on tmp1
+#SBATCH --partition=main
+#SBATCH --cpus-per-task=1
+#SBATCH --gres=gpu:1
+#SBATCH --mem=10G
+#SBATCH --array=0-4
+#SBATCH --time=4:00:00
+#SBATCH --output=/miniscratch/gillonco/traineddpc_%A_%a.txt
 
+# if $TEST is 1, runs 4 min
+
+# 1. Set directory in which to save results (also update output directory above)
+SAVE_DIR=/miniscratch/gillonco
+
+if [[ ! -d $SAVE_DIR ]]; then
+    echo -e "Save directory '$SAVE_DIR' does not exist. Please set SAVE_DIR to the path of an existing directory."
+    exit 1
+fi
+
+
+# 2. Load modules
 module purge
 module load anaconda/3
-source $CONDA_ACTIVATE
+module load cuda/10.2/cudnn/7.6
 
-# 1. Load your environment
-conda activate $HOME/cn-dpc/condaenv-dpc/
+conda activate ssl
 
-# 2. Copy your dataset on the compute node
-#cp $HOME/DenseCPC/UCF101.zip $SLURM_TMPDIR
-#unzip -q $SLURM_TMPDIR/UCF101.zip -d $SLURM_TMPDIR
-#cd ./process_data/src
-#python write_csv.py
 
-# 2. Copy pre-trained model to SLURM_TMPDIR
-cp /network/home/wilmeska/DenseCPC/k400_128_r18_dpc-rnn.pth.tar $SLURM_TMPDIR/
-# 3. Launch your job, tell it to save the model in $SLURM_TMPDIR
-#    and look for the dataset into $SLURM_TMPDIR
-#cd ../../eval
-echo 'copied pretrained net'
+# 2. Copy pre-trained model weights (downloaded from DPC repo) from source directory (SAVE_DIR) to SLURM_TMPDIR 
+cp $SAVE_DIR/pretrained/k400_128_r18_dpc-rnn.pth.tar $SLURM_TMPDIR/
 
-SEED=2
+echo 'Copied pre-trained model to slurm temporary directory.'
+
+
+# 3. Set fixed hyperparameters
 SE=5
+N_SEQ=4
 PE=0.1
-EPOS='D'
 
-cd ./dpc
-python test_gabors.py --gpu 0,1 --net resnet18 --dataset gabors --batch_size 10 --num_seq 4 --seq_len 5 --img_dim 128 --pretrain {$SLURM_TMPDIR/k400_128_r18_dpc-rnn.pth.tar} --train_what ft --epochs 25 --surprise_epoch $SE --pred_step 1 --print_freq 1 --roll 'True' --seed $SEED --p_E $PE
+LOCAL_DIR=$SAVE_DIR/test_gabors/pretrained_noblanks_numseq$N_SEQ\_Elast_bothED_batch10
 
-# 4. Copy whatever you want to save on $SCRATCH
 
-cp $SLURM_TMPDIR/loss_$SE\_$SEED.yaml /network/tmp1/wilmeska/pretrained_noblanks_numseq4_Elast_bothED_batch10/
-cp $SLURM_TMPDIR/seq_$SE\_$SEED.yaml /network/tmp1/wilmeska/pretrained_noblanks_numseq4_Elast_bothED_batch10/
-cp $SLURM_TMPDIR/loss_foreach_$SE\_$SEED.yaml /network/tmp1/wilmeska/pretrained_noblanks_numseq4_Elast_bothED_batch10/
+# 4. Identify seeds to run through
+if [ $SLURM_ARRAY_TASK_ID == 0 ]; then
+    SEEDS=($( seq 2 1 6 ))
+elif [ $SLURM_ARRAY_TASK_ID == 1 ]; then
+    SEEDS=($( seq 7 1 12 ))
+elif [ $SLURM_ARRAY_TASK_ID == 2 ]; then
+    SEEDS=($( seq 13 1 18 ))
+elif [ $SLURM_ARRAY_TASK_ID == 3 ]; then
+    SEEDS=($( seq 19 1 24 ))
+elif [ $SLURM_ARRAY_TASK_ID == 4 ]; then
+    SEEDS=($( seq 25 1 30 ))
+fi
 
+
+# 5. Run through a few seeds
+EXIT=0
+CODE_DIR=$PWD # current directory
+
+for SEED in "${SEEDS[@]}"
+do
+    # Results are saved in $SLURM_TMPDIR
+    cd $CODE_DIR/dpc
+    python test_gabors.py \
+        --pretrain $SLURM_TMPDIR/k400_128_r18_dpc-rnn.pth.tar \
+        --gpu 0 \
+        --net resnet18 \
+        --dataset gabors \
+        --batch_size 10 \
+        --img_dim 128 \
+        --train_what ft \
+        --epochs 25 \
+        --surprise_epoch 5 \
+        --pred_step 1 \
+        --print_freq 1 \
+        --roll 'True' \
+        --seq_len $SE \
+        --num_seq $N_SEQ \
+        --p_E $PE \
+        --seed $SEED \
+    
+    code="$?"
+    if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
+
+
+    # Copy results to SAVE_DIR
+    cd $SLURM_TMPDIR
+    find . -type f -name "*.yaml" | cpio -pdm $LOCAL_DIR
+    cp -r log* $LOCAL_DIR
+
+    code="$?"
+    if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
+
+    if [[ $TEST == 1 ]]; then # only run 1 iteration
+        break
+    fi
+
+done
+
+if [ "$EXIT" -ne 0 ]; then exit "$EXIT"; fi # exit with highest exit code

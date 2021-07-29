@@ -117,7 +117,7 @@ class GaborSequenceGenerator(object):
                     seq = ['A', 'B', 'C']
                     seq += ['D'] if np.random.rand() <= (1-self.p_E) else ['E']
             self.prev_seq.append(seq)
-                
+
         # Re-centre coordinates by patch locations ([W x H x P x N] + [P x N] broadcast) and add singleton batch dimension (W x H x P x N x B)
         X       = (X - xpos)
         Y       = (Y - ypos)

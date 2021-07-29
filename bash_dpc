@@ -1,31 +1,70 @@
 #!/bin/bash
-#SBATCH --qos=high                      # Ask for unkillable job
-#SBATCH --cpus-per-task=1                     # Ask for 1 CPUs
-#SBATCH --gres=gpu:2                          # Ask for 1 GPU
-#SBATCH --mem=10G                             # Ask for 10 GB of RAM
-#SBATCH --time=1:00:00                        # The job will run for 3 hours
-#SBATCH -o /network/tmp1/wilmeska/slurm-%j.out  # Write the log on tmp1
+#SBATCH --partition=main
+#SBATCH --cpus-per-task=1
+#SBATCH --gres=gpu:1
+#SBATCH --mem=10G
+#SBATCH --time=1:00:00
+#SBATCH --output=/miniscratch/gillonco/dpc_%j.txt
 
+
+# 1. Set directory in which to save results (also update output directory above)
+SAVE_DIR=/miniscratch/gillonco
+
+if [[ ! -d $SAVE_DIR ]]; then
+    echo -e "Save directory '$SAVE_DIR' does not exist. Please set SAVE_DIR to the path of an existing directory."
+    exit 1
+fi
+
+
+# 2. Load modules
 module purge
 module load anaconda/3
-source $CONDA_ACTIVATE
+module load cuda/10.2/cudnn/7.6
 
-# 1. Load your environment
-conda activate $HOME/cn-dpc/condaenv-dpc/
+conda activate ssl
 
-# 2. Copy your dataset on the compute node
-#cp $HOME/DenseCPC/UCF101.zip $SLURM_TMPDIR
-#unzip -q $SLURM_TMPDIR/UCF101.zip -d $SLURM_TMPDIR
-#cd ./process_data/src
-#python write_csv.py
 
-# 3. Launch your job, tell it to save the model in $SLURM_TMPDIR
-#    and look for the dataset into $SLURM_TMPDIR
-cd ./dpc
-python test_gabors.py --gpu 0,1 --net resnet18 --dataset gabors --batch_size 10 --num_seq 5 --seq_len 5 --img_dim 128 --train_what ft --epochs 1 --surprise_epoch 50 --pred_step 1 --print_freq 1
+# 3. Set fixed hyperparameters
+SE=5
+N_SEQ=4
+PE=0.1
+SEED=2
 
-# 4. Copy whatever you want to save on $SCRATCH
-cp $SLURM_TMPDIR/loss.yaml /network/tmp1/wilmeska/
-cp $SLURM_TMPDIR/seq.yaml /network/tmp1/wilmeska/
 
+# 4. Results are saved in $SLURM_TMPDIR
+EXIT=0
+
+cd dpc
+python test_gabors.py \
+    --gpu 0 \
+    --net resnet18 \
+    --dataset gabors \
+    --batch_size 10 \
+    --img_dim 128 \
+    --train_what ft \
+    --epochs 25 \
+    --surprise_epoch 5 \
+    --pred_step 1 \
+    --print_freq 1 \
+    --roll 'True' \
+    --seq_len $SE \
+    --num_seq $N_SEQ \
+    --p_E $PE \
+    --seed $SEED \
+
+code="$?"
+if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
+
+
+# 5. Copy results and model to SAVE_DIR
+cd $SLURM_TMPDIR
+LOCAL_DIR=$SAVE_DIR/test_gabors/not-pretrained
+mkdir -p $LOCAL_DIR
+find . -type f -name "*.yaml" | cpio -pdm $LOCAL_DIR
+cp -r log* $LOCAL_DIR
+
+code="$?"
+if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
+
+if [ "$EXIT" -ne 0 ]; then exit "$EXIT"; fi # exit with highest exit code
 

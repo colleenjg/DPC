@@ -10,7 +10,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 
-
 def tsplot(ax,x,mean,std,**kwargs):
     cis = (mean - std, mean + std)
     ax.fill_between(x,cis[0],cis[1],alpha=0.2,**kwargs)
@@ -232,7 +231,7 @@ def plot_E_asfctof_loss(losses,seq,save_path,name):
     plt.tight_layout()
     plt.savefig('%s%s%s.pdf'%(save_path,'E_asfctof_loss_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 
-def plot_E_asfctof_loss2(losses,loss,seq,epoch_size,save_path,name):
+def plot_E_asfctof_loss2(losses,loss,seq,epoch_size,batch_size,save_path,name):
     lossi = []
     E_times = losses['E']['timestep']
     for E_time in E_times:
@@ -247,7 +246,7 @@ def plot_E_asfctof_loss2(losses,loss,seq,epoch_size,save_path,name):
     plt.tight_layout()
     plt.savefig('%s%s%s.pdf'%(save_path,'E_asfctof_loss_',name))
     
-def get_dotproduct(dot_foreach,seq,loss,epoch_size,batch_size, surp_epoch, plot, name):
+def get_dotproduct(dot_foreach,seq,loss,epoch_size,batch_size, surp_epoch, plot, name, save_path):
    
     # dot_foreach is a dictionary which for each subepoch contains a matrix 
     # [batch_size,1,16,batch_size,1,16] array of all the z_hat z dot products
@@ -376,7 +375,7 @@ def get_dotproduct(dot_foreach,seq,loss,epoch_size,batch_size, surp_epoch, plot,
     return dot
 
 
-def plot_average(dot_list,epoch_size,num_epochs,name):
+def plot_average(dot_list,epoch_size,num_epochs,name,save_path):
     
     all_E_matches = np.zeros((len(dot_list),epoch_size*num_epochs))
     all_D_matches = np.zeros((len(dot_list),epoch_size*num_epochs))
@@ -580,84 +579,94 @@ def plot_average(dot_list,epoch_size,num_epochs,name):
 #    plt.savefig('%s%s%s.pdf'%(save_path,'E_minus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 #       
 #                 
-import sys
-name = 'pretrained_noblanks_noroll'
-name = 'pretrained_noblanks'
-#name = 'pretrained_noblanks_numseq2'
-#name = 'pretrained_noblanks_numseq4_Elast'
-#name = 'pretrained_noblanks_numseq4_Elast_earlysurprise'
-name = 'pretrained_noblanks_numseq4_Elast'
-name = 'Spretrained_noblanks_numseq4_Elast_bothED_batch10'
 
-#name = 'pretrained_noblanks_noroll_numseq4_Elast'
-print('start')
-save_path = '/network/tmp1/wilmeska/'+name+'/'
-SE=5
-SEED=5
-
-np.set_printoptions(threshold=sys.maxsize)
-
-
-with open(r'%sloss_%d_%d.yaml'%(save_path,SE,SEED)) as file:
-    loss = yaml.load(file, Loader=yaml.Loader)
-#
-with open(r'%sseq_%d_%d.yaml'%(save_path,SE,SEED)) as file:
-    seq = yaml.load(file, Loader=yaml.Loader)
-#print('loaded seq')
-epoch_size = 20
-batch_size = 10
-num_epochs = 25
-surp_epoch = 5
-#plot_noblanks_noroll(loss,seq,batch_size,save_path,name+'%d%d'%(SE,SEED))
-if len(loss) != len(seq):
-    loss_dict = get_losses2(seq,loss,epoch_size,batch_size)
-else:
-    loss_dict = get_losses(seq,loss,epoch_size)
-#plot_E_asfctof_Epos(loss_dict,seq, batch_size, save_path, name+'%d%d'%(SE,SEED))
-#Ecount = plot_loss_asfctof_numberofEinbatch(loss_dict,seq, epoch_size, num_epochs, save_path, name+'%d%d'%(SE,SEED))
-plot_noblanks(loss_dict,seq,save_path,name+'%d%d'%(SE,SEED))
-#plot_E_asfctof_loss2(loss_dict,loss,seq,epoch_size,save_path,name+'%d%d'%(SE,SEED))
-
-
-#with open(r'%sloss_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
-#    loss_foreach = yaml.load(file, Loader=yaml.Loader)
-#loss_dict = get_losses3(seq,loss_foreach,epoch_size,batch_size)
-#plot_noblanks(loss_dict,seq, save_path, name,name+'%d%d'%(SE,SEED),Ecount=None)
-#plot_EversusDloss(loss_dict,seq,save_path, name+'%d%d'%(SE,SEED))
+def main():
+    import sys
+    import argparse
     
-#with open(r'%sdot_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
-#    dot_foreach = yaml.load(file, Loader=yaml.Loader)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--direc', default='.')
+    args = parser.parse_args()
 
-#with open(r'%starget_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
-#    target_foreach = yaml.load(file, Loader=yaml.Loader)
+    name = 'pretrained_noblanks_noroll'
+    name = 'pretrained_noblanks'
+    #name = 'pretrained_noblanks_numseq2'
+    #name = 'pretrained_noblanks_numseq4_Elast'
+    #name = 'pretrained_noblanks_numseq4_Elast_earlysurprise'
+    name = 'pretrained_noblanks_numseq4_Elast'
+    name = 'pretrained_noblanks_numseq4_Elast_bothED_batch10'
 
-#print(dot_foreach[0][1].shape) 
-#print(target_foreach[0][1].shape) 
+    #name = 'pretrained_noblanks_noroll_numseq4_Elast'
+    print('start')
+    save_path = args.direc + '/' + name + '/'
+    SE=5
+    SEED=5
 
-#get_dotproduct(dot_foreach,seq,loss_foreach,epoch_size,batch_size, surp_epoch,True,name+'%d%d'%(SE,SEED))
-#print('here')
-dot_list = []
-loss_list = []
-for SEED in np.arange(2,31):
-    with open(r'%sseq_%d_%d.yaml'%(save_path,SE,SEED)) as file:
-        seq = yaml.load(file, Loader=yaml.Loader)
-
+    np.set_printoptions(threshold=sys.maxsize)
     with open(r'%sloss_%d_%d.yaml'%(save_path,SE,SEED)) as file:
         loss = yaml.load(file, Loader=yaml.Loader)
-    loss_array, len_seq = get_simple_loss_array(seq,loss,epoch_size,batch_size)
-    loss_list.append(loss_array)
+    #
+    with open(r'%sseq_%d_%d.yaml'%(save_path,SE,SEED)) as file:
+        seq = yaml.load(file, Loader=yaml.Loader)
+    #print('loaded seq')
+    epoch_size = 20
+    batch_size = 10
+    num_epochs = 25
+    surp_epoch = 5
+    #plot_noblanks_noroll(loss,seq,batch_size,save_path,name+'%d%d'%(SE,SEED))
+    if len(loss) != len(seq):
+        loss_dict = get_losses2(seq,loss,epoch_size,batch_size)
+    else:
+        loss_dict = get_losses(seq,loss,epoch_size)
+    #plot_E_asfctof_Epos(loss_dict,seq, batch_size, save_path, name+'%d%d'%(SE,SEED))
+    #Ecount = plot_loss_asfctof_numberofEinbatch(loss_dict,seq, epoch_size, num_epochs, save_path, name+'%d%d'%(SE,SEED))
+    plot_noblanks(loss_dict,seq,save_path,name+'%d%d'%(SE,SEED))
+    #plot_E_asfctof_loss2(loss_dict,loss,seq,epoch_size,batch_size,save_path,name+'%d%d'%(SE,SEED))
 
-    #print(np.shape(loss_array))
-    #with open(r'%sseq_%d_%d.yaml'%(save_path,SE,SEED)) as file:
-    #    seq = yaml.load(file, Loader=yaml.Loader)
-    with open(r'%sdot_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
-        dot_foreach = yaml.load(file, Loader=yaml.Loader)
-    #print('loaded dotforeach')
-    with open(r'%sloss_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
-        loss_foreach = yaml.load(file, Loader=yaml.Loader)
-    #print('loaded lossforeach')
-    dot_list.append(get_dotproduct(dot_foreach,seq,loss_foreach,epoch_size,batch_size, surp_epoch, False, name+'%d%d'%(SE,SEED)))
-    print('appended')
-plot_average(dot_list,epoch_size,num_epochs,name)
-plot_average_loss(loss_list,save_path,name+'%d%d'%(SE,SEED))
+
+    #with open(r'%sloss_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
+    #    loss_foreach = yaml.load(file, Loader=yaml.Loader)
+    #loss_dict = get_losses3(seq,loss_foreach,epoch_size,batch_size)
+    #plot_noblanks(loss_dict,seq, save_path, name,name+'%d%d'%(SE,SEED),Ecount=None)
+    #plot_EversusDloss(loss_dict,seq,save_path, name+'%d%d'%(SE,SEED))
+        
+    #with open(r'%sdot_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
+    #    dot_foreach = yaml.load(file, Loader=yaml.Loader)
+
+    #with open(r'%starget_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
+    #    target_foreach = yaml.load(file, Loader=yaml.Loader)
+
+    #print(dot_foreach[0][1].shape) 
+    #print(target_foreach[0][1].shape) 
+
+    #get_dotproduct(dot_foreach,seq,loss_foreach,epoch_size,batch_size, surp_epoch,True,name+'%d%d'%(SE,SEED),save_path)
+    #print('here')
+    dot_list = []
+    loss_list = []
+    for SEED in np.arange(2,31):
+        with open(r'%sseq_%d_%d.yaml'%(save_path,SE,SEED)) as file:
+            seq = yaml.load(file, Loader=yaml.Loader)
+
+        with open(r'%sloss_%d_%d.yaml'%(save_path,SE,SEED)) as file:
+            loss = yaml.load(file, Loader=yaml.Loader)
+        loss_array, len_seq = get_simple_loss_array(seq,loss,epoch_size,batch_size)
+        loss_list.append(loss_array)
+
+        #print(np.shape(loss_array))
+        #with open(r'%sseq_%d_%d.yaml'%(save_path,SE,SEED)) as file:
+        #    seq = yaml.load(file, Loader=yaml.Loader)
+        with open(r'%sdot_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
+            dot_foreach = yaml.load(file, Loader=yaml.Loader)
+        #print('loaded dotforeach')
+        with open(r'%sloss_foreach_%d_%d.yaml'%(save_path,SE,SEED)) as file:
+            loss_foreach = yaml.load(file, Loader=yaml.Loader)
+        #print('loaded lossforeach')
+        dot_list.append(get_dotproduct(dot_foreach,seq,loss_foreach,epoch_size,batch_size, surp_epoch, False, name+'%d%d'%(SE,SEED), save_path))
+        print('appended')
+    plot_average(dot_list,epoch_size,num_epochs,name,save_path)
+    plot_average_loss(loss_list,save_path,name+'%d%d'%(SE,SEED))
+
+
+if __name__ == '__main__':
+    main()
 

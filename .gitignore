@@ -1,0 +1,11 @@
+/*/
+*.txt
+orig*
+
+!/dpc/
+!/eval/
+
+/*/model_3d*.py
+/*/dataset_3d*.py
+/*/__pycache__
+/*/.ipynb_checkpoints
