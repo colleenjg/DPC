@@ -1,0 +1,34 @@
+name: ssl
+channels:
+  - defaults
+dependencies:
+  - python
+  - pip
+  - pip:
+      - future
+      - h5py
+      - ipython
+      - jit
+      - jupyter
+      - matplotlib
+      - mkl
+      - numba
+      - numpy
+      - opencv-python
+      - pandas
+      - pyglet
+      - pyyaml
+      - scikit-learn
+      - scipy
+      - seaborn
+      - shapely
+      - tables
+      - unrar
+      - zipline
+      - wurlitzer
+      - pillow
+      - tqdm
+      - torch
+      - torchvision
+      - tensorboardX
+

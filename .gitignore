@@ -1,0 +1,16 @@
+# ignore all subdirectories, except specified ones
+/*/
+
+!/asset/
+!/dataset/
+!/model/
+!/process_data/
+!/slurm/
+!/utils/
+
+process_data/data
+.ipynb_checkpoints
+
+*.pyc
+*.swp
+
