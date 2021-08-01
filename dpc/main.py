@@ -9,8 +9,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 
-sys.path.append('../utils')
-sys.path.append('../')
+sys.path.extend(['..', '../utils', '../backbone'])
 from dataset_3d import *
 from model_3d import *
 from resnet_2d3d import neq_load_customized
@@ -25,6 +24,13 @@ import torchvision.utils as vutils
 
 from stimuli import GaborSequenceGenerator
 import yaml
+
+# identify and initialize temporary directory
+SLURM_TMPDIR = os.getenv('SLURM_TMPDIR')
+if SLURM_TMPDIR is None:
+    SLURM_TMPDIR = "slurm_temp"
+if not os.path.exists(SLURM_TMPDIR):
+    os.mkdir(SLURM_TMPDIR)
 
 torch.backends.cudnn.benchmark = True
 
@@ -233,8 +239,8 @@ def train(data_loader, model, optimizer, epoch):
 
         # score is a 6d tensor: [B, P, SQ, B, N, SQ]
         score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
-        target_flattened = target_.view(B*NP*SQ, B2*NS*SQ)
-        target_flattened = target_flattened.argmax(dim=1)
+        target_flattened = target_.view(B*NP*SQ, B2*NS*SQ).to(cuda)
+        target_flattened = target_flattened.to(int).argmax(dim=1)
 
         loss = criterion(score_flattened, target_flattened)
         top1, top3, top5 = calc_topk_accuracy(score_flattened, target_flattened, (1,3,5))
@@ -285,8 +291,8 @@ def validate(data_loader, model, epoch):
 
             # [B, P, SQ, B, N, SQ]
             score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
-            target_flattened = target_.view(B*NP*SQ, B2*NS*SQ)
-            target_flattened = target_flattened.argmax(dim=1)
+            target_flattened = target_.view(B*NP*SQ, B2*NS*SQ).to(cuda)
+            target_flattened = target_flattened.to(int).argmax(dim=1)
 
             loss = criterion(score_flattened, target_flattened)
             top1, top3, top5 = calc_topk_accuracy(score_flattened, target_flattened, (1,3,5))
@@ -347,7 +353,7 @@ def get_data(transform, mode='train'):
 def set_path(args):
     if args.resume: exp_path = os.path.dirname(os.path.dirname(args.resume))
     else:
-        exp_path = os.getenv('SLURM_TMPDIR')+'log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
+        exp_path = SLURM_TMPDIR+'log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
 bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
 train-{args.train_what}{2}'.format(
                     'r%s' % args.net[6::], \

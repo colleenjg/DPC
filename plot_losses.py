@@ -25,7 +25,7 @@ def get_losses(seq,loss,epoch_size):
     
     epoch=0
     for i, sequence in enumerate(seq):
-        losses[sequence[-1]]['val'].append(loss[epoch][i%epoch_size])
+        losses[sequence[-1]]['val'].append(loss[epoch][i%epoch_size].item())
         losses[sequence[-1]]['timestep'].append(i)
     
         if (i!=0) & (i%epoch_size==0):
@@ -74,7 +74,7 @@ def get_losses3(seq,loss,epoch_size,batch_size):
     epoch=0
     for i, sequence in enumerate(seq):
         j = int(i/batch_size)
-        losses[sequence[-1]]['val'].append(loss[epoch][j%epoch_size][i%batch_size])
+        losses[sequence[-1]]['val'].append(loss[epoch][j%epoch_size][i%batch_size].item())
         losses[sequence[-1]]['timestep'].append(i)
     
         if (j!=0) & (i%(epoch_size*batch_size)==0):
@@ -169,10 +169,13 @@ def plot_EversusDloss(losses,seq,save_path, name):
     plt.figure(figsize=(3,3))
     for key in losses:
         if key == 'E':
+            losses[key]['val'] = [val.item() for val in losses[key]['val']]
             plt.plot(losses[key]['timestep'],losses[key]['val'], '.k',markersize=5,label=key)    
         elif key == 'D':
+            losses[key]['val'] = [val.item() for val in losses[key]['val']]
             plt.plot(losses[key]['timestep'],losses[key]['val'], '.r',markersize=5,label=key)    
         else:
+            losses[key]['val'] = [val.item() for val in losses[key]['val']]
             plt.plot(losses[key]['timestep'],losses[key]['val'], '.',markersize=2,label=key)
     plt.legend(losses.keys())
     plt.ylabel('loss')
@@ -274,7 +277,7 @@ def get_dotproduct(dot_foreach,seq,loss,epoch_size,batch_size, surp_epoch, plot,
         dot[sequence[-1]]['match'].append(np.mean(np.array(matches)))
         dot[sequence[-1]]['negatives'].append(np.mean(np.array(negatives)))
         dot[sequence[-1]]['batch'].append(j)
-        dot[sequence[-1]]['loss'].append(loss[epoch][j%epoch_size][i%batch_size])
+        dot[sequence[-1]]['loss'].append(loss[epoch][j%epoch_size][i%batch_size].item())
 
         if (j!=0) & (i%(epoch_size*batch_size)==0):
                 epoch+=1

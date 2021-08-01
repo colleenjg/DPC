@@ -10,8 +10,7 @@ import copy
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 
-sys.path.append('../utils')
-sys.path.append('../')
+sys.path.extend(['..', '../utils', '../backbone'])
 from dataset_3d import *
 from model_3d import *
 from resnet_2d3d import neq_load_customized
@@ -27,6 +26,13 @@ import torchvision.utils as vutils
 import yaml
 
 from stimuli import GaborSequenceGenerator
+
+# identify and initialize temporary directory
+SLURM_TMPDIR = os.getenv('SLURM_TMPDIR')
+if SLURM_TMPDIR is None:
+    SLURM_TMPDIR = "slurm_temp"
+if not os.path.exists(SLURM_TMPDIR):
+    os.mkdir(SLURM_TMPDIR)
 
 torch.backends.cudnn.benchmark = True
 
@@ -193,12 +199,12 @@ def main():
         detailed_loss_dict[epoch] = detailed_loss 
         
         # Save to yaml
-        #print(os.getenv('SLURM_TMPDIR') + '/loss.yaml',flush=True)
-        yaml.dump(detailed_loss_dict, open(os.getenv('SLURM_TMPDIR') + '/loss_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
-        yaml.dump(train_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
-        yaml.dump(loss_foreach_bigdict, open(os.getenv('SLURM_TMPDIR') + '/loss_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
-        yaml.dump(dot_foreach_dict, open(os.getenv('SLURM_TMPDIR') + '/dot_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
-        yaml.dump(target_foreach_dict, open(os.getenv('SLURM_TMPDIR') + '/target_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
+        #print(SLURM_TMPDIR + '/loss.yaml',flush=True)
+        yaml.dump(detailed_loss_dict, open(SLURM_TMPDIR + '/loss_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
+        yaml.dump(train_loader.prev_seq, open(SLURM_TMPDIR + '/seq_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
+        yaml.dump(loss_foreach_bigdict, open(SLURM_TMPDIR + '/loss_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
+        yaml.dump(dot_foreach_dict, open(SLURM_TMPDIR + '/dot_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
+        yaml.dump(target_foreach_dict, open(SLURM_TMPDIR + '/target_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
 
         #print('train_loss '+str(train_loss),flush=True)
         #print('val_loss: '+str(val_loss),flush=True)
@@ -313,8 +319,8 @@ def train(data_loader, model, optimizer, epoch):
         
         # score is a 6d tensor: [B, P, SQ, B, N, SQ]
         score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
-        target_flattened = target_.view(B*NP*SQ, B2*NS*SQ)
-        target_flattened = target_flattened.argmax(dim=1)
+        target_flattened = target_.view(B*NP*SQ, B2*NS*SQ).to(cuda)
+        target_flattened = target_flattened.to(int).argmax(dim=1)
 
         loss = criterion(score_flattened, target_flattened)
         top1, top3, top5 = calc_topk_accuracy(score_flattened, target_flattened, (1,3,5))
@@ -351,8 +357,8 @@ def train(data_loader, model, optimizer, epoch):
                 print(data_loader.prev_seq[-args.batch_size:])
                 print(loss_foreach_dict[idx],flush=True)
                 detailed_loss.append(losses.val)
-                #yaml.dump(losses.val, open(os.getenv('SLURM_TMPDIR') + '/loss.yaml', 'w'))
-                #yaml.dump(data_loader.prev_seq, open(os.getenv('SLURM_TMPDIR') + '/seq.yaml', 'w'))
+                #yaml.dump(losses.val, open(SLURM_TMPDIR + '/loss.yaml', 'w'))
+                #yaml.dump(data_loader.prev_seq, open(SLURM_TMPDIR + '/seq.yaml', 'w'))
         
 
 #            writer_train.add_scalar('local/loss', losses.val, iteration)
@@ -380,8 +386,8 @@ def validate(data_loader, model, epoch):
 
             # [B, P, SQ, B, N, SQ]
             score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
-            target_flattened = target_.view(B*NP*SQ, B2*NS*SQ)
-            target_flattened = target_flattened.argmax(dim=1)
+            target_flattened = target_.view(B*NP*SQ, B2*NS*SQ).to(cuda)
+            target_flattened = target_flattened.to(int).argmax(dim=1)
 
             
             loss = criterion(score_flattened, target_flattened)
@@ -448,7 +454,7 @@ def get_data(transform, mode='train'):
 def set_path(args):
     if args.resume: exp_path = os.path.dirname(os.path.dirname(args.resume))
     else:
-        exp_path = os.getenv('SLURM_TMPDIR')+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
+        exp_path = SLURM_TMPDIR+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
 bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
 train-{args.train_what}{2}'.format(
                     'r%s' % args.net[6::], \
