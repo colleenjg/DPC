@@ -532,17 +532,17 @@ def plot_average(dot_list,epoch_size,num_epochs,name,save_path):
    # plt.tight_layout()
    # plt.savefig('%s%s%s.pdf'%(save_path,'average_E_versus_D_nonsmooth_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 
-    #print(np.shape(mean_diff))
-    #print(mean_diff)
-    #plt.figure(figsize=(3,3))
-    #plt.plot(all_batches[0,:],mean_E_matches-mean_D_matches,'k',markersize=7)
-    #plt.xlabel('batch of batch number')    
-    #plt.ylabel('E minus D matches over %d batches'%interval)    
-    #plt.legend(['D','E'])
-    #plt.xlim(100,200)
-    #plt.tight_layout()
-    #plt.savefig('%s%s%s.pdf'%(save_path,'average_E_minus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
-    #print(np.shape(mean_diff)[0])
+    print(np.shape(mean_diff))
+    print(mean_diff)
+    plt.figure(figsize=(3,3))
+    plt.plot(all_batches[0,:],mean_E_matches-mean_D_matches,'k',markersize=7)
+    plt.xlabel('batch of batch number')    
+    plt.ylabel('E minus D matches over %d batches'%interval)    
+    plt.legend(['D','E'])
+    plt.xlim(100,200)
+    plt.tight_layout()
+    plt.savefig('%s%s%s.pdf'%(save_path,'average_E_minus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
+    print(np.shape(mean_diff)[0])
     
     plt.figure(figsize=(3,3))
     ax3 = plt.subplot(111)
@@ -567,16 +567,16 @@ def plot_average(dot_list,epoch_size,num_epochs,name,save_path):
 
 
 
-#    Diff = []
-#    for i in range(int(len(D_match['match'])/interval)):
-#        if D_match['batch'][i] > 5*20:
-#            Diff.append(np.mean(E_match['match'][i:i+interval]) - np.mean(D_match['match'][i:i+interval])
-#    plt.figure(figsize=(3,3))
-#    plt.plot(Diff,'.k',markersize=7)
-#    plt.xlabel('batch number')    
-#    plt.ylabel('E-D matches')    
-#    plt.tight_layout()
-#    plt.savefig('%s%s%s.pdf'%(save_path,'E_minus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
+    Diff = []
+    for i in range(int(len(D_match['match'])/interval)):
+        if D_match['batch'][i] > 5*20:
+            Diff.append(np.mean(E_match['match'][i:i+interval]) - np.mean(D_match['match'][i:i+interval])
+    plt.figure(figsize=(3,3))
+    plt.plot(Diff,'.k',markersize=7)
+    plt.xlabel('batch number')    
+    plt.ylabel('E-D matches')    
+    plt.tight_layout()
+    plt.savefig('%s%s%s.pdf'%(save_path,'E_minus_D_matches_',name))#, bbox_extra_artists=(lgd,), bbox_inches='tight') 
 #       
 #                 
 
