@@ -4,10 +4,10 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=10G
 #SBATCH --time=1:30:00
-#SBATCH -o /miniscratch/gillonco/losses_%j.txt
+#SBATCH -o /home/mila/g/gillonco/scratch/losses_%j.txt
 
 # 1. Set directory in which to load and plot results (also update output directory above)
-SAVE_DIR=/miniscratch/gillonco
+SAVE_DIR=/home/mila/g/gillonco/scratch
 
 if [[ ! -d $SAVE_DIR ]]; then
     echo -e "Save directory '$SAVE_DIR' does not exist. Please set SAVE_DIR "\
@@ -25,5 +25,14 @@ conda activate ssl
 
 
 # 3. Launch your job
+EXIT=0
+set -x # echo commands to console
+
 python plot_losses.py --direc $SAVE_DIR/test_gabors
 
+code="$?"
+if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
+
+set +x # stop echoing commands to console
+
+if [ "$EXIT" -ne 0 ]; then exit "$EXIT"; fi # exit with highest exit code

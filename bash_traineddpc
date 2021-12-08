@@ -5,12 +5,12 @@
 #SBATCH --mem=10G
 #SBATCH --array=0-4
 #SBATCH --time=4:00:00
-#SBATCH --output=/miniscratch/gillonco/traineddpc_%A_%a.txt
+#SBATCH --output=/home/mila/g/gillonco/scratch/traineddpc_%A_%a.txt
 
 # if $TEST is 1, runs 4 min
 
 # 1. Set directory in which to save results (also update output directory above)
-SAVE_DIR=/miniscratch/gillonco
+SAVE_DIR=/home/mila/g/gillonco/scratch
 
 if [[ ! -d $SAVE_DIR ]]; then
     echo -e "Save directory '$SAVE_DIR' does not exist. Please set SAVE_DIR to the path of an existing directory."
@@ -62,6 +62,9 @@ for SEED in "${SEEDS[@]}"
 do
     # Results are saved in $SLURM_TMPDIR
     cd $CODE_DIR/dpc
+
+    set -x # echo commands to console
+    
     python test_gabors.py \
         --pretrain $SLURM_TMPDIR/k400_128_r18_dpc-rnn.pth.tar \
         --gpu 0 \
@@ -79,10 +82,11 @@ do
         --num_seq $N_SEQ \
         --p_E $PE \
         --seed $SEED \
-    
+
     code="$?"
     if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
 
+    set +x # stop echoing commands to console
 
     # Copy results to SAVE_DIR
     cd $SLURM_TMPDIR

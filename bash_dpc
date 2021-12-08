@@ -4,11 +4,11 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=10G
 #SBATCH --time=1:00:00
-#SBATCH --output=/miniscratch/gillonco/dpc_%j.txt
+#SBATCH --output=/home/mila/g/gillonco/scratch/dpc_%j.txt
 
 
 # 1. Set directory in which to save results (also update output directory above)
-SAVE_DIR=/miniscratch/gillonco
+SAVE_DIR=/home/mila/g/gillonco/scratch
 
 if [[ ! -d $SAVE_DIR ]]; then
     echo -e "Save directory '$SAVE_DIR' does not exist. Please set SAVE_DIR to the path of an existing directory."
@@ -35,6 +35,9 @@ SEED=2
 EXIT=0
 
 cd dpc
+
+set -x # echo commands to console
+
 python test_gabors.py \
     --gpu 0 \
     --net resnet18 \
@@ -55,6 +58,7 @@ python test_gabors.py \
 code="$?"
 if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
 
+set +x # stop echoing commands to console
 
 # 5. Copy results and model to SAVE_DIR
 cd $SLURM_TMPDIR
