@@ -39,6 +39,7 @@ cd dpc
 set -x # echo commands to console
 
 python test_gabors.py \
+    --save_dir $SLURM_TMPDIR \
     --gpu 0 \
     --net resnet18 \
     --dataset gabors \
@@ -46,13 +47,13 @@ python test_gabors.py \
     --img_dim 128 \
     --train_what ft \
     --epochs 25 \
-    --surprise_epoch 5 \
+    --unexpected_epoch 5 \
     --pred_step 1 \
     --print_freq 1 \
     --roll 'True' \
     --seq_len $SE \
     --num_seq $N_SEQ \
-    --p_E $PE \
+    --U_prob $PE \
     --seed $SEED \
 
 code="$?"
@@ -64,7 +65,7 @@ set +x # stop echoing commands to console
 cd $SLURM_TMPDIR
 LOCAL_DIR=$SAVE_DIR/test_gabors/not-pretrained
 mkdir -p $LOCAL_DIR
-find . -type f -name "*.yaml" | cpio -pdm $LOCAL_DIR
+find . -type f -name "*.json" | cpio -pdm $LOCAL_DIR
 cp -r log* $LOCAL_DIR
 
 code="$?"

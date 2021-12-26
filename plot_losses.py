@@ -88,19 +88,19 @@ def get_losses3(seq, loss, epoch_size, batch_size):
 
 def plot_noblanks_noroll(loss, seq, epoch_size, save_path, name):
 
-    regular = []
-    surprise = []
-    regulartimes = []
-    surprisetimes = []
+    exp = []
+    unexp = []
+    exp_times = []
+    unexp_times = []
     
     epoch=0
     for i, sequence in enumerate(seq):
         if sequence == ['A', 'B', 'C', 'D']:
-            regular.append(loss[epoch][i%epoch_size])
-            regulartimes.append(i)
+            exp.append(loss[epoch][i%epoch_size])
+            exp_times.append(i)
         elif sequence == ['A', 'B', 'C', 'E']:
-            surprise.append(loss[epoch][i%epoch_size])
-            surprisetimes.append(i)
+            unexp.append(loss[epoch][i%epoch_size])
+            unexp_times.append(i)
         else:
             raise ValueError
         
@@ -108,13 +108,13 @@ def plot_noblanks_noroll(loss, seq, epoch_size, save_path, name):
                 epoch+=1
             
     plt.figure(figsize=(3, 3))
-    plt.plot(regular, c='k', label='regular')
-    plt.plot(surprise, c='r', label='surprise')
+    plt.plot(exp, c='k', label='expected')
+    plt.plot(unexp, c='r', label='unexpected')
     plt.savefig('%s%s.pdf'%(save_path, 'compare'))#, bbox_extra_artists=(lgd, ), bbox_inches='tight') 
     
     plt.figure(figsize=(3, 3))
-    plt.plot(regulartimes, regular, 'k.', label='ABCD')
-    plt.plot(surprisetimes, surprise, 'r.', label='ABCE')
+    plt.plot(exp_times, exp, 'k.', label='ABCD')
+    plt.plot(unexp_times, unexp, 'r.', label='ABCE')
     plt.legend()
     plt.ylabel('loss')
     plt.xlabel('frame number')
@@ -604,7 +604,7 @@ def main():
     name = 'pretrained_noblanks'
     #name = 'pretrained_noblanks_numseq2'
     #name = 'pretrained_noblanks_numseq4_Elast'
-    #name = 'pretrained_noblanks_numseq4_Elast_earlysurprise'
+    #name = 'pretrained_noblanks_numseq4_Elast_early_unexp'
     name = 'pretrained_noblanks_numseq4_Elast'
     name = 'pretrained_noblanks_numseq4_Elast_bothED_batch10'
 

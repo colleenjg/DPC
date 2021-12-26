@@ -8,28 +8,88 @@ HEIGHT = 128
 NUM_FRAMES = 5
 NUM_MEAN_ORIS = 4
 
-def worker_init_fn(worker_id):
-    np.random.seed(np.random.get_state()[1][0] + worker_id)
+
+def get_dataloader(mode="train", batch_size=4, blank=False, roll=False, 
+                   U_prob=0.1, U_pos="U", num_seq=4, img_dim=WIDTH, 
+                   supervised=False, seed=None, num_workers=4, 
+                   worker_init_fn=None):
+
+    if supervised:
+        raise NotImplementedError(
+            "Labels not implemented for Gabors dataset."
+            )
+    
+    shared_kwargs = {
+        "num_trials"    : 20,
+        "num_seq"       : num_seq,
+        "width"         : img_dim,
+        "height"        : img_dim,
+        "seed"          : seed,
+        "num_workers"   : num_workers,
+        "worker_init_fn": worker_init_fn,
+    }
+
+    if mode == "train":    
+        loader = GaborSequenceGenerator(
+            batch_size=batch_size, 
+            blank=blank, 
+            roll=roll, 
+            U_prob=U_prob, 
+            U_pos=U_pos,
+            **shared_kwargs,
+            )
+        
+    elif mode == "val":
+        loader = GaborSequenceGenerator(
+            batch_size=1, 
+            **shared_kwargs,
+            )
+    
+    return loader
 
 
 class GaborSequenceGenerator(torch.utils.data.DataLoader):
-    def __init__(self, batch_size, num_trials, mode="reg", blank=False, 
-                 roll=False, p_E = 0.1, e_pos="U", num_seq=4, num_frames=NUM_FRAMES, 
-                 num_gabors=NUM_GABORS, width=WIDTH, height=HEIGHT, sigma_base=50, 
-                 kappa=50, lam=1, gamma=0.2, seed=None, device="cpu", 
-                 worker_init_fn=worker_init_fn):
+    def __init__(
+        self, 
+        batch_size=4, 
+        num_trials=20, 
+        unexp=False, 
+        blank=False, 
+        roll=False, 
+        U_prob=0.1, 
+        U_pos="U", 
+        num_seq=4, 
+        num_frames=NUM_FRAMES, 
+        num_gabors=NUM_GABORS, 
+        width=WIDTH, 
+        height=HEIGHT, 
+        sigma_base=50, 
+        kappa=50,   ##### KAPPA = 50???
+        lam=1, 
+        gamma=0.2,
+        seed=None, 
+        num_workers=0,
+        worker_init_fn=None,
+        ):
         
         ### DATASET SHOULD BE A SEPARATE OBJECT
-        super().__init__(self, batch_size=batch_size, worker_init_fn=worker_init_fn)
+        super().__init__(
+            self, 
+            batch_size=batch_size, 
+            num_workers=num_workers, 
+            worker_init_fn=worker_init_fn,
+            pin_memory=False,
+            drop_last=False,
+            )
 
-        # self.batch_size     = batch_size
+        self.dataset     = None
         self.num_trials     = num_trials # number of images in a sequence (A, B, C, etc.)??
         self.__next_trial__ = 0
-        self.mode           = mode
+        self.unexp          = unexp
         self.blank          = blank
         self.roll           = roll
-        self.p_E            = p_E
-        self.e_pos          = e_pos
+        self.U_prob         = U_prob
+        self.U_pos          = U_pos
         
         self.sigma_base     = sigma_base # base gabor patch size
         self.kappa          = kappa
@@ -41,7 +101,6 @@ class GaborSequenceGenerator(torch.utils.data.DataLoader):
         self.width          = width
         self.height         = height
         
-        self.device         = device
         self.seed           = seed
         self.worker_init_fn = worker_init_fn
         
@@ -63,7 +122,7 @@ class GaborSequenceGenerator(torch.utils.data.DataLoader):
         self.gabor_info[:, pos_idxs] = 0.8 * (self.gabor_info[:, pos_idxs] * 2 - 1) # adjust position values
         self.gabor_info[:, self.param_idx["size"]] += 1 # adjust size values
 
-        if self.e_pos == "D":
+        if self.U_pos == "D":
             self.gabor_info[self.trial_type_idx["U"]] = self.gabor_info[self.trial_type_idx["D"]]
         
         self.gabor_info[self.trial_type_idx["X"]] = 0 # blank should be all zeros
@@ -84,10 +143,10 @@ class GaborSequenceGenerator(torch.utils.data.DataLoader):
             reps=self.batch_size
             ).reshape(self.batch_size, n_trials)
 
-        # replace some Ds with Es
-        if self.mode == "surp":
-            set_surp = np.where(np.random.rand(self.batch_size) < self.p_E)[0]
-            batch_sequences[set_surp, 3] = self.trial_type_idx["U"]
+        # replace some Ds with Us
+        if self.unexp:
+            set_unexp = np.where(np.random.rand(self.batch_size) < self.U_prob)[0]
+            batch_sequences[set_unexp, 3] = self.trial_type_idx["U"]
         
         if self.roll:
             roll_shifts = np.random.randint(0, n_trials, size=self.batch_size) # select shifts
@@ -108,10 +167,10 @@ class GaborSequenceGenerator(torch.utils.data.DataLoader):
         # Adjust mean orientation when A appears partway through sequence
         if self.roll:
             # Identify trials for which to update theta
-            batch_sequences_no_surp = copy.deepcopy(batch_sequences)
-            batch_sequences_no_surp[batch_sequences == self.trial_type_idx["U"]] = self.trial_type_idx["D"]
+            batch_sequences_no_unexp = copy.deepcopy(batch_sequences)
+            batch_sequences_no_unexp[batch_sequences == self.trial_type_idx["U"]] = self.trial_type_idx["D"]
             min_val = np.arange(self.num_seq).reshape(1, -1)
-            reset_ori_means = np.where(batch_sequences_no_surp < min_val)
+            reset_ori_means = np.where(batch_sequences_no_unexp < min_val)
 
             # create new theta values from new mean orientations
             new_ori_means = np.random.randint(NUM_MEAN_ORIS, size=self.batch_size) * np.pi / NUM_MEAN_ORIS # new thetas for each possible sequence
@@ -123,15 +182,15 @@ class GaborSequenceGenerator(torch.utils.data.DataLoader):
                 new_ori_means = np.random.randint(NUM_MEAN_ORIS, size=self.batch_size) * np.pi / NUM_MEAN_ORIS # new thetas for each sequence
                 all_ori_means[:, A_starts :] = new_ori_means[:, np.newaxis] # update from As
 
-        # Update mean orientation for Es at the end of a sequence
-        update_last_Es_only = True
-        if self.mode == "surp":
-            if update_last_Es_only:
-                E_positions = np.where(batch_sequences[:, -1] == self.trial_type_idx["U"])[0]
-                all_ori_means[-1, E_positions] += np.pi / 2
-            else: # update ALL Es
-                E_positions = np.where(batch_sequences == self.trial_type_idx["U"])
-                all_ori_means[E_positions[::-1]] += np.pi / 2
+        # Update mean orientation for Us at the end of a sequence
+        update_last_Us_only = True
+        if self.unexp:
+            if update_last_Us_only:
+                U_positions = np.where(batch_sequences[:, -1] == self.trial_type_idx["U"])[0]
+                all_ori_means[-1, U_positions] += np.pi / 2
+            else: # update ALL Us
+                U_positions = np.where(batch_sequences == self.trial_type_idx["U"])
+                all_ori_means[U_positions[::-1]] += np.pi / 2
 
         # Generate individual gabor orientations (P x N x B)
         theta = torch.FloatTensor(
@@ -142,7 +201,7 @@ class GaborSequenceGenerator(torch.utils.data.DataLoader):
 
 
         
-    # python test_gabors.py --dataset gabors --batch_size 10 --img_dim 128 --train_what ft --epochs 25 --surprise_epoch 5 --pred_step 1 --print_freq 1 --roll --seq_len 5 --num_seq 4 --p_E 0.1 --gpu 0
+    # python test_gabors.py --dataset gabors --batch_size 10 --img_dim 128 --train_what ft --epochs 25 --unexpected_epoch 5 --pred_step 1 --print_freq 1 --roll --seq_len 5 --num_seq 4 --U_prob 0.1 --gpu 0
 
 
         # DRAW GABORS (nbr patches x sequence length x batch size)
@@ -212,5 +271,12 @@ class GaborSequenceGenerator(torch.utils.data.DataLoader):
         else:
             raise StopIteration
     
-    def _set_mode(self, mode):
-        self.mode = mode
+    @property
+    def unexp(self):
+        return self._unexp
+
+    @unexp.setter
+    def _set_unexp(self, unexp):
+        if not isinstance(unexp, bool):
+            raise ValueError('unexp must be set to a boolean value.')
+        self._unexp = unexp

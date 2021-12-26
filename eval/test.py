@@ -11,7 +11,7 @@ sys.path.append('../utils')
 sys.path.append('../backbone')
 sys.path.append('../')
 from dataset_3d_lc import UCF101_3d, HMDB51_3d
-from model_3d_lc import *
+from dpc.model_3d_lc import *
 from resnet_2d3d import neq_load_customized
 from augmentation import *
 from utils import AverageMeter, ConfusionMeter, save_checkpoint, write_log, calc_topk_accuracy, denorm, calc_accuracy
@@ -233,13 +233,13 @@ def train(data_loader, model, optimizer, epoch):
         output, _ = model(input_seq)
 
         # visualize
-        #if (iteration == 0) or (iteration == args.print_freq):
-            #if B > 2: input_seq = input_seq[0:2,:]
-            #writer_train.add_image('input_seq', 
-            #                       de_normalize(vutils.make_grid(
-            #                           input_seq.transpose(2,3).contiguous().view(-1,3,args.img_dim,args.img_dim), 
-            #                           nrow=args.num_seq*args.seq_len)), 
-            #                       iteration)
+        if (iteration == 0) or (iteration == args.print_freq):
+            if B > 2: input_seq = input_seq[0:2,:]
+            writer_train.add_image('input_seq', 
+                                  de_normalize(vutils.make_grid(
+                                      input_seq.transpose(2,3).contiguous().view(-1,3,args.img_dim,args.img_dim), 
+                                      nrow=args.num_seq*args.seq_len)), 
+                                  iteration)
         del input_seq
 
         [_, N, D] = output.size()

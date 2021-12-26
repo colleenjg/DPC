@@ -9,7 +9,9 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 
-sys.path.extend(['..', '../utils', '../backbone'])
+sys.path.extend(
+    ["..", str(Path("..", "utils")), str(Path("..", "backbone"))]
+    )
 from dataset_3d import *
 from model_3d import *
 from resnet_2d3d import neq_load_customized

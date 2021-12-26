@@ -1,331 +1,75 @@
-import os
+import argparse
+import copy
+import logging
+from pathlib import Path
 import sys
 import time
-import re
-import argparse
+
+import json
 import numpy as np
-from tqdm import tqdm
-import copy
-#from tensorboardX import SummaryWriter
-import matplotlib.pyplot as plt
-plt.switch_backend('agg')
-
-sys.path.extend(['..', '../utils', '../backbone'])
-from dataset_3d import *
-from model_3d import *
-from resnet_2d3d import neq_load_customized
-from augmentation import *
-from utils import AverageMeter, save_checkpoint, denorm, calc_topk_accuracy
-
 import torch
 import torch.optim as optim
-from torch.utils import data
-from torchvision import datasets, models, transforms
-import torchvision.utils as vutils
+from tqdm import tqdm
 
-import yaml
+import matplotlib.pyplot as plt
 
-from stimuli import GaborSequenceGenerator
+sys.path.extend(["..", str(Path("..", "utils")), str(Path("..", "backbone"))])
+import model_3d
+import config_fns
+import gabor_stimuli
+import utils
 
-# identify and initialize temporary directory
-SLURM_TMPDIR = os.getenv('SLURM_TMPDIR')
-if SLURM_TMPDIR is None:
-    SLURM_TMPDIR = "slurm_temp"
-if not os.path.exists(SLURM_TMPDIR):
-    os.mkdir(SLURM_TMPDIR)
+logger = logging.getLogger(__name__)
 
-torch.backends.cudnn.benchmark = True
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--net', default='resnet18', type=str)
-parser.add_argument('--model', default='dpc-rnn', type=str)
-parser.add_argument('--dataset', default='ucf101', type=str)
-parser.add_argument('--seq_len', default=5, type=int, help='number of frames in each video block')
-parser.add_argument('--num_seq', default=8, type=int, help='number of video blocks')
-parser.add_argument('--pred_step', default=1, type=int)
-parser.add_argument('--ds', default=3, type=int, help='frame downsampling rate')
-parser.add_argument('--batch_size', default=4, type=int)
-parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
-parser.add_argument('--wd', default=1e-5, type=float, help='weight decay')
-parser.add_argument('--resume', default='', type=str, help='path of model to resume')
-parser.add_argument('--pretrain', default='', type=str, help='path of pretrained model')
-parser.add_argument('--epochs', default=10, type=int, help='number of total epochs to run')
-parser.add_argument('--start-epoch', default=0, type=int, help='manual epoch number (useful on restarts)')
-parser.add_argument('--gpu', default='0,1', type=str)
-parser.add_argument('--print_freq', default=5, type=int, help='frequency of printing output during training')
-parser.add_argument('--reset_lr', action='store_true', help='Reset learning rate when resume training?')
-parser.add_argument('--prefix', default='tmp', type=str, help='prefix of checkpoint filename')
-parser.add_argument('--train_what', default='all', type=str)
-parser.add_argument('--img_dim', default=128, type=int)
-parser.add_argument('--surprise_epoch', default=10, type=int)
-parser.add_argument('--blank', default=False, type=bool)
-parser.add_argument('--roll', action='store_true')
-parser.add_argument('--seed', default=0, type=int)
-parser.add_argument('--p_E', default=0.1, type=float)
-parser.add_argument('--e_pos', default='E', type=str)
-
-def main():
-    global args; args = parser.parse_args()
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
-
-    os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
-    global cuda; cuda = torch.device('cuda')
-
-    ### dpc model ###
-    if args.model == 'dpc-rnn':
-        model = DPC_RNN(sample_size=args.img_dim, 
-                        num_seq=args.num_seq, 
-                        seq_len=args.seq_len, 
-
-                        network=args.net, 
-                        pred_step=args.pred_step)
-    else: raise ValueError('wrong model!')
-
-    #model = nn.DataParallel(model)
-    model = model.to(cuda)
-    global criterion; criterion = nn.CrossEntropyLoss()
-
-    ### optimizer ###
-    if args.train_what == 'last':
-        for name, param in model.module.resnet.named_parameters():
-            param.requires_grad = False
-    else: pass # train all layers
-
-    print('\n===========Check Grad============')
-    for name, param in model.named_parameters():
-        print(name, param.requires_grad)
-    print('=================================\n')
-
-    params = model.parameters()
-    #old_backbone_weights = {k: v.clone() for k, v in model.module.backbone.named_parameters()}
-    #old_agg_weights = {k: v.clone() for k, v in model.module.agg.named_parameters()}
-    #old_network_pred_weights = {k: v.clone() for k, v in model.module.network_pred.named_parameters()}
-
+def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50, 
+                iteration=0, device="cpu", log_freq=5, writer=None):
     
-    optimizer = optim.Adam(params, lr=args.lr, weight_decay=args.wd)
-    args.old_lr = None
-
-    best_acc = 0
-    global iteration; iteration = 0
-
-    ### restart training ###
-    if args.resume:
-        if os.path.isfile(args.resume):
-            args.old_lr = float(re.search('_lr(.+?)_', args.resume).group(1))
-            print("=> loading resumed checkpoint '{}'".format(args.resume))
-            checkpoint = torch.load(args.resume, map_location=torch.device('cpu'))
-            args.start_epoch = checkpoint['epoch']
-            iteration = checkpoint['iteration']
-            best_acc = checkpoint['best_acc']
-            model.load_state_dict(checkpoint['state_dict'])
-            if not args.reset_lr: # if didn't reset lr, load old optimizer
-                optimizer.load_state_dict(checkpoint['optimizer'])
-            else: print('==== Change lr from %f to %f ====' % (args.old_lr, args.lr))
-            print("=> loaded resumed checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
-        else:
-            print("[Warning] no checkpoint found at '{}'".format(args.resume))
-
-    if args.pretrain:
-        if os.path.isfile(args.pretrain):
-            print("=> loading pretrained checkpoint '{}'".format(args.pretrain))
-            checkpoint = torch.load(args.pretrain, map_location=torch.device('cpu'))
-            model = neq_load_customized(model, checkpoint['state_dict'])
-            print("=> loaded pretrained checkpoint '{}' (epoch {})"
-                  .format(args.pretrain, checkpoint['epoch']),flush=True)
-        else: 
-            print("=> no checkpoint found at '{}'".format(args.pretrain))
-
-    ### load data ###
-    if args.dataset == 'ucf101': # designed for ucf101, short size=256, rand crop to 224x224 then scale to 128x128
-        transform = transforms.Compose([
-            RandomHorizontalFlip(consistent=True),
-            RandomCrop(size=224, consistent=True),
-            Scale(size=(args.img_dim,args.img_dim)),
-            RandomGray(consistent=False, p=0.5),
-            ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
-            ToTensor(),
-            Normalize()
-        ])
-    elif args.dataset == 'k400': # designed for kinetics400, short size=150, rand crop to 128x128
-        transform = transforms.Compose([
-            RandomSizedCrop(size=args.img_dim, consistent=True, p=1.0),
-            RandomHorizontalFlip(consistent=True),
-            RandomGray(consistent=False, p=0.5),
-            ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
-            ToTensor(),
-            Normalize()
-        ])
-    if args.dataset == 'gabors':
-        train_loader = GaborSequenceGenerator(batch_size=args.batch_size, blank=args.blank, roll=args.roll, p_E=args.p_E, e_pos=args.e_pos, num_seq=args.num_seq, num_trials=20, width=128, height=128)
-        val_loader = GaborSequenceGenerator(batch_size=1, num_seq=args.num_seq, num_trials=20, width=128, height=128)
-    else:
-        train_loader = get_data(transform, 'train')
-        val_loader = get_data(transform, 'val')
-
-    # setup tools
-    global de_normalize; de_normalize = denorm()
-    global img_path; img_path, model_path = set_path(args)
-#    global writer_train
-#    try: # old version
-#        writer_val = SummaryWriter(log_dir=os.path.join(img_path, 'val'))
-#        writer_train = SummaryWriter(log_dir=os.path.join(img_path, 'train'))
-#    except: # v1.7
-#        writer_val = SummaryWriter(logdir=os.path.join(img_path, 'val'))
-#        writer_train = SummaryWriter(logdir=os.path.join(img_path, 'train'))
-    
-    loss_dict = {'Training' : {},
-                 'Validation' : {}}
-    
-    detailed_loss_dict = {}
-    loss_foreach_bigdict = {}
-    dot_foreach_dict = {}
-    target_foreach_dict = {}
-    
-    ### main loop ###
-    for epoch in range(args.start_epoch, args.epochs):
-        if epoch > args.surprise_epoch:
-            train_loader.mode = 'surp'
-            print('mode: '+train_loader.mode)
-    
-        train_loss, train_acc, train_accuracy_list, detailed_loss, loss_foreach_dict, dot_foreach, target_foreach = train(train_loader, model, optimizer, epoch)
-        #val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch)
-        val_acc = 0
-        loss_dict['Training'][epoch] = train_loss
-        #loss_dict['Validation'][epoch] = val_loss
-        loss_foreach_bigdict[epoch] = loss_foreach_dict
-        dot_foreach_dict[epoch] = dot_foreach        
-        target_foreach_dict[epoch] = target_foreach
-        detailed_loss_dict[epoch] = detailed_loss 
-        
-        # Save to yaml
-        #print(SLURM_TMPDIR + '/loss.yaml',flush=True)
-        yaml.dump(detailed_loss_dict, open(SLURM_TMPDIR + '/loss_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
-        yaml.dump(train_loader.prev_seq, open(SLURM_TMPDIR + '/seq_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
-        yaml.dump(loss_foreach_bigdict, open(SLURM_TMPDIR + '/loss_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
-        yaml.dump(dot_foreach_dict, open(SLURM_TMPDIR + '/dot_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
-        yaml.dump(target_foreach_dict, open(SLURM_TMPDIR + '/target_foreach_%d_%d.yaml'%(args.surprise_epoch,args.seed), 'w'))
-
-        #print('train_loss '+str(train_loss),flush=True)
-        #print('val_loss: '+str(val_loss),flush=True)
-        #print(train_loader.prev_seq[-1],flush=True)
-
-
-        
-        # save curve
-#        writer_train.add_scalar('global/loss', train_loss, epoch)
-#        writer_train.add_scalar('global/accuracy', train_acc, epoch)
-#        writer_val.add_scalar('global/loss', val_loss, epoch)
-#        writer_val.add_scalar('global/accuracy', val_acc, epoch)
-#        writer_train.add_scalar('accuracy/top1', train_accuracy_list[0], epoch)
-#        writer_train.add_scalar('accuracy/top3', train_accuracy_list[1], epoch)
-#        writer_train.add_scalar('accuracy/top5', train_accuracy_list[2], epoch)
-#        writer_val.add_scalar('accuracy/top1', val_accuracy_list[0], epoch)
-#        writer_val.add_scalar('accuracy/top3', val_accuracy_list[1], epoch)
-#        writer_val.add_scalar('accuracy/top5', val_accuracy_list[2], epoch)
-
-        # save check_point
-        is_best = val_acc > best_acc; best_acc = max(val_acc, best_acc)
-        save_checkpoint({'epoch': epoch+1,
-                         'net': args.net,
-                         'state_dict': model.state_dict(),
-                         'best_acc': best_acc,
-                         'optimizer': optimizer.state_dict(),
-                         'iteration': iteration}, 
-                         is_best, filename=os.path.join(model_path, 'epoch%s.pth.tar' % str(epoch+1)), keep_all=False)
-
-        #if epoch == 4:
-            #new_weights_backbone = {k: v.clone() for k, v in model.module.backbone.named_parameters()}
-            #new_weights_agg = {k: v.clone() for k, v in model.module.agg.named_parameters()}
-            #new_weights_network_pred = {k: v.clone() for k, v in model.module.network_pred.named_parameters()}
-            
-            #weight_changes_backbone = {k: new_weights_backbone[k] - old_backbone_weights[k] for k in old_backbone_weights}
-            #weight_changes_agg = {k: new_weights_agg[k] - old_agg_weights[k] for k in old_agg_weights}
-            #weight_changes_network_pred = {k: new_weights_network_pred[k] - old_network_pred_weights[k] for k in old_network_pred_weights}
-
-            #sum_changes_backbone = {k: torch.sum(new_weights_backbone[k] - old_backbone_weights[k]) for k in old_backbone_weights}
-            #sum_changes_agg = {k: torch.sum(new_weights_agg[k] - old_agg_weights[k]) for k in old_agg_weights}
-            #sum_changes_network_pred = {k: torch.sum(new_weights_network_pred[k] - old_network_pred_weights[k]) for k in old_network_pred_weights}
-            
-            #mean_changes_backbone = {k: torch.mean(torch.abs(new_weights_backbone[k] - old_backbone_weights[k])) for k in old_backbone_weights}
-            #mean_changes_agg = {k: torch.mean(torch.abs(new_weights_agg[k] - old_agg_weights[k])) for k in old_agg_weights}
-            #mean_changes_network_pred = {k: torch.mean(torch.abs(new_weights_network_pred[k] - old_network_pred_weights[k])) for k in old_network_pred_weights}
-            #print(sum_changes_backbone+'\n',flush=True)
-            #print(sum_changes_agg+'\n',flush=True)
-            #print(sum_changes_network_pred+'\n',flush=True)
-
-            #print('%%%%%%%%%%%%%%%%%%%%%%%%%%%')
-            
-            #backbone_means = [mean_changes_backbone[key] for key in mean_changes_backbone]
-
- 
-            #agg_means = [mean_changes_agg[key] for key in mean_changes_agg]
-            #print(backbone_means)
-            #print(agg_means)            
-            #mean_backbone = torch.mean(torch.stack(backbone_means), dim=0)
-            #mean_agg = torch.mean(torch.stack(agg_means), dim=0)
-            #print(mean_backbone)
-            #print(mean_agg)            
-            
-
-           
-    print('Training from ep %d to ep %d finished' % (args.start_epoch, args.epochs))
-
-def process_output(mask):
-    '''task mask as input, compute the target for contrastive loss'''
-    # dot product is computed in parallel gpus, so get less easy neg, bounded by batch size in each gpu'''
-    # mask meaning: -2: omit, -1: temporal neg (hard), 0: easy neg, 1: pos, -3: spatial neg
-    (B, NP, SQ, B2, NS, _) = mask.size() # [B, P, SQ, B, N, SQ]
-    target = mask == 1
-    target.requires_grad = False
-    return target, (B, B2, NS, NP, SQ)
-
-def train(data_loader, model, optimizer, epoch):
-    losses = AverageMeter()
-    accuracy = AverageMeter()
-    accuracy_list = [AverageMeter(), AverageMeter(), AverageMeter()]
+    losses = utils.AverageMeter()
+    accuracy_list = [
+        utils.AverageMeter(), utils.AverageMeter(), utils.AverageMeter()
+        ]
+    model = model.to(device)
     model.train()
-    global iteration
 
     detailed_loss = []
     loss_foreach_dict = {}
     dot_foreach = {}
     target_foreach = {}
 
-    for idx, input_seq in enumerate(data_loader):
-        tic = time.time()
-        input_seq = input_seq.to(cuda)
-        B = input_seq.size(0)
-        print(input_seq.shape) #[10, 4, 3, 5, 128, 128]
-        print(B) #10
-        print('model called next')
-        [score_, mask_] = model(input_seq)
-        print('score')
-        print(score_.shape)
+    criterion = config_fns.CRITERION_FCT()
 
-        print('mask')
-        print(mask_.shape)
-        # visualize
-#        if (iteration == 0) or (iteration == args.print_freq):
-#            if B > 2: input_seq = input_seq[0:2,:]
-#            writer_train.add_image('input_seq',
-#                                   de_normalize(vutils.make_grid(
-#                                       input_seq.transpose(2,3).contiguous().view(-1,3,args.img_dim,args.img_dim), 
-#                                       nrow=args.num_seq*args.seq_len)),
-#                                   iteration)
-        del input_seq
+    for idx, input_seq in enumerate(data_loader):
+        start_time = time.time()
+        input_seq = input_seq.to(device)
+        B = input_seq.size(0)
+        [score_, mask_] = model(input_seq)
+
+        logger.debug("Model called next.")
+        logger.debug(
+            f"Input sequence shape: {input_seq.shape} "
+            "(expecting [10, 4, 3, 5, 128, 128])."
+            )
+        logger.debug(
+            f"Score shape: {score_.shape} (expecting a 6D tensor: "
+            "[B, P, SQ, B, N, SQ]"
+            )
+        logger.debug(f"Mask shape: {mask_.shape}")
         
-        if idx == 0: target_, (_, B2, NS, NP, SQ) = process_output(mask_)
+        if idx == 0: 
+            target_, (_, B2, NS, NP, SQ) = config_fns.process_output(mask_)
         
         # score is a 6d tensor: [B, P, SQ, B, N, SQ]
         score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
-        target_flattened = target_.view(B*NP*SQ, B2*NS*SQ).to(cuda)
+        target_flattened = target_.view(B*NP*SQ, B2*NS*SQ).to(device)
         target_flattened = target_flattened.to(int).argmax(dim=1)
 
         loss = criterion(score_flattened, target_flattened)
-        top1, top3, top5 = calc_topk_accuracy(score_flattened, target_flattened, (1,3,5))
+        top1, top3, top5 = utils.calc_topk_accuracy(
+            score_flattened, target_flattened, (1, 3, 5)
+            )
 
-        accuracy_list[0].update(top1.item(),  B)
+        accuracy_list[0].update(top1.item(), B)
         accuracy_list[1].update(top3.item(), B)
         accuracy_list[2].update(top5.item(), B)
 
@@ -338,134 +82,403 @@ def train(data_loader, model, optimizer, epoch):
 
         del loss
 
-        criterion_measure = nn.CrossEntropyLoss(reduction='none')       
-        loss_foreach_dict[idx] = criterion_measure(score_flattened, target_flattened).view(B,SQ).mean(axis=1)
+        criterion_measure = config_fns.CRITERION_FCT(reduction="none")       
+        loss_foreach_dict[idx] = criterion_measure(
+            score_flattened, target_flattened
+            ).view(B, SQ).mean(axis=1).to("cpu").tolist()
         
-        dot_foreach[idx] = score_
-        target_foreach[idx] = target_
+        dot_foreach[idx] = score_.to("cpu").tolist()
+        target_foreach[idx] = target_.to("cpu").tolist()
         
         del score_
 
-        
-        if idx % args.print_freq == 0:
-            print('Epoch: [{0}][{1}/{2}]\t'
-                  'Loss {loss.val:.6f} ({loss.local_avg:.4f})\t'
-                  'Acc: top1 {3:.4f}; top3 {4:.4f}; top5 {5:.4f} T:{6:.2f}\t'.format(
-                   epoch, idx, len(data_loader), top1, top3, top5, time.time()-tic, loss=losses), flush=True)
-            if args.dataset == 'gabors':
-                print(data_loader.prev_seq[-1],flush=True)
-                print(data_loader.prev_seq[-args.batch_size:])
-                print(loss_foreach_dict[idx],flush=True)
-                detailed_loss.append(losses.val)
-                #yaml.dump(losses.val, open(SLURM_TMPDIR + '/loss.yaml', 'w'))
-                #yaml.dump(data_loader.prev_seq, open(SLURM_TMPDIR + '/seq.yaml', 'w'))
-        
+        if idx % log_freq == 0:
+            logger.info(
+                f"Epoch: [{epoch_n}/{num_epochs - 1}][{idx}/{len(data_loader)}]\t"
+                f"Loss: {losses.val:.6f} ({losses.local_avg:.4f})\t"
+                f"Acc: top1 {top1:.4f}; top3 {top3:.4f}; top5 {top5:.4f}"
+                f"T:{time.time() - start_time:.2f}\t"
+                )
+            
+            if writer is not None:
+                writer.add_scalar("local/loss", losses.val, iteration)
+                writer.add_scalar("local/accuracy", accuracy.val, iteration)
 
-#            writer_train.add_scalar('local/loss', losses.val, iteration)
-#            writer_train.add_scalar('local/accuracy', accuracy.val, iteration)
+            logger.debug(f"Previous sequence: {data_loader.prev_seq[-1]}")
+            logger.debug(
+                f"Batch sequences: {data_loader.prev_seq[-B:]}"
+                )
+            logger.debug(f"Batch loss: {loss_foreach_dict[idx]}")
+
+            detailed_loss.append(losses.val)
 
             iteration += 1
+    
+    training_dict = {
+        "train_loss"       : losses.local_avg,
+        "train_acc"        : accuracy.local_avg,
+        "train_acc_list"   : [i.local_avg for i in accuracy_list],
+        "detailed_loss"    : detailed_loss, 
+        "loss_foreach_dict": loss_foreach_dict,
+        "dot_foreach"      : dot_foreach,
+        "target_foreach"   : target_foreach,
+    }
 
-    return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list], detailed_loss, loss_foreach_dict, dot_foreach, target_foreach
+    return training_dict, iteration
 
 
-def validate(data_loader, model, epoch):
-    losses = AverageMeter()
-    accuracy = AverageMeter()
-    accuracy_list = [AverageMeter(), AverageMeter(), AverageMeter()]
+def val_epoch(data_loader, model, epoch_n=0, num_epochs=10, device="cpu"):
+    losses = utils.AverageMeter()
+    topk_meters = [utils.AverageMeter() for _ in range(config_fns.TOPK)]
+    model = model.to(device)
     model.eval()
 
+    criterion = config_fns.CRITERION_FCT()
+
     with torch.no_grad():
-        for idx, input_seq in tqdm(enumerate(data_loader), total=len(data_loader)):
-            input_seq = input_seq.to(cuda)
+        for idx, input_seq in tqdm(
+            enumerate(data_loader), total=len(data_loader)
+            ):
+            input_seq = input_seq.to(device)
             B = input_seq.size(0)
             [score_, mask_] = model(input_seq)
             del input_seq
 
-            if idx == 0: target_, (_, B2, NS, NP, SQ) = process_output(mask_)
+            if idx == 0: 
+                target_, (_, B2, NS, NP, SQ) = config_fns.process_output(mask_)
 
             # [B, P, SQ, B, N, SQ]
             score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
-            target_flattened = target_.view(B*NP*SQ, B2*NS*SQ).to(cuda)
+            target_flattened = target_.view(B*NP*SQ, B2*NS*SQ).to(device)
             target_flattened = target_flattened.to(int).argmax(dim=1)
-
             
             loss = criterion(score_flattened, target_flattened)
-            top1, top3, top5 = calc_topk_accuracy(score_flattened, target_flattened, (1,3,5))
+
+            utils.update_topk_meters(
+                topk_meters, score_flattened, target_flattened, 
+                ks=config_fns.TOPK
+                )
 
             losses.update(loss.item(), B)
-            accuracy.update(top1.item(), B)
 
-            accuracy_list[0].update(top1.item(),  B)
-            accuracy_list[1].update(top3.item(), B)
-            accuracy_list[2].update(top5.item(), B)
+    topk_str = ", ".join(
+        [f"top{k} {topk_meter.avg:.4f}" 
+        for (k, topk_meter) in zip(config_fns.TOPK, topk_meters)]
+        )
 
-    print('[{0}/{1}] Loss {loss.local_avg:.4f}\t'
-          'Acc: top1 {2:.4f}; top3 {3:.4f}; top5 {4:.4f} \t'.format(
-           epoch, args.epochs, *[i.avg for i in accuracy_list], loss=losses))
-    return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list]
+    logger.info(
+        f"Epoch: [{epoch_n}/{num_epochs - 1}] Loss: {losses.local_avg:.4f}\t"
+        f"Acc: {topk_str}"
+        )
+    
+    accuracy = topk_meters[config_fns.TOPK.index(1)]
+    
+    return losses.local_avg, accuracy.local_avg, topk_meters
 
 
-def get_data(transform, mode='train'):
-    print('Loading data for "%s" ...' % mode)
-    if args.dataset == 'k400':
-        use_big_K400 = args.img_dim > 140
-        dataset = Kinetics400_full_3d(mode=mode,
-                              transform=transform,
-                              seq_len=args.seq_len,
-                              num_seq=args.num_seq,
-                              downsample=5,
-                              big=use_big_K400)
-    elif args.dataset == 'ucf101':
-        dataset = UCF101_3d(mode=mode,
-                         transform=transform,
-                         seq_len=args.seq_len,
-                         num_seq=args.num_seq,
-                         downsample=args.ds)
-    elif args.dataset == 'gabors':
-        pass
+def train_full(args, train_loader, model, optimizer, scheduler=None, 
+               device="cpu", val_loader=None):
+
+    model = model.to(device)
+
+    iteration, best_acc, start_epoch = config_fns.load_checkpoint(
+        model, optimizer, resume=args.resume, pretrained=args.pretrained, 
+        test=args.test, lr=args.lr, reset_lr=args.reset_lr
+        )
+
+    # setup tools
+    img_path, model_path = config_fns.set_path(args) # was global
+    writer_train, writer_val = None, None
+    if args.use_tb:
+        from tensorboardX import SummaryWriter
+        writer_train = SummaryWriter(logdir=str(Path(img_path, "train")))
+        writer_val = SummaryWriter(logdir=str(Path(img_path, "val")))
+    
+    loss_dict = {"Training" : {},
+                 "Validation" : {}}
+    
+    detailed_loss_dict = {}
+    loss_foreach_full_dict = {}
+    dot_foreach_dict = {}
+    target_foreach_dict = {}
+    
+    ### main loop ###
+    Path(args.save_dir).mkdir(exist_ok=True)
+
+    for epoch_n in range(start_epoch, args.num_epochs):
+        if args.dataset == "gabors":
+            if not train_loader.unexp and epoch_n > args.unexpected_epoch:
+                train_loader.unexp = True
+                logger.info(f"mode: {train_loader.mode}")
+    
+        training_dict = train_epoch(
+            train_loader, 
+            model, 
+            optimizer, 
+            epoch_n=epoch_n, 
+            num_epochs=args.num_epochs,
+            iteration=iteration, 
+            device=device, 
+            log_freq=args.log_freq,
+            )
+
+        loss_dict["Training"][epoch_n] = training_dict["train_loss"]
+        loss_foreach_full_dict[epoch_n] = training_dict["loss_foreach_dict"]
+        dot_foreach_dict[epoch_n] = training_dict["dot_foreach"]        
+        target_foreach_dict[epoch_n] = training_dict["target_foreach"]
+        detailed_loss_dict[epoch_n] = training_dict["detailed_loss"]
+        
+        if args.save_best:
+            val_loss, val_acc, val_acc_list = val_epoch(
+                val_loader, 
+                model, 
+                epoch_n=epoch_n, 
+                num_epochs=args.num_epochs, 
+                device=device
+                )
+            is_best = val_acc > best_acc
+            best_acc = max(val_acc, best_acc)
+        else:
+            is_best = False
+            best_acc = None
+
+        if scheduler is not None:
+            scheduler.step(epoch_n)
+
+        # Save to json
+        data_names = ["loss", "loss_foreach", "dot_foreach", "target_for_each"]
+        data_to_save = [
+            detailed_loss_dict, 
+            loss_foreach_full_dict, 
+            dot_foreach_dict, 
+            target_foreach_dict
+            ]
+        
+        unexpected_epoch = "_"
+        if args.dataset == "gabors":
+            data_names.append("seq")
+            data_to_save.append(train_loader.prev_seq)
+            unexpected_epoch = f"{args.unexpected_epoch}_"
+
+        for data, name in zip(data_to_save, data_names):
+            full_path = Path(
+                args.save_dir, 
+                f"{name}_{unexpected_epoch}{args.seed}.json"
+                )
+            with json.load(full_path, "w"):
+                json.dump(data, full_path)
+
+        if args.use_tb:
+            modes = ["train"]
+            if args.save_best:
+                modes.append("val")
+            datatypes = [
+                "global/loss", 
+                "global/accuracy", 
+                "accuracy/top1", 
+                "accuracy/top3", 
+                "accuracy/top5"
+                ]
+
+            for mode in modes:
+                if mode == "train":
+                    writer = writer_train
+                    all_data = [
+                        training_dict["train_loss"], 
+                        training_dict["train_acc"], 
+                        *training_dict["train_acc_list"]
+                        ]
+                elif mode == "val":
+                    writer = writer_val
+                    all_data = [val_loss, val_acc, *val_acc_list]
+                for datatype, data in zip(datatypes, all_data):
+                    writer.add_scalar(datatype, data, epoch_n)
+
+        logger.debug(
+            f"Epoch training loss: {loss_dict['Training'][epoch_n]}"
+            )
+        if args.save_best:
+            logger.debug(f"Epoch validation loss: {val_loss}")
+
+        # save checkpoint
+        epoch_path = Path(model_path, f"epoch{epoch_n}.pth.tar")
+        utils.save_checkpoint(
+            {
+            "epoch_n": epoch_n,
+            "net": args.net,
+            "state_dict": model.state_dict(),
+            "best_acc": best_acc,
+            "optimizer": optimizer.state_dict(),
+            "iteration": iteration
+            }, 
+            is_best, 
+            filename=epoch_path, 
+            keep_all=False
+        )
+           
+    logger.info(
+        f"Training from ep {args.start_epoch} to {args.num_epochs} finished"
+        )
+
+
+def run_DPC(args):
+
+    if args.model != "dpc-rnn":
+        raise NotImplementedError(
+            "Only 'dpc-rnn' model is implemented for Dense CPC."
+            )
+
+    ### get model ###
+    model = model_3d.DPC_RNN(
+        sample_size=args.img_dim, 
+        num_seq=args.num_seq, 
+        seq_len=args.seq_len, 
+        network=args.net, 
+        pred_step=args.pred_step
+        )
+
+    ### get device ###
+    device, num_workers = utils.get_device(args.num_workers)
+    model = torch.nn.DataParallel(model)
+    model = model.to(device)
+
+    ### set parameters ###
+    if args.train_what == "last":
+        for name, param in model.module.resnet.named_parameters():
+            param.requires_grad = False
+    else: 
+        pass # train all layers
+
+    logger.debug("\n===========Check Grad============")
+    for name, param in model.named_parameters():
+        logger.debug(name, param.requires_grad)
+    logger.debug("=================================\n")
+
+    params = model.parameters()
+    
+    optimizer = optim.Adam(params, lr=args.lr, weight_decay=args.wd)
+
+    ### prepare dataloader arguments
+    data_kwargs = {
+        "batch_size"  : args.batch_size,
+        "img_dim"     : args.img_dim,
+        "num_seq"     : args.num_seq,
+        "supervised"  : True,
+        "num_workers" : num_workers,
+        "seed"        : args.seed,
+    }
+
+    if args.dataset == "gabors":
+        data_kwargs["blank"]  = args.blank
+        data_kwargs["roll"]   = args.roll
+        data_kwargs["U_prob"] = args.U_prob
+        data_kwargs["U_pos"]  = args.U_pos
+
+        get_data_loader_fn = gabor_stimuli.get_data_loader
     else:
-        raise ValueError('dataset not supported')
+        transform = config_fns.get_transform(args.dataset, args.img_dim)
 
-    if args.dataset == 'gabors':
-        data_loader = GaborSequenceGenerator(batch_size=args.batch_size, num_trials=20, num_seq=args.num_seq, blank=args.blank, roll=args.roll, p_E=args.p_E, e_pos=args.e_pos, WIDTH=128, HEIGHT=128)
+        data_kwargs["transform"]   = transform
+        data_kwargs["dataset"]     = args.dataset
+        data_kwargs["seq_len"]     = args.seq_len
+        data_kwargs["ucf_hmdb_ds"] = args.ucf_hmdb_ds
+
+        get_data_loader_fn = config_fns.get_data_loader
+
+    train_loader = get_data_loader_fn(mode="train", **data_kwargs)
+    val_loader = None
+    if args.save_best:
+        val_loader = get_data_loader_fn(mode="val", **data_kwargs)
+
+    ### train DPC model
+    train_full(
+        args, 
+        train_loader, 
+        model, 
+        optimizer, 
+        device=device, 
+        val_loader=val_loader
+        )
+
+
+def main(args):
+
+    args = copy.deepcopy(args)
+
+    args.save_best = not(args.not_save_best)
+
+    plt.switch_backend(args.plt_bkend)
+
+    if args.seed == -1:
+        args.seed = None
     else:
-        sampler = data.RandomSampler(dataset)
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = True
 
-        if mode == 'train':
-            data_loader = data.DataLoader(dataset,
-                                      batch_size=args.batch_size,
-                                      sampler=sampler,
-                                      shuffle=False,
-                                      num_workers=32,
-                                      pin_memory=True,
-                                      drop_last=True)
-        elif mode == 'val':
-            data_loader = data.DataLoader(dataset,
-                                      batch_size=args.batch_size,
-                                      sampler=sampler,
-                                      shuffle=False,
-                                      num_workers=32,
-                                      pin_memory=True,
-                                      drop_last=True)
-        print('"%s" dataset size: %d' % (mode, len(dataset)))
-    return data_loader
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
 
-def set_path(args):
-    if args.resume: exp_path = os.path.dirname(os.path.dirname(args.resume))
-    else:
-        exp_path = SLURM_TMPDIR+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
-bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
-train-{args.train_what}{2}'.format(
-                    'r%s' % args.net[6::], \
-                    args.old_lr if args.old_lr is not None else args.lr, \
-                    '_pt%s' % args.pretrain.replace('/','-').replace('.pth.tar', '') if args.pretrain else '', \
-                    args=args)
-    img_path = os.path.join(exp_path, 'img')
-    model_path = os.path.join(exp_path, 'model')
-    if not os.path.exists(img_path): os.makedirs(img_path)
-    if not os.path.exists(model_path): os.makedirs(model_path)
-    return img_path, model_path
+    run_DPC(args)
 
-if __name__ == '__main__':
-    main()
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--save_dir", default="save_dir", 
+        help="directory for saving files")
+    parser.add_argument("--net", default="resnet18")
+    parser.add_argument("--model", default="dpc-rnn")
+    parser.add_argument("--dataset", default="ucf101")
+    parser.add_argument("--seq_len", default=5, type=int, 
+        help="number of frames in each video block")
+    parser.add_argument("--num_seq", default=8, type=int, 
+        help="number of video blocks")
+    parser.add_argument("--ucf_hmdb_ds", default=3, type=int, 
+        help="frame downsampling rate for UCF and HMDB datasets")
+    parser.add_argument("--batch_size", default=4, type=int)
+    parser.add_argument("--lr", default=1e-3, type=float, help="learning rate")
+    parser.add_argument("--wd", default=1e-5, type=float, help="weight decay")
+    parser.add_argument("--not_save_best", default="store_true", 
+        help="if True, best model is not identified and saved")
+    parser.add_argument("--resume", default="", 
+        help="path of model to resume")
+    parser.add_argument("--pretrained", default="", 
+        help="path of pretrained model")
+    parser.add_argument("--num_epochs", default=10, type=int, 
+        help="number of total epochs to run")
+    parser.add_argument("--start-epoch", default=0, type=int, 
+        help="manual epoch number (useful on restarts)")
+    parser.add_argument("--num_workers", default=8, type=int)
+    parser.add_argument("--log_freq", default=5, type=int, 
+        help="frequency at which to log output during training")
+    parser.add_argument("--reset_lr", action="store_true", 
+        help="if True, learning rate is reset when resuming training")
+    parser.add_argument("--prefix", default="tmp", 
+        help="prefix of checkpoint filename")
+    parser.add_argument("--train_what", default="all")
+    parser.add_argument("--img_dim", default=128, type=int)
+    parser.add_argument("--plt_bkend", default="agg", 
+        help="matplotlib backend")
+    parser.add_argument("--seed", default=-1, type=int, 
+        help="seed to use (-1 for no seeding)")
+    parser.add_argument("--debug", action="store_true", 
+        help="if True, extra information is logged to the console")
+    parser.add_argument("--use_tb", action="store_true", 
+        help="if True, tensorboard is used")
+
+    # unsupervised only
+    parser.add_argument("--pred_step", default=1, type=int)
+
+    # gabor arguments
+    parser.add_argument("--unexpected_epoch", default=10, type=int)
+    parser.add_argument("--blank", default=False, type=bool)
+    parser.add_argument("--roll", action="store_true")
+    parser.add_argument("--U_prob", default=0.1, type=float)
+    parser.add_argument("--U_pos", default="U")
+
+
+    args = parser.parse_args()
+
+    main(args)
