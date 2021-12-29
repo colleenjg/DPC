@@ -7,7 +7,6 @@ import time
 import numpy as np
 import torch
 import torch.optim as optim
-import torchvision
 from tqdm import tqdm
 
 import matplotlib.pyplot as plt
@@ -28,7 +27,6 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=10,
     model.train()
 
     criterion = data_utils.CRITERION_FCT()
-    de_normalize = training_utils.denorm()
 
     for idx, (input_seq, target) in enumerate(data_loader):
         start_time = time.perf_counter()
@@ -39,15 +37,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=10,
 
         # visualize 2 examples from the batch
         if writer is not None and idx % log_freq == 0:
-            _, N, C, SEQ_LEN, H, W = input_seq.shape
-            writer.add_image(
-                "input_seq", 
-                de_normalize(torchvision.utils.make_grid(
-                    input_seq[:2].transpose(2, 3).contiguous().view(
-                        -1, C, H, W
-                    ), nrow=N * SEQ_LEN)
-                ), iteration
-            )
+            training_utils.write_input_seq(writer, input_seq, n=2, i=iteration)
         del input_seq
 
         # separate sequences with shared label

@@ -15,8 +15,8 @@ sys.path.extend(
 from dataset_3d import *
 from model_3d import *
 from resnet_2d3d import neq_load_customized
-from augmentation import *
-from utils import AverageMeter, save_checkpoint, denorm, calc_topk_accuracy
+from augmentations import *
+from train_utils import AverageMeter, save_checkpoint, denorm, calc_topk_accuracy
 
 import torch
 import torch.optim as optim
@@ -24,7 +24,7 @@ from torch.utils import data
 from torchvision import datasets, models, transforms
 import torchvision.utils as vutils
 
-from stimuli import GaborSequenceGenerator
+from gabor_stimuli import GaborSequenceGenerator
 import yaml
 
 # identify and initialize temporary directory

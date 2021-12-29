@@ -7,7 +7,6 @@ import time
 import json
 import numpy as np
 import torch
-import torch.optim as optim
 from tqdm import tqdm
 
 import matplotlib.pyplot as plt
@@ -19,9 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50, 
-                iteration=0, device="cpu", log_freq=5, writer=None):
+                iteration=0, topk=data_utils.TOPK, device="cpu", log_freq=5, 
+                writer=None):
     
-    topk = data_utils.TOPK
     losses = training_utils.AverageMeter()
     topk_meters = [training_utils.AverageMeter() for _ in range(topk)]
     model = model.to(device)
@@ -35,52 +34,56 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
     criterion = data_utils.CRITERION_FCT()
 
     for idx, input_seq in enumerate(data_loader):
-        start_time = time.time()
+        start_time = time.perf_counter()
         input_seq = input_seq.to(device)
         B = input_seq.size(0)
         [score_, mask_] = model(input_seq)
 
-        logger.debug("Model called next.")
         logger.debug(
+            "Model called next.\n"
             f"Input sequence shape: {input_seq.shape} "
-            "(expecting [10, 4, 3, 5, 128, 128])."
+            "(expecting [10, 4, 3, 5, 128, 128]).\n"
+            f"Score shape: {score_.shape} "
+            "(expecting a 6D tensor: [B, PS, D2, B, PS, D2]).\n"
+            f"Mask shape: {mask_.shape}"
             )
-        logger.debug(
-            f"Score shape: {score_.shape} (expecting a 6D tensor: "
-            "[B, P, SQ, B, N, SQ]"
-            )
-        logger.debug(f"Mask shape: {mask_.shape}")
         
-        if idx == 0: 
-            target_, (_, B2, NS, NP, SQ) = data_utils.process_output(mask_)
-        
-        # score is a 6d tensor: [B, P, SQ, B, N, SQ]
-        score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
-        target_flattened = target_.view(B*NP*SQ, B2*NS*SQ).to(device)
-        target_flattened = target_flattened.to(int).argmax(dim=1)
+        # visualize 2 examples from the batch
+        if writer is not None and idx % log_freq == 0:
+            training_utils.write_input_seq(writer, input_seq, n=2, i=iteration)
+        del input_seq
 
+        target_, (B, PS, D2) = data_utils.get_target_from_mask(mask_)
+        
+        # score is a 6d tensor: [B, PS, D2, B, PS, D2]
+        score_flattened = score_.view(B * PS * D2, B * PS * D2)
+        target_flattened = target_.view(
+            B * PS * D2, B * PS * D2
+            ).argmax(dim=1).to(device)
+
+        # in-place update of accuracy meters
+        training_utils.update_topk_meters(
+            topk_meters, score_flattened, target_flattened, ks=topk
+            )
         loss = criterion(score_flattened, target_flattened)
-        top1, top3, top5 = train_utils.calc_topk_accuracy(
-            score_flattened, target_flattened, (1, 3, 5)
-            )
-
-        accuracy_list[0].update(top1.item(), B)
-        accuracy_list[1].update(top3.item(), B)
-        accuracy_list[2].update(top5.item(), B)
+        del target_flattened
 
         losses.update(loss.item(), B)
-        accuracy.update(top1.item(), B)
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        del loss
 
+        ############################################
+        ############### FROM HERE ##################
+        ############################################
+
+        # collect some values
         criterion_measure = data_utils.CRITERION_FCT(reduction="none")       
         loss_foreach_dict[idx] = criterion_measure(
             score_flattened, target_flattened
-            ).view(B, SQ).mean(axis=1).to("cpu").tolist()
+            ).view(B, D2).mean(axis=1).to("cpu").tolist()
         
         dot_foreach[idx] = score_.to("cpu").tolist()
         target_foreach[idx] = target_.to("cpu").tolist()
@@ -122,9 +125,10 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
     return training_dict, iteration
 
 
-def val_epoch(data_loader, model, epoch_n=0, num_epochs=10, device="cpu"):
-    losses = train_utils.AverageMeter()
-    topk_meters = [train_utils.AverageMeter() for _ in range(data_utils.TOPK)]
+def val_epoch(data_loader, model, epoch_n=0, num_epochs=10, 
+              topk=data_utils.TOPK, device="cpu"):
+    losses = training_utils.AverageMeter()
+    topk_meters = [training_utils.AverageMeter() for _ in range(topk)]
     model = model.to(device)
     model.eval()
 
@@ -149,7 +153,7 @@ def val_epoch(data_loader, model, epoch_n=0, num_epochs=10, device="cpu"):
             
             loss = criterion(score_flattened, target_flattened)
 
-            train_utils.update_topk_meters(
+            training_utils.update_topk_meters(
                 topk_meters, score_flattened, target_flattened, 
                 ks=data_utils.TOPK
                 )
@@ -297,7 +301,7 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
 
         # save checkpoint
         epoch_path = Path(model_path, f"epoch{epoch_n}.pth.tar")
-        train_utils.save_checkpoint(
+        training_utils.save_checkpoint(
             {
             "epoch_n": epoch_n,
             "net": args.net,
@@ -333,7 +337,7 @@ def run_DPC(args):
         )
 
     ### get device ###
-    device, num_workers = train_utils.get_device(args.num_workers)
+    device, num_workers = training_utils.get_device(args.num_workers)
     model = torch.nn.DataParallel(model)
     model = model.to(device)
 
@@ -351,7 +355,7 @@ def run_DPC(args):
 
     params = model.parameters()
     
-    optimizer = optim.Adam(params, lr=args.lr, weight_decay=args.wd)
+    optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=args.wd)
 
     ### prepare dataloader arguments
     data_kwargs = {
