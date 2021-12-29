@@ -2,7 +2,6 @@ import argparse
 import copy
 import logging
 from pathlib import Path
-import sys
 import time
 
 import json
@@ -13,11 +12,8 @@ from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 
-sys.path.extend(["..", str(Path("..", "utils")), str(Path("..", "backbone"))])
-import model_3d
-import config_fns
-import gabor_stimuli
-import utils
+from dataset import dataset_3d, data_utils
+from model import model_3d, training_utils
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +21,9 @@ logger = logging.getLogger(__name__)
 def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50, 
                 iteration=0, device="cpu", log_freq=5, writer=None):
     
-    losses = utils.AverageMeter()
-    accuracy_list = [
-        utils.AverageMeter(), utils.AverageMeter(), utils.AverageMeter()
-        ]
+    topk = data_utils.TOPK
+    losses = training_utils.AverageMeter()
+    topk_meters = [training_utils.AverageMeter() for _ in range(topk)]
     model = model.to(device)
     model.train()
 
@@ -37,7 +32,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
     dot_foreach = {}
     target_foreach = {}
 
-    criterion = config_fns.CRITERION_FCT()
+    criterion = data_utils.CRITERION_FCT()
 
     for idx, input_seq in enumerate(data_loader):
         start_time = time.time()
@@ -57,7 +52,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         logger.debug(f"Mask shape: {mask_.shape}")
         
         if idx == 0: 
-            target_, (_, B2, NS, NP, SQ) = config_fns.process_output(mask_)
+            target_, (_, B2, NS, NP, SQ) = data_utils.process_output(mask_)
         
         # score is a 6d tensor: [B, P, SQ, B, N, SQ]
         score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
@@ -65,7 +60,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         target_flattened = target_flattened.to(int).argmax(dim=1)
 
         loss = criterion(score_flattened, target_flattened)
-        top1, top3, top5 = utils.calc_topk_accuracy(
+        top1, top3, top5 = train_utils.calc_topk_accuracy(
             score_flattened, target_flattened, (1, 3, 5)
             )
 
@@ -82,7 +77,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
 
         del loss
 
-        criterion_measure = config_fns.CRITERION_FCT(reduction="none")       
+        criterion_measure = data_utils.CRITERION_FCT(reduction="none")       
         loss_foreach_dict[idx] = criterion_measure(
             score_flattened, target_flattened
             ).view(B, SQ).mean(axis=1).to("cpu").tolist()
@@ -128,12 +123,12 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
 
 
 def val_epoch(data_loader, model, epoch_n=0, num_epochs=10, device="cpu"):
-    losses = utils.AverageMeter()
-    topk_meters = [utils.AverageMeter() for _ in range(config_fns.TOPK)]
+    losses = train_utils.AverageMeter()
+    topk_meters = [train_utils.AverageMeter() for _ in range(data_utils.TOPK)]
     model = model.to(device)
     model.eval()
 
-    criterion = config_fns.CRITERION_FCT()
+    criterion = data_utils.CRITERION_FCT()
 
     with torch.no_grad():
         for idx, input_seq in tqdm(
@@ -145,7 +140,7 @@ def val_epoch(data_loader, model, epoch_n=0, num_epochs=10, device="cpu"):
             del input_seq
 
             if idx == 0: 
-                target_, (_, B2, NS, NP, SQ) = config_fns.process_output(mask_)
+                target_, (_, B2, NS, NP, SQ) = data_utils.process_output(mask_)
 
             # [B, P, SQ, B, N, SQ]
             score_flattened = score_.view(B*NP*SQ, B2*NS*SQ)
@@ -154,16 +149,16 @@ def val_epoch(data_loader, model, epoch_n=0, num_epochs=10, device="cpu"):
             
             loss = criterion(score_flattened, target_flattened)
 
-            utils.update_topk_meters(
+            train_utils.update_topk_meters(
                 topk_meters, score_flattened, target_flattened, 
-                ks=config_fns.TOPK
+                ks=data_utils.TOPK
                 )
 
             losses.update(loss.item(), B)
 
     topk_str = ", ".join(
         [f"top{k} {topk_meter.avg:.4f}" 
-        for (k, topk_meter) in zip(config_fns.TOPK, topk_meters)]
+        for (k, topk_meter) in zip(data_utils.TOPK, topk_meters)]
         )
 
     logger.info(
@@ -171,7 +166,7 @@ def val_epoch(data_loader, model, epoch_n=0, num_epochs=10, device="cpu"):
         f"Acc: {topk_str}"
         )
     
-    accuracy = topk_meters[config_fns.TOPK.index(1)]
+    accuracy = topk_meters[data_utils.TOPK.index(1)]
     
     return losses.local_avg, accuracy.local_avg, topk_meters
 
@@ -181,13 +176,13 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
 
     model = model.to(device)
 
-    iteration, best_acc, start_epoch = config_fns.load_checkpoint(
+    iteration, best_acc, start_epoch = data_utils.load_checkpoint(
         model, optimizer, resume=args.resume, pretrained=args.pretrained, 
         test=args.test, lr=args.lr, reset_lr=args.reset_lr
         )
 
     # setup tools
-    img_path, model_path = config_fns.set_path(args) # was global
+    img_path, model_path = data_utils.set_path(args) # was global
     writer_train, writer_val = None, None
     if args.use_tb:
         from tensorboardX import SummaryWriter
@@ -302,7 +297,7 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
 
         # save checkpoint
         epoch_path = Path(model_path, f"epoch{epoch_n}.pth.tar")
-        utils.save_checkpoint(
+        train_utils.save_checkpoint(
             {
             "epoch_n": epoch_n,
             "net": args.net,
@@ -338,7 +333,7 @@ def run_DPC(args):
         )
 
     ### get device ###
-    device, num_workers = utils.get_device(args.num_workers)
+    device, num_workers = train_utils.get_device(args.num_workers)
     model = torch.nn.DataParallel(model)
     model = model.to(device)
 
@@ -376,14 +371,14 @@ def run_DPC(args):
 
         get_data_loader_fn = gabor_stimuli.get_data_loader
     else:
-        transform = config_fns.get_transform(args.dataset, args.img_dim)
+        transform = data_utils.get_transform(args.dataset, args.img_dim)
 
         data_kwargs["transform"]   = transform
         data_kwargs["dataset"]     = args.dataset
         data_kwargs["seq_len"]     = args.seq_len
         data_kwargs["ucf_hmdb_ds"] = args.ucf_hmdb_ds
 
-        get_data_loader_fn = config_fns.get_data_loader
+        get_data_loader_fn = data_utils.get_data_loader
 
     train_loader = get_data_loader_fn(mode="train", **data_kwargs)
     val_loader = None

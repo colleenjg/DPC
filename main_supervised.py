@@ -2,9 +2,7 @@ import argparse
 import copy
 import logging
 from pathlib import Path
-import sys
 import time
-import warnings
 
 import numpy as np
 import torch
@@ -14,26 +12,26 @@ from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 
-sys.path.extend(["..", str(Path("..", "utils")), str(Path("..", "backbone"))])
-import dataset_3d, model_3d
-import config_fns
-import utils
+from dataset import dataset_3d, data_utils
+from model import model_3d, training_utils
 
 logger = logging.getLogger(__name__)
 
 
 def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=10, 
-                iteration=0, device="cpu", log_freq=5, writer=None):
+                iteration=0, topk=data_utils.TOPK, device="cpu", log_freq=5, 
+                writer=None):
 
-    losses = config_fns.AverageMeter()
-    topk_meters = [utils.AverageMeter() for _ in range(config_fns.TOPK)]
+    losses = training_utils.AverageMeter()
+    topk_meters = [training_utils.AverageMeter() for _ in range(topk)]
+    model = model.to(device)
     model.train()
 
-    criterion = config_fns.CRITERION_FCT()
-    de_normalize = utils.denorm()
+    criterion = data_utils.CRITERION_FCT()
+    de_normalize = training_utils.denorm()
 
     for idx, (input_seq, target) in enumerate(data_loader):
-        start_time = time.time()
+        start_time = time.perf_counter()
         input_seq = input_seq.to(device)
         target = target.to(device) # class index
         B = input_seq.size(0)
@@ -58,9 +56,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=10,
         target = target.repeat(1, N).view(-1)
         
         # in-place update of accuracy meters
-        utils.update_topk_meters(
-            topk_meters, output, target, ks=config_fns.TOPK
-            )
+        training_utils.update_topk_meters(topk_meters, output, target, ks=topk)
         loss = criterion(output, target)
         del target 
 
@@ -71,14 +67,16 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=10,
         optimizer.step()
 
         if idx % log_freq == 0:
-            loss_avg, acc_avg, log_str, loss_val, acc_val = utils.get_stats(
-                losses, topk_meters, ks=config_fns.TOPK, local=True, last=True
+            loss_avg, acc_avg, log_str, loss_val, acc_val = \
+                training_utils.get_stats(
+                    losses, topk_meters, ks=topk, local=True, 
+                    last=True
                 )
 
             logger.info(
                 f"Epoch: [{epoch_n}/{num_epochs - 1}]"
                 f"[{idx}/{len(data_loader)}]\t"
-                f"{log_str}\tT:{time.time() - start_time:.2f}"
+                f"{log_str}\tT:{time.perf_counter() - start_time:.2f}"
                 )
 
             if writer is not None:
@@ -103,18 +101,19 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=10,
 
 
 def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10, 
-                      device="cpu", shared_pred=False, save_dir=None):
+                      topk=data_utils.TOPK, device="cpu", shared_pred=False, 
+                      save_dir=None):
 
-    losses = utils.AverageMeter()
-    topk_meters = [utils.AverageMeter() for _ in range(config_fns.TOPK)]
+    losses = training_utils.AverageMeter()
+    topk_meters = [training_utils.AverageMeter() for _ in range(topk)]
     model = model.to(device)
     model.eval()
 
     if save_dir is not None:
-        confusion_mat = utils.ConfusionMeter(model.num_classes)
+        confusion_mat = training_utils.ConfusionMeter(model.num_classes)
         Path(save_dir).mkdir(exist_ok=True)
 
-    criterion = config_fns.CRITERION_FCT()
+    criterion = data_utils.CRITERION_FCT()
     with torch.no_grad():
         for _, (input_seq, target) in tqdm(enumerate(data_loader)):
             input_seq = input_seq.to(device)
@@ -147,8 +146,8 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
             if shared_pred:
                 # group sequences that share a label
                 output = output.view(B, USE_N, num_classes)
-                # for each batch item, take the average of each class' 
-                # softmaxes across sequences
+                # for each batch item, average the softmaxed class predictions 
+                # across sequences
                 output = torch.mean(
                     torch.nn.functional.softmax(output, 2),
                     1) # B x num_classes
@@ -158,8 +157,8 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
                 target = target.repeat(1, USE_N).view(-1) # B * USE_N
             
             # in-place update of accuracy meters
-            utils.update_topk_meters(
-                topk_meters, output, target, ks=config_fns.TOPK
+            training_utils.update_topk_meters(
+                topk_meters, output, target, ks=topk
                 )
             loss = criterion(output, target)
 
@@ -168,15 +167,15 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
             _, pred = torch.max(output, 1)
             confusion_mat.update(pred, target.view(-1).byte())
 
-    loss_avg, acc_avg, log_str = utils.get_stats(
-        losses, topk_meters, ks=config_fns.TOPK, local=False
+    loss_avg, acc_avg, log_str = training_utils.get_stats(
+        losses, topk_meters, ks=topk, local=False
         )
 
     logger.info(f"Epoch: [{epoch_n}/{num_epochs - 1}] {log_str}")
 
     if save_dir is not None:
         confusion_mat.plot_mat(Path(save_dir, "confusion_matrix.svg"))
-        utils.write_log(
+        training_utils.write_log(
             content=log_str,
             epoch=epoch_n,
             filename=Path(save_dir, "test_log.md")
@@ -186,17 +185,17 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
 
 
 def train_full(args, train_loader, model, optimizer, scheduler=None, 
-               device="cpu", val_loader=None):
+               topk=data_utils.TOPK, device="cpu", val_loader=None):
 
     model = model.to(device)
 
-    iteration, best_acc, start_epoch = config_fns.load_checkpoint(
+    iteration, best_acc, start_epoch = data_utils.load_checkpoint(
         model, optimizer, resume=args.resume, pretrained=args.pretrained, 
         test=args.test, lr=args.lr, reset_lr=args.reset_lr
         )
 
     # setup tools
-    img_path, model_path = config_fns.set_path(args)
+    img_path, model_path = data_utils.set_path(args)
     writer_train = None
     if args.use_tb:
         from tensorboardX import SummaryWriter
@@ -214,6 +213,7 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
             epoch_n=epoch_n, 
             num_epochs=args.num_epochs,
             iteration=iteration, 
+            topk=topk,
             device=device, 
             log_freq=args.log_freq,
             writer=writer_train,
@@ -225,6 +225,7 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
                 model, 
                 epoch_n=epoch_n, 
                 num_epochs=args.num_epochs, 
+                topk=topk,
                 device=device
                 )
             is_best = val_acc > best_acc
@@ -238,7 +239,7 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
 
         # save checkpoint
         epoch_path = Path(model_path, f"epoch{epoch_n}.pth.tar")
-        utils.save_checkpoint(
+        training_utils.save_checkpoint(
             {
             "epoch_n": epoch_n,
             "net": args.net,
@@ -283,7 +284,7 @@ def run_supervised(args):
         )
     
     ### get device ###
-    device, num_workers = utils.get_device(args.num_workers)
+    device, num_workers = training_utils.get_device(args.num_workers)
     model = torch.nn.DataParallel(model)
     model = model.to(device)
 
@@ -325,20 +326,20 @@ def run_supervised(args):
         data_kwargs["batch_size"] = args.batch_size
 
         optimizer = optim.Adam(params, lr=args.lr, weight_decay=args.wd)
-        lr_lambda = config_fns.get_lr_lambda(args.dataset, img_dim=args.img_dim)    
+        lr_lambda = data_utils.get_lr_lambda(args.dataset, img_dim=args.img_dim)    
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
-        transform = config_fns.get_transform(None, args.img_dim, mode="train")
-        train_loader = config_fns.get_dataloader(
+        transform = data_utils.get_transform(None, args.img_dim, mode="train")
+        train_loader = data_utils.get_dataloader(
             transform, mode="train", **data_kwargs
             )
 
         val_loader = None
         if args.save_best:
-            val_transform = config_fns.get_transform(
+            val_transform = data_utils.get_transform(
                 None, args.img_dim, mode="val"
                 )
-            val_loader = config_fns.get_dataloader(
+            val_loader = data_utils.get_dataloader(
                 val_transform, mode="val", **data_kwargs
                 )
 
@@ -348,6 +349,7 @@ def run_supervised(args):
             model, 
             optimizer, 
             scheduler=scheduler,
+            topk=data_utils.TOPK,
             device=device, 
             val_loader=val_loader
             )
@@ -356,9 +358,9 @@ def run_supervised(args):
         logger.warning("Setting batch_size to 1.")
         data_kwargs["batch_size"] = 1
 
-        _, _, start_epoch = config_fns.load_checkpoint(model, test=args.test)
-        transform = config_fns.get_transform(None, args.img_dim, mode="test")
-        test_loader = config_fns.get_data_loader(
+        _, _, start_epoch = data_utils.load_checkpoint(model, test=args.test)
+        transform = data_utils.get_transform(None, args.img_dim, mode="test")
+        test_loader = data_utils.get_data_loader(
             transform, mode="test", **data_kwargs
             )
 
@@ -379,6 +381,7 @@ def run_supervised(args):
             model, 
             epoch_n=start_epoch, 
             num_epochs=start_epoch + 1,
+            topk=data_utils.TOPK,
             device=device,
             shared_pred=True,
             save_dir=save_dir, 
