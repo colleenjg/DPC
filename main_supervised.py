@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 
 def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=10, 
-                iteration=0, topk=data_utils.TOPK, device="cpu", log_freq=5, 
-                writer=None):
+                log_idx=0, topk=data_utils.TOPK, device="cpu", 
+                decay_log_freq=5, writer=None):
 
     losses = training_utils.AverageMeter()
     topk_meters = [training_utils.AverageMeter() for _ in range(topk)]
@@ -36,8 +36,8 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=10,
         output, _ = model(input_seq)
 
         # visualize 2 examples from the batch
-        if writer is not None and idx % log_freq == 0:
-            training_utils.write_input_seq(writer, input_seq, n=2, i=iteration)
+        if writer is not None and idx % decay_log_freq == 0:
+            training_utils.write_input_seq(writer, input_seq, n=2, i=log_idx)
         del input_seq
 
         # separate sequences with shared label
@@ -45,19 +45,23 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=10,
         output = output.view(B * N, num_classes)
         target = target.repeat(1, N).view(-1)
         
-        # in-place update of accuracy meters
-        training_utils.update_topk_meters(topk_meters, output, target, ks=topk)
         loss = criterion(output, target)
-        del target 
-
-        losses.update(loss.item(), B)
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        if idx % log_freq == 0:
-            loss_avg, acc_avg, log_str, loss_val, acc_val = \
+        # update meters, in-place
+        losses.update(loss.item(), B)
+        training_utils.update_topk_meters(topk_meters, output, target, ks=topk)
+        del target 
+
+        if idx % decay_log_freq == 0:
+            training_utils.decay_weights(model)
+
+        # log results
+        if idx % decay_log_freq == 0:
+            loss_avg, acc_avg, loss_val, acc_val, log_str = \
                 training_utils.get_stats(
                     losses, topk_meters, ks=topk, local=True, 
                     last=True
@@ -70,22 +74,10 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=10,
                 )
 
             if writer is not None:
-                writer.add_scalar("local/loss", loss_val, iteration)
-                writer.add_scalar("local/accuracy", acc_val, iteration)
+                writer.add_scalar("local/loss", loss_val, log_idx)
+                writer.add_scalar("local/accuracy", acc_val, log_idx)
 
-
-            total_weight = 0.0
-            decay_weight = 0.0
-            for m in model.parameters():
-                if m.requires_grad: 
-                    decay_weight += m.norm(2).data
-                total_weight += m.norm(2).data
-            logger.info(
-                "Decay weight / Total weight: "
-                f"{decay_weight:.3f}/{total_weight:.3f}"
-                )
-
-            iteration += 1
+            log_idx += 1
 
     return loss_avg, acc_avg, topk_meters
 
@@ -179,7 +171,7 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
 
     model = model.to(device)
 
-    iteration, best_acc, start_epoch = data_utils.load_checkpoint(
+    log_idx, best_acc, start_epoch = data_utils.load_checkpoint(
         model, optimizer, resume=args.resume, pretrained=args.pretrained, 
         test=args.test, lr=args.lr, reset_lr=args.reset_lr
         )
@@ -202,10 +194,10 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
             optimizer, 
             epoch_n=epoch_n, 
             num_epochs=args.num_epochs,
-            iteration=iteration, 
+            log_idx=log_idx, 
             topk=topk,
             device=device, 
-            log_freq=args.log_freq,
+            decay_log_freq=args.decay_log_freq,
             writer=writer_train,
             )
 
@@ -236,7 +228,7 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
             "state_dict": model.state_dict(),
             "best_acc": best_acc,
             "optimizer": optimizer.state_dict(),
-            "iteration": iteration
+            "log_idx": log_idx
             }, 
             is_best, 
             filename=epoch_path, 
@@ -443,8 +435,9 @@ if __name__ == "__main__":
     parser.add_argument("--seed", default=-1, type=int, 
         help="seed to use (-1 for no seeding)")
     parser.add_argument("--num_workers", default=8, type=int)
-    parser.add_argument("--log_freq", default=5, type=int, 
-        help="frequency at which to log output during training")
+    parser.add_argument("--decay_log_freq", default=5, type=int, 
+        help=("frequency at which to decay weights and log output during "
+            "training"))
     parser.add_argument("--use_tb", action="store_true", 
         help="if True, tensorboard is used")
     parser.add_argument("--debug", action="store_true", 

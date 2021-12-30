@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50, 
-                iteration=0, topk=data_utils.TOPK, device="cpu", log_freq=5, 
+                log_idx=0, topk=data_utils.TOPK, device="cpu", log_freq=5, 
                 writer=None):
     
     losses = training_utils.AverageMeter()
@@ -50,7 +50,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         
         # visualize 2 examples from the batch
         if writer is not None and idx % log_freq == 0:
-            training_utils.write_input_seq(writer, input_seq, n=2, i=iteration)
+            training_utils.write_input_seq(writer, input_seq, n=2, i=log_idx)
         del input_seq
 
         target_, (B, PS, D2) = data_utils.get_target_from_mask(mask_)
@@ -61,23 +61,23 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
             B * PS * D2, B * PS * D2
             ).argmax(dim=1).to(device)
 
-        # in-place update of accuracy meters
-        training_utils.update_topk_meters(
-            topk_meters, score_flattened, target_flattened, ks=topk
-            )
         loss = criterion(score_flattened, target_flattened)
-        del target_flattened
-
-        losses.update(loss.item(), B)
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
+        # update meters, in-place
+        losses.update(loss.item(), B)
+        training_utils.update_topk_meters(
+            topk_meters, score_flattened, target_flattened, ks=topk
+            )
+        del target_flattened
 
         ############################################
         ############### FROM HERE ##################
         ############################################
+
 
         # collect some values
         criterion_measure = data_utils.CRITERION_FCT(reduction="none")       
@@ -90,39 +90,43 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         
         del score_
 
+        # log results
         if idx % log_freq == 0:
+            loss_avg, acc_avg, loss_val, acc_val, log_str = \
+                training_utils.get_stats(
+                    losses, topk_meters, ks=topk, local=True, last=True
+                )
             logger.info(
-                f"Epoch: [{epoch_n}/{num_epochs - 1}][{idx}/{len(data_loader)}]\t"
-                f"Loss: {losses.val:.6f} ({losses.local_avg:.4f})\t"
-                f"Acc: top1 {top1:.4f}; top3 {top3:.4f}; top5 {top5:.4f}"
-                f"T:{time.time() - start_time:.2f}\t"
+                f"Epoch: [{epoch_n}/{num_epochs - 1}]"
+                f"[{idx}/{len(data_loader)}]\t"
+                f"{log_str}\tT:{time.perf_counter() - start_time:.2f}"
                 )
             
             if writer is not None:
-                writer.add_scalar("local/loss", losses.val, iteration)
-                writer.add_scalar("local/accuracy", accuracy.val, iteration)
+                writer.add_scalar("local/loss", loss_val, log_idx)
+                writer.add_scalar("local/accuracy", acc_val, log_idx)
 
-            logger.debug(f"Previous sequence: {data_loader.prev_seq[-1]}")
             logger.debug(
+                f"Previous sequence: {data_loader.prev_seq[-1]}"
                 f"Batch sequences: {data_loader.prev_seq[-B:]}"
+                f"Batch loss: {loss_foreach_dict[idx]}"
                 )
-            logger.debug(f"Batch loss: {loss_foreach_dict[idx]}")
 
             detailed_loss.append(losses.val)
 
-            iteration += 1
+            log_idx += 1
     
     training_dict = {
-        "train_loss"       : losses.local_avg,
-        "train_acc"        : accuracy.local_avg,
-        "train_acc_list"   : [i.local_avg for i in accuracy_list],
+        "train_loss" : loss_avg,
+        "train_acc"  : acc_avg,
+        "topk_meters": topk_meters,
         "detailed_loss"    : detailed_loss, 
         "loss_foreach_dict": loss_foreach_dict,
         "dot_foreach"      : dot_foreach,
         "target_foreach"   : target_foreach,
     }
 
-    return training_dict, iteration
+    return training_dict, log_idx
 
 
 def val_epoch(data_loader, model, epoch_n=0, num_epochs=10, 
@@ -180,7 +184,7 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
 
     model = model.to(device)
 
-    iteration, best_acc, start_epoch = data_utils.load_checkpoint(
+    log_idx, best_acc, start_epoch = data_utils.load_checkpoint(
         model, optimizer, resume=args.resume, pretrained=args.pretrained, 
         test=args.test, lr=args.lr, reset_lr=args.reset_lr
         )
@@ -216,7 +220,7 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
             optimizer, 
             epoch_n=epoch_n, 
             num_epochs=args.num_epochs,
-            iteration=iteration, 
+            log_idx=log_idx, 
             device=device, 
             log_freq=args.log_freq,
             )
@@ -308,7 +312,7 @@ def train_full(args, train_loader, model, optimizer, scheduler=None,
             "state_dict": model.state_dict(),
             "best_acc": best_acc,
             "optimizer": optimizer.state_dict(),
-            "iteration": iteration
+            "log_idx": log_idx
             }, 
             is_best, 
             filename=epoch_path, 
