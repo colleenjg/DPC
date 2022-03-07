@@ -1,11 +1,16 @@
+# ignore all subdirectories, except specified ones
 /*/
-*.txt
-orig*
 
-!/dpc/
-!/eval/
+!/analysis/
+!/asset/
+!/bash/
+!/dataset/
+!/model/
+!/process_data/
+!/utils/
 
-/*/model_3d*.py
-/*/dataset_3d*.py
-/*/__pycache__
-/*/.ipynb_checkpoints
+.ipynb_checkpoints
+
+*.pyc
+*.swp
+
