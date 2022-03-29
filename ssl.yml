@@ -23,8 +23,12 @@ dependencies:
       - seaborn
       - shapely
       - tables
+      - unrar
+      - zipline
+      - wurlitzer
       - pillow
       - tqdm
       - torch
       - torchvision
       - tensorboardX
+

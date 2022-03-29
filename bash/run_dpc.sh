@@ -37,7 +37,7 @@ SEED=2
 
 
 # 4. Identify seeds to run through
-BASE_SEED = 1
+BASE_SEED=1
 if [[ -n "$N_PER" ]]; then
     N_PER=6 # default value
 fi

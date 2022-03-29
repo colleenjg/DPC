@@ -4,11 +4,11 @@ from datetime import datetime
 import glob
 import logging
 import multiprocessing
+import os
 from pathlib import Path
 import re
 
 import torch
-from torchvision import utils as vutils
 
 from model import resnet_2d3d
 
@@ -19,8 +19,17 @@ logger = logging.getLogger(__name__)
 def get_num_jobs(max_n=None, min_n=1):
     """get number of jobs to run in parallel"""
     num_jobs = multiprocessing.cpu_count()
-    if max_n is not None:
-        num_jobs = min(num_jobs, max_n)
+
+    if max_n is None:
+        max_n = num_jobs
+
+    os_max_n = os.getenv("OMP_NUM_THREADS")
+    if os_max_n is None:
+        os_max_n = num_jobs
+    else:
+        os_max_n = int(os_max_n) 
+
+    num_jobs = min(num_jobs, max_n, os_max_n)
     num_jobs = int(max(num_jobs, min_n))
 
     return num_jobs

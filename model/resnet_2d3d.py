@@ -1,13 +1,18 @@
 #!/usr/bin/env python
 
 # modified from https://github.com/kenshohara/3D-ResNets-PyTorch
+import argparse
 import logging
+from pathlib import Path
+import sys
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+sys.path.extend(["..", str(Path("..", "utils"))])
+from utils import misc_utils
 
 logger = logging.getLogger(__name__)
 
@@ -501,6 +506,14 @@ def select_resnet(network, track_running_stats=True):
 
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--log_level', default='info', 
+                        help='logging level, e.g., debug, info, error')
+    args = parser.parse_args()
+
+    misc_utils.get_logger_with_basic_format(level=args.log_level)
+
 
     test_model = resnet18_2d3d_full()
     test_data = torch.FloatTensor(4, 3, 16, 128, 128)

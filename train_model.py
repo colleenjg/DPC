@@ -6,13 +6,12 @@ import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
 import torch.optim as optim
 
 from dataset import gabor_stimuli, dataset_3d
 from model import model_3d, run_manager
-from utils import data_utils, training_utils
+from utils import data_utils, misc_utils, training_utils
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +266,7 @@ def run_training(args):
         scheduler=scheduler,
         device=device, 
         val_loader=val_loader,
-        seed=args.seed,
+        seed_info=args.seed,
         unexp_epoch=args.unexp_epoch,
         log_freq=args.log_freq,
         use_tb=args.use_tb,
@@ -290,13 +289,9 @@ def main(args):
     if args.seed == -1:
         args.seed = None
     else:
-        np.random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        torch.backends.cudnn.benchmark = True
-        torch.backends.cudnn.deterministic = True
+        misc_utils.seed_all(args.seed)
 
-    if args.debug:
-        logger.setLevel(logging.DEBUG)
+    misc_utils.get_logger_with_basic_format(level=args.log_level)
 
     run_training(args)
 
@@ -347,10 +342,10 @@ if __name__ == "__main__":
         help="matplotlib backend")
     parser.add_argument("--seed", default=-1, type=int, 
         help="seed to use (-1 for no seeding)")
-    parser.add_argument("--debug", action="store_true", 
-        help="if True, extra information is logged to the console")
     parser.add_argument("--use_tb", action="store_true", 
         help="if True, tensorboard is used")
+    parser.add_argument('--log_level', default='info', 
+                        help='logging level, e.g., debug, info, error')
 
     # unsupervised only
     parser.add_argument("--pred_step", default=1, type=int)

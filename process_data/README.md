@@ -2,45 +2,50 @@
 
 This folder has some tools to process UCF101, HMDB51 and Kinetics400 datasets. 
 
+Whereas UCF101 and HMDB51 are around 6 and 2 GB in size, the Kinetics400 train and 
+validation splits are around 360 and 26 GB in size, and split into 
+around 240 and 17 tar files, respectively.
+
 ### 1. Download
 
-Download the videos from source: 
+Run, e.g., `python download_data.py --d_root main_path --dataset UCF101` to download and arrange the data.
+
+Downloads the videos from source: 
 [UCF101 source](https://www.crcv.ucf.edu/data/UCF101.php), 
 [HMDB51 source](http://serre-lab.clps.brown.edu/resource/hmdb-a-large-human-motion-database/#Downloads), 
-[Kinetics400 source](https://deepmind.com/research/publications/kinetics-human-action-video-dataset).
+[Kinetics400 source](https://s3.amazonaws.com/kinetics).
 
-Make sure datasets are stored as follows: 
+Arranges the datasets as follows: 
 
 * UCF101
 ```
-{your_path}/UCF101/videos/{action class}/{video name}.avi
-{your_path}/UCF101/splits_classification/trainlist{01/02/03}.txt
-{your_path}/UCF101/splits_classification/testlist{01/02/03}}.txt
+{main_path}/UCF101/videos/{action class}/{video name}.avi
+{main_path}/UCF101/splits/trainlist{01/02/03}.txt
+{main_path}/UCF101/splits/testlist{01/02/03}}.txt
 ```
 
 * HMDB51
 ```
-{your_path}/HMDB51/videos/{action class}/{video name}.avi
-{your_path}/HMDB51/split/testTrainMulti_7030_splits/{action class}_test_split{1/2/3}.txt
+{main_path}/HMDB51/videos/{action class}/{video name}.avi
+{main_path}/HMDB51/splits/{action class}_test_split{1/2/3}.txt
 ```
 
 * Kinetics400
 ```
-{your_path}/Kinetics400/videos/train_split/{action class}/{video name}.mp4
-{your_path}/Kinetics400/videos/val_split/{action class}/{video name}.mp4
+{main_path}/Kinetics400/videos/train_split/{action class}/{video name}.mp4
+{main_path}/Kinetics400/videos/val_split/{action class}/{video name}.mp4
 ```
-Also keep the downloaded csv files, making sure you have:
+And keeps the downloaded csv files, stored as:
 ```
-{your_path}/Kinetics/kinetics_train/kinetics_train.csv
-{your_path}/Kinetics/kinetics_val/kinetics_val.csv
-{your_path}/Kinetics/kinetics_test/kinetics_test.csv
+{main_path}/Kinetics400/videos/train_split.csv
+{main_path}/Kinetics400/videos/val_split.csv
 ```
 
 ### 2. Extract frames
 
-Run, e.g., `python extract_frames.py --v_root your_path --dataset UCF101` to extract video frames. 
+Run, e.g., `python extract_frames.py --d_root main_path --dataset UCF101` to extract video frames. 
 
-### 3. Collect all paths into csv
+### 3. Collect all paths into csvs
 
-Run, e.g., `python write_csvs.py --f_root your_path --dataset UCF101` to collect paths into a csv file.
+Run, e.g., `python write_csvs.py --f_root main_path --dataset UCF101` to collect paths into a csv file.
 

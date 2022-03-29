@@ -9,6 +9,7 @@
 !/process_data/
 !/utils/
 
+process_data/data
 .ipynb_checkpoints
 
 *.pyc

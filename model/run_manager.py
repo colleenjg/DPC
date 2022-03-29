@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from utils import data_utils, loss_utils, tb_utils, training_utils
+from utils import data_utils, loss_utils, misc_utils, training_utils
 
 # a few global variables
 CRITERION_FCT = torch.nn.CrossEntropyLoss
@@ -56,7 +56,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         
         # visualize 2 examples from the batch
         if writer is not None and idx % log_freq == 0:
-            tb_utils.write_input_seq_tb(writer, input_seq, n=2, i=log_idx)
+            misc_utils.write_input_seq_tb(writer, input_seq, n=2, i=log_idx)
         del input_seq
 
         if supervised:
@@ -223,9 +223,9 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
             losses, topk_meters, ks=topk, local=False
         )
 
-    logger.info(f"Epoch: [{epoch_n}/{num_epochs - 1}] [validation] {log_str}")
+    logger.info(f"Epoch: [{epoch_n}/{num_epochs - 1}] [val] {log_str}")
 
-    valid_dict = {
+    val_dict = {
         "loss" : loss_avg,
         "acc"  : acc_avg,
         "topk_meters": topk_meters,
@@ -239,13 +239,13 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
             filename=Path(output_dir, "test_log.md")
             )
 
-    return valid_dict
+    return val_dict
 
 
 #############################################
 def train_full(train_loader, model, optimizer, output_dir=".", net_name=None, 
                dataset="gabors", num_epochs=10, scheduler=None, device="cpu", 
-               val_loader=None, seed=None, unexp_epoch=10, log_freq=5, 
+               val_loader=None, seed_info=None, unexp_epoch=10, log_freq=5, 
                use_tb=False, reload_kwargs=dict()):
     """
     train_full(train_loader, model, optimizer)
@@ -274,7 +274,7 @@ def train_full(train_loader, model, optimizer, output_dir=".", net_name=None,
     writer_train, writer_val = None, None
     if use_tb: 
         tb_dir = Path(output_dir, "tensorboard")
-        writer_train, writer_val = tb_utils.init_tb_writers(
+        writer_train, writer_val = misc_utils.init_tb_writers(
             tb_dir, val=save_best
             )
 
@@ -305,7 +305,7 @@ def train_full(train_loader, model, optimizer, output_dir=".", net_name=None,
             loss_dict["train"]["seq"].append(train_loader.prev_seq)
 
         if save_best or test:
-            valid_dict = val_or_test_epoch(
+            val_dict = val_or_test_epoch(
                 val_loader, 
                 model, 
                 epoch_n=epoch_n, 
@@ -313,26 +313,26 @@ def train_full(train_loader, model, optimizer, output_dir=".", net_name=None,
                 device=device
                 )
             if save_best:
-                is_best = valid_dict["acc"] > best_acc
-                best_acc = max(valid_dict["acc"], best_acc)
+                is_best = val_dict["acc"] > best_acc
+                best_acc = max(val_dict["acc"], best_acc)
 
         if scheduler is not None:
             scheduler.step(epoch_n)
 
         # Save and log loss information
         loss_utils.save_loss_dict(
-            loss_dict, output_dir=output_dir, seed=seed, dataset=dataset, 
+            loss_dict, output_dir=output_dir, seed=seed_info, dataset=dataset, 
             unexp_epoch=unexp_epoch
             )
         if use_tb:
-            tb_utils.update_tb(
+            misc_utils.update_tb(
                 writer_train, train_dict, epoch_n=epoch_n, 
-                writer_val=writer_val, valid_dict=valid_dict
+                writer_val=writer_val, val_dict=val_dict
                 )
 
-        logger.debug(f"Epoch training loss: {train_dict['loss']}")
+        logger.debug(f"Epoch train loss: {train_dict['loss']}")
         if save_best:
-            logger.debug(f"Epoch validation loss: {valid_dict['loss']}")
+            logger.debug(f"Epoch val loss: {val_dict['loss']}")
 
         # save checkpoint
         epoch_path = Path(model_direc, f"epoch{epoch_n}.pth.tar")

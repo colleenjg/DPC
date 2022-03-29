@@ -1,5 +1,14 @@
+#!/usr/bin/env python
+
+import argparse
+from pathlib import Path
+import sys
+
 import torch
 import torch.nn as nn
+
+sys.path.extend(["..", str(Path("..", "utils"))])
+from utils import misc_utils
 
 
 #############################################
@@ -119,6 +128,14 @@ class ConvGRU(nn.Module):
 
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--log_level', default='info', 
+                        help='logging level, e.g., debug, info, error')
+    args = parser.parse_args()
+
+    misc_utils.get_logger_with_basic_format(level=args.log_level)
+
 
     test_crnn = ConvGRU(
         input_size=10, hidden_size=20, kernel_size=3, num_layers=2
