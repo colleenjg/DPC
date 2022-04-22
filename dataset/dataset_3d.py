@@ -11,21 +11,51 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
+TAB = "    "
+
 
 #############################################
 def pil_loader(path_name):
+    """
+    pil_loader(path_name)
+    """
+
     with open(path_name, "rb") as f:
         with Image.open(f) as img:
             return img.convert("RGB")
 
 
 #############################################
-def get_num_classes(dataset_name):
+def normalize_dataset_name(dataset_name="UCF101", short=False):
+
     if dataset_name.lower() == "ucf101":
-        num_classes = 101
+        dataset_name = "UCF101"
     elif dataset_name.lower() == "hmdb51":
+        dataset_name = "HMDB51"
+    elif dataset_name.lower() in ["kinetics400", "k400"]:
+        dataset_name = "k400" if short else "Kinetics400"
+    else:
+        raise ValueError(f"{dataset_name} dataset not recognized.")
+
+    if short:
+        dataset_name = dataset_name.lower()
+    
+    return dataset_name
+
+
+#############################################
+def get_num_classes(dataset_name="UCF101"):
+    """
+    get_num_classes()
+    """
+
+    dataset_name = normalize_dataset_name(dataset_name)
+
+    if dataset_name == "UCF101":
+        num_classes = 101
+    elif dataset_name == "HMDB51":
         num_classes = 51
-    elif "kinetics400" in dataset_name.lower():
+    elif dataset_name == "Kinetics400":
         num_classes = 400
     else:
         raise ValueError(f"{dataset_name} dataset not recognized.")
@@ -36,7 +66,7 @@ def get_num_classes(dataset_name):
 #############################################
 class GeneralDataset(data.Dataset):
     def __init__(self,
-                 data_dir,
+                 data_path_dir,
                  mode="train",
                  dataset_name="ucf101",
                  transform=None,
@@ -45,13 +75,13 @@ class GeneralDataset(data.Dataset):
                  downsample=3,
                  epsilon=5,
                  unit_test=False,
-                 which_split=1,
+                 split_n=1,
                  return_label=False,
                  supervised=False,
                  seed=233, # used in init only
                  ):
 
-        self.data_dir = data_dir
+        self.data_path_dir = data_path_dir
         self.mode = mode
         self.dataset_name = dataset_name
         self.supervised = supervised
@@ -61,68 +91,73 @@ class GeneralDataset(data.Dataset):
         self.downsample = downsample
         self.epsilon = epsilon
         self.unit_test = unit_test
-        self.which_split = which_split
+        self.split_n = split_n
 
         if supervised:
             return_label = True
 
         self.return_label = return_label
         self._set_action_dicts()
-        self._set_video_info(
-            mode=mode, drop_short=True, unit_test=self.unit_test, seed=seed
-            )
+        self._set_video_info(mode=mode, drop_short=True, seed=seed)
 
 
     @property
     def dataset_dir(self):
         if not hasattr(self, "_dataset_dir"):
-            self._dataset_dir = Path(self.datadir, self.dataset_name)
-            if not self.dataset_dir.is_dir():
+            self._dataset_dir = Path(self.data_path_dir, self.dataset_name)
+            if not self._dataset_dir.is_dir():
                 raise OSError(
-                    f"Did not find dataset directory under {self.dataset_dir}."
+                    f"Did not find dataset directory under {self._dataset_dir}."
                     )
         return self._dataset_dir
 
 
     @property
     def action_file_dir(self):
-        return self._dataset_dir
-
-
-    @property
-    def action_file_sep(self):
-        if not hasattr(self, "_action_file_sep"):
-            self._action_file_sep = " "
-        return self._action_file_sep
+        return self.dataset_dir
 
 
     def _set_action_dicts(self):
+        """
+        self._set_action_dicts()
+        """
+        
         self.action_dict_encode = {}
         self.action_dict_decode = {}
 
         action_file = Path(self.action_file_dir, "classInd.txt")
-        action_df = pd.read_csv(
-            str(action_file), sep=self.action_file_sep, header=None
-            )
+        action_df = pd.read_csv(str(action_file), sep=" ", header=None)
         for _, row in action_df.iterrows():
             act_id, act_name = row
-            act_id = int(act_id) - 1 # let id start from 0
+            act_id = int(act_id)
             self.action_dict_decode[act_id] = act_name
             self.action_dict_encode[act_name] = act_id
 
 
     def _drop_short_videos(self, video_info):
+        """
+        self._drop_short_videos(video_info)
+        """
+        
         drop_idx = []
-        logger.debug("Filtering out videos that are too short ...")
+        logger.info(
+            "Filtering out videos that are too short", extra={"spacing": TAB}
+            )
         for idx, row in tqdm(video_info.iterrows(), total=len(video_info)):
             _, vlen = row
             if vlen - self.num_seq * self.seq_len * self.downsample <= 0:
                 drop_idx.append(idx) 
         video_info = video_info.drop(drop_idx, axis=0)
 
+        return video_info
+
 
     def _set_video_info(self, mode="train", drop_short=True, seed=None):
-        split_str = "" if self.which_split is None else f"{self.which_split:02}"
+        """
+        self._set_video_info()
+        """
+        
+        split_str = "" if self.split_n is None else f"{self.split_n:02}"
         if mode == "train":
             split = Path(self.dataset_dir, f"train_split{split_str}.csv")
         elif mode == "val":
@@ -142,11 +177,6 @@ class GeneralDataset(data.Dataset):
         self.video_info = pd.read_csv(str(split), header=None)
         if drop_short:
             self.video_info = self._drop_short_videos(self.video_info)
-
-        # if mode == "val": # sub-sample for validation? why?
-        #     self.video_info = self.video_info.sample(
-        #         frac=0.3, random_state=seed, 
-        #         )
         
         if self.unit_test: 
             n_sample = 32
@@ -156,6 +186,10 @@ class GeneralDataset(data.Dataset):
 
 
     def _crop_clips(self, t_seq):
+        """
+        self._crop_clips(t_seq)
+        """
+        
         (C, H, W) = t_seq[0].size()
         t_seq = torch.stack(t_seq, 0)
 
@@ -181,7 +215,10 @@ class GeneralDataset(data.Dataset):
 
 
     def idx_sampler(self, vlen, vpath, sample_num_seq=True, raise_none=False):
-        """sample sequences of indices from a video
+        """
+        self.idx_sampler(vlen, vpath)
+        
+        sample sequences of indices from a video
         if sample_num_seq: num_seq x seq_len
         else: all consecutive sequences of length seq_len
         """
@@ -208,7 +245,6 @@ class GeneralDataset(data.Dataset):
             seq_idx = seq_start_idx + self.downsample * np.expand_dims(
                 np.arange(self.seq_len), 0
                 )
-
         else:
             # identify indices of a single, full length sequence (1D indices)
             all_idxs = np.arange(0, vlen, self.downsample) 
@@ -218,7 +254,7 @@ class GeneralDataset(data.Dataset):
             seq_idx = []
             i = 0
             while i + self.seq_len <= n_frames:
-                seq_idx.append(all_idxs[i : i + self.seq_len, :])
+                seq_idx.append(all_idxs[i : i + self.seq_len])
                 i = i + self.seq_len
             seq_idx = np.asarray(seq_idx)
 
@@ -226,9 +262,12 @@ class GeneralDataset(data.Dataset):
 
     
     def _load_transform_images(self, vpath, seq_idx):
+        """
+        self._load_transform_images(vpath, seq_idx)
+        """
+
         seq = [
-            pil_loader(str(Path(vpath, f"image_{i+1:05}.jpg"))) 
-            for i in seq_idx
+            pil_loader(Path(vpath, f"image_{i+1:05}.jpg")) for i in seq_idx
             ]
         t_seq = self.transform(seq) # apply same transform
 
@@ -236,29 +275,37 @@ class GeneralDataset(data.Dataset):
 
 
     def _select_seq_sub_batch(self, t_seq):
+        """
+        self._select_seq_sub_batch(t_seq)
+        """
         
         num_poss = len(t_seq) - self.num_seq + 1
         step_size = self.num_seq // 2 # sub-batch of sequences overlap by half
 
-        t_seq = [
-            torch.stack(t_seq[i : i + self.num_seq], 0)
-            for i in range(0, num_poss, step_size)
-            ]
+        t_seq = torch.stack([
+            t_seq[i : i + self.num_seq] for i in range(0, num_poss, step_size)
+            ], 0)
         return t_seq
 
 
     def __getitem__(self, index):
         vpath, vlen = self.video_info.iloc[index]
-        
 
         if (self.supervised and self.mode == "test"):
             seq_idx, vpath = self.idx_sampler(
                 vlen, vpath, sample_num_seq=False, raise_none=True
                 )
+            seq_idx = seq_idx.reshape(len(seq_idx) * self.seq_len)
             t_seq = self._load_transform_images(vpath, seq_idx)
+
+            (C, H, W) = t_seq[0].size()
+            t_seq = torch.stack(t_seq, 0) # stack images
+
+            # reshape/transpose to N_all x C x SL x H x W
+            t_seq = t_seq.reshape(-1, self.seq_len, C, H, W).transpose(1, 2)
             
-            # get a sub-batch and transpose to SUB_B x N x C x SL x H x W
-            t_seq = self._select_seq_sub_batch(t_seq).transpose(2, 3)
+            # get a sub-batch: SUB_B x N x C x SL x H x W
+            t_seq = self._select_seq_sub_batch(t_seq)
         else:
             seq_idx, vpath = self.idx_sampler(
                 vlen, vpath, sample_num_seq=True, raise_none=True
@@ -278,7 +325,7 @@ class GeneralDataset(data.Dataset):
             t_seq = torch.stack(t_seq, 0) # stack images
             
             # reshape/transpose to N x C x SL x H x W
-            t_seq = t_seq.view(
+            t_seq = t_seq.reshape(
                 self.num_seq, self.seq_len, C, H, W
                 ).transpose(1, 2)
         
@@ -286,10 +333,9 @@ class GeneralDataset(data.Dataset):
             vname = Path(vpath).parts[-2]
             action = self.encode_action(vname)
             label = torch.LongTensor([action])
+            return t_seq, label
         else:
-            label = None
-
-        return t_seq, label
+            return t_seq
 
 
     def __len__(self):
@@ -297,19 +343,29 @@ class GeneralDataset(data.Dataset):
 
 
     def encode_action(self, action_name):
-        """give action name, return category"""
+        """
+        self.encode_action(action_name)
+
+        give action name, return category
+        """
+        
         return self.action_dict_encode[action_name]
 
 
     def decode_action(self, action_code):
-        """give action code, return action name"""
+        """
+        self.decode_action(action_code)
+
+        give action code, return action name
+        """
+        
         return self.action_dict_decode[action_code]
 
 
 #############################################
-class Kinetics400_full_3d(GeneralDataset):
+class Kinetics400_3d(GeneralDataset):
     def __init__(self,
-                 data_dir,
+                 data_path_dir=Path("process_data", "data"),
                  mode="train",
                  transform=None,
                  seq_len=10,
@@ -325,23 +381,22 @@ class Kinetics400_full_3d(GeneralDataset):
 
         if big: 
             size_str = "_256"
-            logger.info("Using Kinetics400 full data (256x256)")
+            logger.info("Using Kinetics400 data (256x256)")
         else: 
             size_str = ""
-            logger.info("Using Kinetics400 full data (150x150)")
+            logger.info("Using Kinetics400 data (150x150)")
 
-        super.__init__(
-            data_dir,
+        super().__init__(
+            data_path_dir,
             mode=mode, 
-            dataset_name=f"kinetics400_{size_str}",
-            supervised=False,
+            dataset_name=f"Kinetics400{size_str}",
             transform=transform,
             seq_len=seq_len,
             num_seq=num_seq,
             downsample=downsample,
             epsilon=epsilon,
             unit_test=unit_test,
-            which_split=None,
+            split_n=None,
             return_label=return_label,
             supervised=supervised,
             seed=seed,
@@ -351,7 +406,7 @@ class Kinetics400_full_3d(GeneralDataset):
     @property
     def action_file_dir(self):
         if not hasattr(self, "_action_file_dir"):
-            self._action_file_dir = Path(self.datadir, "kinetics400")
+            self._action_file_dir = Path(self.data_path_dir, "Kinetics400")
             if not self._action_file_dir.is_dir():
                 raise OSError(
                     "Did not find action file directory under "
@@ -360,17 +415,10 @@ class Kinetics400_full_3d(GeneralDataset):
         return self._action_file_dir
 
 
-    @property
-    def action_file_sep(self):
-        if not hasattr(self, "_action_file_sep"):
-            self._action_file_sep = ","
-        return self._action_file_sep
-
-
 #############################################
 class UCF101_3d(GeneralDataset):
     def __init__(self,
-                 data_dir,
+                 data_path_dir=Path("process_data", "data"),
                  mode="train",
                  transform=None, 
                  seq_len=10,
@@ -378,23 +426,23 @@ class UCF101_3d(GeneralDataset):
                  downsample=3,
                  epsilon=5,
                  unit_test=False,
-                 which_split=1,
+                 split_n=1,
                  return_label=False,
                  supervised=False,
                  seed=None
                  ):
 
-        super.__init__(
-            data_dir,
+        super().__init__(
+            data_path_dir,
             mode=mode, 
-            dataset_name="ucf101",
+            dataset_name="UCF101",
             transform=transform,
             seq_len=seq_len,
             num_seq=num_seq,
             downsample=downsample,
             epsilon=epsilon,
             unit_test=unit_test,
-            which_split=which_split,
+            split_n=split_n,
             return_label=return_label,
             supervised=supervised,
             seed=seed,
@@ -404,7 +452,7 @@ class UCF101_3d(GeneralDataset):
 #############################################
 class HMDB51_3d(data.Dataset):
     def __init__(self,
-                 data_dir,
+                 data_path_dir=Path("process_data", "data"),
                  mode="train",
                  transform=None,
                  seq_len=10,
@@ -412,24 +460,23 @@ class HMDB51_3d(data.Dataset):
                  downsample=1,
                  epsilon=5,
                  unit_test=False,
-                 which_split=1,
+                 split_n=1,
                  return_label=False,
                  supervised=False,
                  seed=None
                  ):
 
-        super.__init__(
-            data_dir,
+        super().__init__(
+            data_path_dir,
             mode=mode, 
-            dataset_name="ucf101",
-            supervised=True,
+            dataset_name="HMDB51",
             transform=transform,
             seq_len=seq_len,
             num_seq=num_seq,
             downsample=downsample,
             epsilon=epsilon,
             unit_test=unit_test,
-            which_split=which_split,
+            split_n=split_n,
             return_label=return_label,
             supervised=supervised,
             seed=seed,

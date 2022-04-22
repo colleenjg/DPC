@@ -16,6 +16,7 @@ from utils import misc_utils
 
 logger = logging.getLogger(__name__)
 
+TAB = "    "
 
 __all__ = [
     "ResNet2d3d_full", 
@@ -443,19 +444,24 @@ def neq_load_customized(model, pretrained_dict):
     when new model has been partially modified. """
     model_dict = model.state_dict()
     tmp = {}
-    logger.warning("\n=======Check Weights Loading======")
-    logger.warning("Weights not used from pretrained file:")
+
+    log_str = "\n========= Weight loading ========="
+    log_str = f"{log_str}\nWeights not used from pretrained file:"
+
     for k, v in pretrained_dict.items():
         if k in model_dict:
             tmp[k] = v
         else:
-            logger.info(k)
-    logger.warning("---------------------------")
-    logger.warning("Weights not loaded into new model:")
+            log_str = f"{log_str}\n{TAB}{k}"
+
+    log_str = f"{log_str}\n---------------------------"
+    log_str = f"{log_str}\nWeights not loaded into new model:"
     for k, v in model_dict.items():
         if k not in pretrained_dict:
-            logger.info(k)
-    logger.warning("===================================\n")
+            log_str = f"{log_str}\n{TAB}{k}"
+    log_str = f"{log_str}\n==================================="
+    logger.warning(log_str, extra={"spacing": "\n"})
+
     del pretrained_dict
     model_dict.update(tmp)
     del tmp

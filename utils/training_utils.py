@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import copy
 from datetime import datetime
 import glob
 import logging
@@ -8,16 +9,24 @@ import os
 from pathlib import Path
 import re
 
+import json
 import torch
 
+from dataset import dataset_3d
 from model import resnet_2d3d
 
 logger = logging.getLogger(__name__)
 
+TAB = "    "
 
 #############################################
 def get_num_jobs(max_n=None, min_n=1):
-    """get number of jobs to run in parallel"""
+    """
+    get_num_jobs()
+
+    Get number of jobs to run in parallel.
+    """
+    
     num_jobs = multiprocessing.cpu_count()
 
     if max_n is None:
@@ -37,6 +46,9 @@ def get_num_jobs(max_n=None, min_n=1):
 
 #############################################
 def get_device(num_workers=None):
+    """
+    get_device()
+    """
 
     device_name = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_name)
@@ -51,31 +63,44 @@ def get_device(num_workers=None):
 
 #############################################
 def log_weight_decay_prop(model):
+    """
+    log_weight_decay_prop(model)
+    """
+    
     total_weight = 0.0
     decay_weight = 0.0
     for m in model.parameters():
         if m.requires_grad: 
             decay_weight += m.norm(2).data
         total_weight += m.norm(2).data
+    perc = decay_weight / total_weight * 100
     logger.info(
-        "Norm of weights to decay / total: "
-        f"{decay_weight:.3f} / {total_weight:.3f}"
+        "Norm of weights to decay: "
+        f"{decay_weight:.2f} / {total_weight:.2f} ({perc:05.2f}% of total)", 
+        extra={"spacing": TAB}
         )
 
 
 #############################################
 def get_target_from_mask(mask):
-    """task mask as input, compute the target for contrastive loss"""
-    # mask meaning: 1: pos
+    """
+    get_target_from_mask(mask)
     
-    (B, PS, D2, _, _, _) = mask.size() # [B x PS x D2 x B x PS x D2]
+    Task mask as input, compute the target for contrastive loss
+    """
+    
+    # mask meaning: 1: pos
     target = (mask == 1).to(int)
     target.requires_grad = False
-    return target, (B, PS, D2)
+    return target
 
 
 #############################################
 def check_grad(model):
+    """
+    check_grad(model)
+    """
+    
     logger.debug("\n===========Check Grad============")
     for name, param in model.named_parameters():
         logger.debug(name, param.requires_grad)
@@ -86,7 +111,9 @@ def check_grad(model):
 def get_multistepLR_restart_multiplier(epoch, gamma=0.1, step=[10, 15, 20], 
                                        repeat=3):
     """
-    Return the multipier for LambdaLR, 
+    get_multistepLR_restart_multiplier(epoch)
+
+    Returns the multipier for LambdaLR, 
     0  <= ep < 10: gamma^0
     10 <= ep < 15: gamma^1 
     15 <= ep < 20: gamma^2
@@ -103,7 +130,13 @@ def get_multistepLR_restart_multiplier(epoch, gamma=0.1, step=[10, 15, 20],
 
 
 #############################################
-def get_lr_lambda(dataset="hmdb51", img_dim=224): 
+def get_lr_lambda(dataset="HMDB51", img_dim=224): 
+    """
+    get_lr_lambda()
+    """
+    
+    dataset = dataset_3d.normalize_dataset_name(dataset)
+
     if dataset == "hmdb51":
         steps = [150, 250, 300]
         
@@ -123,35 +156,98 @@ def get_lr_lambda(dataset="hmdb51", img_dim=224):
 
 
 #############################################
+def get_num_classes(model):
+    """
+    get_num_classes(model)
+    """
+    
+    num_classes = None
+    
+    if hasattr(model, "num_classes"):
+        num_classes = model.num_classes
+    
+    # in case the model is wrapped with DataParallel()
+    elif hasattr(model, "module") and hasattr(model.module, "num_classes"):
+        num_classes = model.module.num_classes
+
+    return num_classes
+
+
+#############################################
+def load_from_checkpoint(checkpoint, keys):
+    """
+    load_from_checkpoint(checkpoint, keys)
+    """
+
+    if len(keys) != 2:
+        raise ValueError("'keys' must have a length of 2.")
+
+    try:
+        value = checkpoint[keys[0]]
+    except KeyError:
+        value = checkpoint[keys[1]]
+
+    return value
+
+
+#############################################
 def load_checkpoint(model, optimizer=None, resume=False, pretrained=False, 
                     test=True, lr=1e-3, reset_lr=False):
+    """
+    load_checkpoint(model)
+    """
 
     if bool(resume) + bool(pretrained) + bool(test) > 1:
         raise ValueError("Only resume, pretrained or test can be True.")
     
-    iteration, start_epoch = 0, 0
+    log_idx, start_epoch_n = 0, 0
     best_acc, old_lr = None, None
 
     if resume:
         if Path(resume).is_file():
-            old_lr = float(re.search("_lr(.+?)_", resume).group(1))
-            logger.info(f"=> Loading checkpoint to resume from: '{resume}'")
+            old_lr = None
+            if "_lr" in str(resume):
+                old_lr = float(re.search("_lr(.+?)_", resume).group(1))
             checkpoint = torch.load(resume, map_location=torch.device("cpu"))
-            start_epoch = checkpoint["epoch_n"]
-            iteration = checkpoint["iteration"]
+            checkpoint_epoch_n = load_from_checkpoint(
+                checkpoint, ["epoch_n", "epoch"]
+                )
+            start_epoch_n = checkpoint_epoch_n + 1
+            log_idx = load_from_checkpoint(checkpoint, ["log_idx", "iteration"])
             best_acc = checkpoint["best_acc"]
-            model.load_state_dict(checkpoint["state_dict"])
+            try:
+                model.load_state_dict(checkpoint["state_dict"])
+            except RuntimeError as err:
+                if "Missing key" in str(err):
+                    model_type = "supervised"
+                    if get_num_classes(model) is None:
+                        model_type = "self-supervised"
+                    raise RuntimeError(
+                        f"{err}\nEnsure that you are resuming from a "
+                        f"{model_type} model checkpoint."
+                        )
+                else:
+                    raise err
             # if not resetting lr, load old optimizer
             if optimizer is not None and not reset_lr: 
+                optimizer = copy.deepcopy(optimizer)
                 optimizer.load_state_dict(checkpoint["optimizer"])
             else: 
-                logger.info(f"==== Changing lr from {old_lr} to {lr} ====")
+                # optimizer state is not reloaded
+                old_lr_str = "(unknown)" if old_lr is None else f"of {old_lr}"
+                if old_lr != lr:
+                    lr_str = (f", with lr of {lr} instead of previous value "
+                        f"{old_lr_str}")
+                
+                logger.info(
+                    (f"==== Using new optimizer{lr_str} ====")
+                    )
             logger.info(
                 f"=> Loaded checkpoint to resume from: '{resume}' "
-                f"(epoch {checkpoint['epoch']})"
+                f"(epoch {checkpoint_epoch_n})."
                 )
         else:
-            logger.warning(f"No checkpoint found at '{resume}'")
+            logger.warning(f"No checkpoint found at '{resume}'.")
 
     elif pretrained or test:
         reload_model = pretrained if pretrained else test
@@ -159,12 +255,13 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
         if reload_model == "random":
             logger.warning("Loading random weights.")
         elif Path(reload_model).is_file():
-            logger.info(f"=> Loading {reload_str} checkpoint: '{reload_model}'")
             checkpoint = torch.load(
                 reload_model, map_location=torch.device("cpu")
                 )
+            checkpoint_epoch_n = load_from_checkpoint(
+                checkpoint, ["epoch_n", "epoch"]
+                )
             if test:
-                start_epoch = checkpoint["epoch_n"]
                 try: 
                     model.load_state_dict(checkpoint['state_dict'])
                     test_loaded = True
@@ -180,17 +277,20 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
                     )
             logger.info(
                 f"=> Loaded {reload_str} checkpoint '{reload_model}' "
-                f"(epoch {checkpoint['epoch']})"
+                f"(epoch {checkpoint_epoch_n})."
                 )
         else: 
-            logger.warning(f"=> No checkpoint found at '{reload_model}'")
+            logger.warning(f"=> No checkpoint found at '{reload_model}'.")
     
-    return iteration, best_acc, start_epoch
+    return optimizer, log_idx, best_acc, start_epoch_n
 
 
 #############################################
 def save_checkpoint(state_dict, is_best=0, gap=1, filename=None, 
                     keep_all=False):
+    """
+    save_checkpoint(state_dict)
+    """
     
     if filename is None:
         filename = Path("models", "checkpoint.pth.tar")
@@ -221,6 +321,9 @@ def save_checkpoint(state_dict, is_best=0, gap=1, filename=None,
 
 #############################################
 def write_log(content, epoch_n, filename):
+    """
+    write_log(content, epoch_n, filename)
+    """
     
     open_mode = "a" if Path(filename).is_file() else "w"
 

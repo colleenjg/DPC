@@ -15,24 +15,31 @@ from utils import data_utils, misc_utils, training_utils
 
 logger = logging.getLogger(__name__)
 
+TAB = "    "
 
 ############################################
 def check_adjust_args(args):
+    """
+    check_adjust_args(args)
+    """
 
     args = copy.deepcopy(args)
+
+    # normalize the dataset name
+    args.dataset = dataset_3d.normalize_dataset_name(args.dataset, short=False)
 
     # check model, and add supervised argument
     if "dpc" in args.model:
         if args.model != "dpc-rnn":
             raise NotImplementedError(
-                "Only 'dpc-rnn' model is implemented for Dense CPC."
+                "Only the 'dpc-rnn' model is implemented for Dense CPC."
                 )
         args.supervised = False
     
     elif "lc" in args.model:
         if args.model != "lc":
             raise NotImplementedError(
-                "Only 'lc' model is implemented for supervised learning."
+                "Only the 'lc' model is implemented for supervised learning."
                 )
         args.supervised = True
     else:
@@ -40,18 +47,19 @@ def check_adjust_args(args):
 
     # check train_what argument
     if (args.train_what == "all" or 
-        (args.supervised and args.train_what == "ft") or 
-        (args.supervised and args.train_what == "last")
+        (args.supervised and args.train_what in ["ft", "last"])
         ):
+        pass
+    else:
         raise ValueError(
-            f"{args.train_what} value for train_what is not recognized "
+            f"'{args.train_what}' value for train_what is not recognized "
             f"for {args.model} model."
             )
 
     # adjust if test is True
     if args.test:
         if args.supervised:
-            logger.warning("Setting batch_size to 1.")
+            logger.warning("Setting batch_size to 1.", extra={"spacing": TAB})
             args.batch_size = 1
             args.save_best = False
         else:
@@ -62,37 +70,58 @@ def check_adjust_args(args):
 
 #############################################
 def set_path(args):
+    """
+    set_path(args)
+    """
 
     if args.test == "random":
-        i = 0
-        while Path(args.output_dir, f"test_random_{i:03}").exists():
-            i += 1
-            if i > 999:
-                raise NotImplementedError(
-                    "Not implemented for 1000+ random tests."
-                )
-        output_dir = Path(args.output_dir, f"test_random_{i:03}")
-    elif args.test:
-        output_dir = Path(args.test).parent
-    elif args.resume: 
-        output_dir = Path(args.resume).parent.parent
+        output_dir = misc_utils.get_unique_direc(
+            Path(args.output_dir, "test_random"), overwrite=args.overwrite
+            )
+    elif args.test or args.resume:
+        use_path = args.test if args.test else args.resume
+        if not Path(use_path).exists():
+            raise OSError(f"{use_path} does not exist.")
+        elif not Path(use_path).is_file():
+            raise OSError(f"{use_path} is not a file.")
+        output_dir = Path(use_path).parent
+        if output_dir.stem == "model":
+            output_dir = Path(output_dir).parent            
     else:
-        lr_str = args.old_lr if args.old_lr is not None else args.lr
         pretrained_str = ""
         if args.pretrained:
-            pretrained_parts = [
-                str(part) for part in Path(args.pretrained).parts
-                ]
-            pretrained_parts[-1] = str(Path(pretrained_parts[-1]).stem)
-            pretrained_str = "-".join(pretrained_parts)
+            pretrained_str = Path(
+                Path(Path(args.pretrained).parts[-1]).stem
+                ).stem
+            pretrained_str = f"_pt-{pretrained_str}"
         
+        dataset_str = dataset_3d.normalize_dataset_name(
+            args.dataset, short=True
+            )
+        
+        seed_str = ""
+        if args.seed is not None:
+            seed_str = f"_seed{args.seed}"
+        
+        ds_str = ""
+        if dataset_str in ["UCF101", "HMDB51"]:
+            ds_str = f"_ds{args.ucf_hmdb_ds}" 
+
         save_name = (
-            f"{args.dataset}-{args.img_dim}_r{args.net[6:]}_{args.model}_"
-            f"bs{args.batch_size}_lr{lr_str}_seq{args.num_seq}_"
-            f"pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_"
-            f"train-{args.train_what}_pt{pretrained_str}"
+            f"{dataset_str}-{args.img_dim}_r{args.net[6:]}_{args.model}_"
+            f"bs{args.batch_size}_lr{args.lr}_nseq{args.num_seq}_"
+            f"pred{args.pred_step}_len{args.seq_len}{ds_str}_"
+            f"train-{args.train_what}{seed_str}{pretrained_str}"
         )
+
         output_dir = Path(args.output_dir, save_name)
+        output_dir = misc_utils.get_unique_direc(
+            output_dir, overwrite=args.overwrite
+            )
+
+    logger.info(
+        f"Results will be saved to {output_dir}.", extra={"spacing": "\n"}
+        )
 
     return output_dir
 
@@ -104,12 +133,12 @@ def get_dataloaders(args):
     """
 
     data_kwargs = dict()
-    add_keys = ["batch_size", "img_dim", "num_workers", "seed", "supervised"]
+    add_keys = ["batch_size", "img_dim", "num_workers", "supervised"]
     if args.dataset == "gabors":
-        dataset_keys = ["blank", "roll", "U_prob", "U_pos"]
+        dataset_keys = ["blank", "roll", "U_prob", "U_pos", "seed"]
         get_dataloader_fn = gabor_stimuli.get_dataloader
     else:
-        dataset_keys = ["dataset", "seq_len", "ucf_hmdb_ds"]
+        dataset_keys = ["data_path_dir", "dataset", "seq_len", "ucf_hmdb_ds"]
         data_kwargs["transform"] = "default"
         get_dataloader_fn = data_utils.get_dataloader
 
@@ -141,6 +170,9 @@ def get_dataloaders(args):
 
 #############################################
 def get_model(supervised=False):
+    """
+    get_model()
+    """
 
     if supervised:
         # get number of classes
@@ -177,13 +209,18 @@ def set_gradients(model, supervised=False, train_what="all", lr=1e-3):
     """
 
     params = model.parameters()
-    if not supervised and train_what == "last":
+    if train_what == "last":
         logger.info("=> Training only the last layer")
-        for name, param in model.module.resnet.named_parameters():
-            param.requires_grad = False
+        if supervised:
+            for name, param in model.module.named_parameters():
+                if ("resnet" in name) or ("rnn" in name):
+                    param.requires_grad = False
+        else:
+            for name, param in model.module.resnet.named_parameters():
+                param.requires_grad = False
 
     elif supervised and train_what == "ft":
-        logger.info("=> Finetuning backbone with a smaller lr")
+        logger.info("=> Finetuning backbone with a smaller learning rate")
         params = []
         for name, param in model.module.named_parameters():
             if ("resnet" in name) or ("rnn" in name):
@@ -206,8 +243,11 @@ def set_gradients(model, supervised=False, train_what="all", lr=1e-3):
 #############################################
 def init_optimizer(model, lr=1e-3, wd=1e-5, dataset="gabors", img_dim=128, 
                    supervised=False, train_what="all", test=False):
+    """
+    init_optimizer(model)
+    """
 
-    if supervised:
+    if test:
         return None, None
 
     # set gradients
@@ -218,7 +258,7 @@ def init_optimizer(model, lr=1e-3, wd=1e-5, dataset="gabors", img_dim=128,
 
     scheduler = None
     if supervised:
-        lr_lambda = data_utils.get_lr_lambda(dataset, img_dim=img_dim)    
+        lr_lambda = training_utils.get_lr_lambda(dataset, img_dim=img_dim)    
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
     return optimizer, scheduler
@@ -231,6 +271,8 @@ def run_training(args):
     """
 
     args = check_adjust_args(args)
+
+    output_dir = set_path(args)
 
     model = get_model(args.supervised)
 
@@ -253,8 +295,6 @@ def run_training(args):
     reload_keys = ["resume", "pretrained", "test", "lr", "reset_lr"]
     reload_kwargs = {key: args.__dict__[key] for key in reload_keys}
 
-    output_dir = set_path(args)
-
     run_manager.train_full(
         main_loader, 
         model, 
@@ -270,6 +310,7 @@ def run_training(args):
         unexp_epoch=args.unexp_epoch,
         log_freq=args.log_freq,
         use_tb=args.use_tb,
+        save_by_batch=args.save_by_batch,
         reload_kwargs=reload_kwargs,
         )
 
@@ -289,7 +330,7 @@ def main(args):
     if args.seed == -1:
         args.seed = None
     else:
-        misc_utils.seed_all(args.seed)
+        misc_utils.seed_all(args.seed, deterministic_algorithms=False)
 
     misc_utils.get_logger_with_basic_format(level=args.log_level)
 
@@ -302,12 +343,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--output_dir", default="output_dir", 
-        help="directory for saving files")
+        help="directory for saving files (ignored if loading a checkpoint)")
     parser.add_argument("--net", default="resnet18")
     parser.add_argument("--model", default="dpc-rnn")
 
     # data parameters
-    parser.add_argument("--dataset", default="ucf101")
+    parser.add_argument("--data_path_dir", default=Path("process_data", "data"), 
+        help="path to files indexing datasets") 
+    parser.add_argument("--dataset", default="UCF101")
     parser.add_argument("--img_dim", default=128, type=int)
     parser.add_argument("--seq_len", default=5, type=int, 
         help="number of frames in each video block")
@@ -317,14 +360,18 @@ if __name__ == "__main__":
         help="frame downsampling rate for UCF and HMDB datasets")
 
     # training parameters
-    parser.add_argument("--train_what", default="all")
+    parser.add_argument("--train_what", default="all", 
+        help="'all', 'last' or 'ft' (supervised only)")
     parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--lr", default=1e-3, type=float, help="learning rate")
     parser.add_argument("--wd", default=1e-5, type=float, help="weight decay")
-    parser.add_argument("--not_save_best", default="store_true", 
+    parser.add_argument("--not_save_best", action="store_true", 
         help="if True, best model is not identified and saved")
     parser.add_argument("--num_epochs", default=10, type=int, 
-        help="number of total epochs to run")
+        help=("total number of epochs to run (in addition to epoch 0 which "
+            "computes a pre-training baseline)"))
+    parser.add_argument("--save_by_batch", action="store_true",
+        help="if True, detailled batch/loss information is saved")
     
     # pretrained/resuming parameters
     parser.add_argument("--resume", default="", 
@@ -332,23 +379,33 @@ if __name__ == "__main__":
     parser.add_argument("--reset_lr", action="store_true", 
         help="if True, learning rate is reset when resuming training")
     parser.add_argument("--pretrained", default="", 
-        help="path of pretrained model")
+        help="path to pretrained model to initialize model with")
 
     # technical parameters
-    parser.add_argument("--num_workers", default=8, type=int)
+    parser.add_argument("--num_workers", default=2, type=int)
     parser.add_argument("--log_freq", default=5, type=int, 
-        help="frequency at which to log output during training")
+        help="batch frequency at which to log output during training")
     parser.add_argument("--plt_bkend", default="agg", 
         help="matplotlib backend")
     parser.add_argument("--seed", default=-1, type=int, 
         help="seed to use (-1 for no seeding)")
+    parser.add_argument("--overwrite", action="store_true", 
+        help=("if True, existing model directories are removed and "
+            "overwritten (ignored if loading a checkpoint)"))
     parser.add_argument("--use_tb", action="store_true", 
         help="if True, tensorboard is used")
     parser.add_argument('--log_level', default='info', 
                         help='logging level, e.g., debug, info, error')
 
+    # supervised only
+    parser.add_argument("--dropout", default=0.5, type=float, 
+        help="dropout proportion")
+    parser.add_argument("--test", default=False, 
+        help=("if not False, must be 'random' or the path to a saved model, "
+            "and supervised network will be run in test mode"))
+
     # unsupervised only
-    parser.add_argument("--pred_step", default=1, type=int)
+    parser.add_argument("--pred_step", default=3, type=int)
 
     # gabor arguments
     parser.add_argument("--unexp_epoch", default=10, type=int)

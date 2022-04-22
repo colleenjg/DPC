@@ -12,13 +12,22 @@ logger = logging.getLogger(__name__)
 
 #############################################
 def worker_init_fn(worker_id):
+    """
+    worker_init_fn(worker_id)
+    """
     np.random.seed(np.random.get_state()[1][0] + worker_id)
 
 
 #############################################
 def get_transform(dataset, img_dim=256, mode="train"):
+    """
+    get_transform(dataset)
+    """
+
+    if dataset is not None:
+        dataset = dataset_3d.normalize_dataset_name(dataset)
     
-    if dataset == "ucf101": 
+    if dataset == "UCF101": 
         # designed for ucf101: 
         # short size=256 -> rand crop to 224 x 224 -> scale to img_dim x img_dim 
         transform = transforms.Compose([
@@ -33,7 +42,7 @@ def get_transform(dataset, img_dim=256, mode="train"):
             augmentations.Normalize(),
         ])
 
-    elif dataset == "kinetics400": 
+    elif dataset == "Kinetics400": 
         # designed for kinetics400:
         # short size=150 -> rand crop to img_dim x img_dim
         transform = transforms.Compose([
@@ -46,6 +55,12 @@ def get_transform(dataset, img_dim=256, mode="train"):
             augmentations.ToTensor(),
             augmentations.Normalize(),
         ])
+
+
+    elif dataset == "HMDB51":
+        raise NotImplementedError(
+            "Dataset transform not implemented for HMDB51."
+            ) 
 
     elif dataset is None:
         if mode in ["train", "val"]:
@@ -80,26 +95,35 @@ def get_transform(dataset, img_dim=256, mode="train"):
         
         else:
             raise ValueError("mode must be 'train', 'val' or 'test'.")
+    
+    else:
+        raise ValueError(f"'{dataset}' dataset is not recognized.")
 
     return transform
     
     
 
 #############################################
-def get_dataloader(transform=None, dataset="kinetics400", mode="train", 
+def get_dataloader(data_path_dir="process_data", transform=None, 
+                   dataset="kinetics400", mode="train", 
                    batch_size=4, img_dim=128, seq_len=5, num_seq=8, 
                    ucf_hmdb_ds=3, split_n=1, supervised=False, 
                    num_workers=4):
+    """
+    get_dataloader()
+    """
     
-    logger.info(f"Loading {mode} data...")
+    logger.info(f"Loading {mode} data...", extra={"spacing": "\n"})
 
+    dataset = dataset_3d.normalize_dataset_name(dataset)
 
     if transform == "default":
         transform = get_transform(dataset, img_dim, mode=mode)
 
-    if dataset == "kinetics400":
+    if dataset == "Kinetics400":
         use_big_K400 = img_dim > 140
-        dataset = dataset_3d.Kinetics400_full_3d(
+        dataset = dataset_3d.Kinetics400_3d(
+            data_path_dir=data_path_dir,
             mode=mode,
             transform=transform,
             seq_len=seq_len,
@@ -109,8 +133,9 @@ def get_dataloader(transform=None, dataset="kinetics400", mode="train",
             supervised=supervised,
             )
 
-    elif dataset == "ucf101":
+    elif dataset == "UCF101":
         dataset = dataset_3d.UCF101_3d(
+            data_path_dir=data_path_dir,
             mode=mode,
             transform=transform,
             seq_len=seq_len,
@@ -120,8 +145,9 @@ def get_dataloader(transform=None, dataset="kinetics400", mode="train",
             supervised=supervised,
             )
     
-    elif dataset == "hmdb51":
+    elif dataset == "HMDB51":
         dataset = dataset_3d.HMDB51_3d(
+            data_path_dir=data_path_dir,
             mode=mode,
             transform=transform,
             seq_len=seq_len,
@@ -133,8 +159,8 @@ def get_dataloader(transform=None, dataset="kinetics400", mode="train",
 
     else:
         raise NotImplementedError(
-            "get_data_loader() only implemented for the 'kinetics400', "
-            "'ucf101', and 'hmbd51', datasets."
+            "get_data_loader() only implemented for the 'Kinetics400', "
+            "'UCF101', and 'HMDB51', datasets."
             )
 
     sampler = data.RandomSampler(dataset)

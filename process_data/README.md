@@ -22,6 +22,7 @@ Arranges the datasets as follows:
 {main_path}/UCF101/videos/{action class}/{video name}.avi
 {main_path}/UCF101/splits/trainlist{01/02/03}.txt
 {main_path}/UCF101/splits/testlist{01/02/03}}.txt
+{main_path}/UCF101/splits/classInd.txt
 ```
 
 * HMDB51
@@ -48,4 +49,6 @@ Run, e.g., `python extract_frames.py --d_root main_path --dataset UCF101` to ext
 ### 3. Collect all paths into csvs
 
 Run, e.g., `python write_csvs.py --f_root main_path --dataset UCF101` to collect paths into a csv file.
+
+The csv file is stored under `process_data`, and the `classInd.txt` file listing each action and its class number is created. 
 

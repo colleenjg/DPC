@@ -8,14 +8,21 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import urllib
 import zipfile
 
 import numpy as np
 from torchvision.datasets import kinetics
 from tqdm import tqdm
 
-sys.path.extend(["..", str(Path("..", "..")), str(Path("..", "..", "utils"))])
+sys.path.extend([
+    "..", 
+    str(Path("..", "..")), 
+    str(Path("..", "..", "utils")), 
+    str(Path("..", "..", "dataset"))
+    ])
 from utils import misc_utils, training_utils
+from dataset import dataset_3d
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +225,7 @@ class KineticsMinimal(kinetics.Kinetics):
 
     _TAR_URLS = {
         "400": "https://s3.amazonaws.com/kinetics/400/{split}/k400_{split}_path.txt",
-        "600": "https://s3.amazonaws.com/kinetics/600/{split}/k600_{split}_path.txt",
+        "600": "https://s3.amazonaws.com/kinetics/600/{split}/k600_{split}_path.csv",
         "700": "https://s3.amazonaws.com/kinetics/700_2020/{split}/k700_2020_{split}_path.txt",
     }
 
@@ -239,7 +246,7 @@ class KineticsMinimal(kinetics.Kinetics):
 
         self.root = root
         self.split_folder = kinetics.path.join(root, split)
-        self.split = kinetics.verify_str_arg(split, arg="split", valid_values=["train", "val"])
+        self.split = kinetics.verify_str_arg(split, arg="split", valid_values=["train", "val", "test"]) # added test
 
         # === allow for downloading only a minimal part of the datasets === #
         self.minimal = minimal
@@ -255,6 +262,10 @@ class KineticsMinimal(kinetics.Kinetics):
                     partial_download_err = False
                 elif self.split == "val":
                     self._n_files = 3 # ~1.5 GB each
+                    self._min_ex_per = 2
+                    partial_download_err = False
+                elif self.split == "test":
+                    self._n_files = 4 # ~1.5 GB each
                     self._min_ex_per = 2
                     partial_download_err = False
             if partial_download_err:
@@ -289,40 +300,30 @@ class KineticsMinimal(kinetics.Kinetics):
         split_url_filepath = kinetics.path.join(file_list_path, kinetics.path.basename(split_url))
         if not kinetics.check_integrity(split_url_filepath):
             kinetics.download_url(split_url, file_list_path)
-        list_video_urls = open(split_url_filepath)
+        with open(split_url_filepath) as file:
+            list_video_urls = [urllib.parse.quote(line, safe="/,:") for line in file.read().splitlines()]
 
         # === allow for downloading only part of the datasets === #
-        all_urls = list_video_urls.readlines()
-        n_urls = len(all_urls)
+        n_urls = len(list_video_urls)
         if self.minimal:
             self._n_files = min(self._n_files, n_urls)
-            all_urls = all_urls[:self._n_files]
+            list_video_urls = list_video_urls[:self._n_files]
             logger.info(f"Downloading from {self._n_files}/{n_urls} links.")
         else:
             logger.info(f"Downloading from {n_urls} links.")
-
-        list_video_urls = io.StringIO("".join(all_urls))
         # ======================================================= # 
 
-
         if self.num_download_workers == 1:
-            for line in list_video_urls.readlines():
-                line = str(line).replace("\n", "")
-                kinetics.download_and_extract_archive(line, tar_path, self.split_folder)
-                self._make_ds_structure()
-                try:
-                    self._cleanup_check()
-                    break
-                except Exception as err:
-                    print(err)
-
+            for video_url in list_video_urls:
+                kinetics.download_and_extract_archive(video_url, tar_path, self.split_folder)
         else:
             part = kinetics.partial(kinetics._dl_wrap, tar_path, self.split_folder)
-            lines = [str(line).replace("\n", "") for line in list_video_urls.readlines()]
             poolproc = kinetics.Pool(self.num_download_workers)
-            poolproc.map(part, lines)
+            poolproc.map(part, list_video_urls)
 
         # === some cleanup === # 
+        self._make_ds_structure()
+        self._cleanup_check()
         shutil.rmtree(tar_path)
         shutil.rmtree(file_list_path)
         # ==================== # 
@@ -364,7 +365,7 @@ class KineticsMinimal(kinetics.Kinetics):
 
 
 #############################################
-def main_Kinetics400(d_root, minimal=False):
+def main_Kinetics400(d_root, minimal=False, parallel=True):
     """
     main_Kinetics400(d_root)
 
@@ -379,14 +380,19 @@ def main_Kinetics400(d_root, minimal=False):
             if True, a minimal subset of the Kinetics400 dataset is downloaded, 
             covering all classes.
             default: False
+        - parallel (bool):
+            if True, data is downloaded in parallel, instead of sequentially
+            default: True
     """
 
     logger.info("Downloading and organizing data for Kinetics400... ")
 
-    n_jobs = training_utils.get_num_jobs()
+    n_jobs = 1
+    if parallel:
+        n_jobs = training_utils.get_num_jobs()
 
     Path(d_root).mkdir(exist_ok=True, parents=True)
-    for split in ["train", "val"]:
+    for split in ["train", "val", "test"]:
         KineticsMinimal(
             root=d_root, split=split, minimal=minimal, 
             num_download_workers=n_jobs, download=True,
@@ -402,7 +408,7 @@ def main_Kinetics400(d_root, minimal=False):
     for item in Path(annot_root).iterdir():
         Path(item).rename(str(item).replace(".csv", "_split.csv"))
     
-    for video_dir in ["train", "val"]:
+    for video_dir in ["train", "val", "test"]:      
         src_direc = Path(d_root, "videos", video_dir)
         targ_direc = Path(d_root, "videos", f"{video_dir}_split")
         src_direc.rename(targ_direc)
@@ -425,10 +431,15 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", default="UCF101", help="dataset name")
     parser.add_argument('--log_level', default='info', 
                         help='logging level, e.g., debug, info, error')
+    parser.add_argument("--not_parallel", action="store_true", 
+                        help=("download data sequentially, instead of in "
+                        "parallel (Kinetics400)"))
 
     args = parser.parse_args()
 
     misc_utils.get_logger_with_basic_format(level=args.log_level)
+
+    args.dataset = dataset_3d.normalize_dataset_name(args.dataset)
 
     d_root = Path(args.d_root, args.dataset)
 
@@ -439,7 +450,9 @@ if __name__ == "__main__":
         main_HMDB51(d_root=d_root)
 
     elif args.dataset == "Kinetics400":
-        main_Kinetics400(d_root=d_root, minimal=args.minimal)
+        main_Kinetics400(
+            d_root=d_root, minimal=args.minimal, parallel=not(args.not_parallel)
+            )
     
     else:
         raise ValueError(f"{args.dataset} dataset not recognized.")

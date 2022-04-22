@@ -1,6 +1,7 @@
 import logging
 import math
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -8,6 +9,7 @@ from model import convrnn, resnet_2d3d
 
 logger = logging.getLogger(__name__)
 
+TAB = "    "
 
 #############################################
 class DPC_RNN(torch.nn.Module):
@@ -17,7 +19,7 @@ class DPC_RNN(torch.nn.Module):
         
         super(DPC_RNN, self).__init__()
         
-        logger.info("Using DPC-RNN model")
+        logger.info("Loading DPC-RNN model")
         self.sample_size = sample_size
         self.num_seq = num_seq
         self.seq_len = seq_len
@@ -25,7 +27,8 @@ class DPC_RNN(torch.nn.Module):
         self.last_duration = int(math.ceil(seq_len / 4))
         self.last_size = int(math.ceil(sample_size / 32))
         logger.info(
-            f"Final feature map has size {self.last_size} x {self.last_size}"
+            f"Final feature map size: {self.last_size} x {self.last_size}", 
+            extra={"spacing": TAB}
             )
 
         self.backbone, self.param = resnet_2d3d.select_resnet(
@@ -89,7 +92,7 @@ class DPC_RNN(torch.nn.Module):
         return pred
 
 
-    def get_similarity_score(self, pred, ground_truth):
+    def get_similarity_score(self, predicted, ground_truth):
         ### Get similarity score ###
         # predicted (pred): [B, pred_step, feature_size, last_size, last_size]
         # ground-truth (GT): [B, pred_step, feature_size, last_size, last_size]
@@ -100,18 +103,24 @@ class DPC_RNN(torch.nn.Module):
         # first 3 dims are from pred (B, PS, D), and the
         # last 3 dims are from GT (B, PS, D). 
 
-        if pred.size() != ground_truth.size():
-            raise ValueError("pred and ground_truth must have the same shape.")
+        if predicted.size() != ground_truth.size():
+            raise ValueError(
+                "predicted and ground_truth must have the same shape."
+                )
 
-        B, PS, FS, last_size, _ = pred.size()
+        B, PS, FS, last_size, _ = predicted.size()
         D2 = last_size ** 2
 
-        pred = torch.movedim(pred, 2, -1).contiguous().view(B * PS * D2, FS)
-        ground_truth = torch.movedim(ground_truth, 2, -1).contiguous().view(
+        predicted = torch.movedim(predicted, 2, -1).reshape(
+            B * PS * D2, FS
+            )
+        ground_truth = torch.movedim(ground_truth, 2, -1).reshape(
             B * PS * D2, FS
             )
 
-        score = torch.matmul(pred, ground_truth.T).view(B, PS, D2, B, PS, D2)
+        score = torch.matmul(predicted, ground_truth.T).reshape(
+            B, PS, D2, B, PS, D2
+            )
         
         return score
 
@@ -135,33 +144,38 @@ class DPC_RNN(torch.nn.Module):
         PS = self.pred_step
         D2 = self.last_size ** 2
 
+        # creating mask with numpy to avoid a determinism indexing bug
         # default 0 (easy neg)
-        mask = torch.zeros(
-            (B, PS, D2, B, PS, D2), dtype=torch.int8, requires_grad=False
-            ).detach().cuda()
+        mask = np.zeros((B, PS, D2, B, PS, D2), dtype=np.int8)
 
         # identify -3 (spatial neg)
-        mask[torch.arange(B), :, :, torch.arange(B), :, :] = -3 # spatial neg
+        mask[np.arange(B), :, :, np.arange(B), :, :] = -3 # spatial neg
         
         # identify -1 (temporal neg (hard))
         for k in range(B):
             mask[
-                k, :, torch.arange(D2), 
-                k, :, torch.arange(D2)
+                k, :, np.arange(D2), 
+                k, :, np.arange(D2)
                 ] = -1
         
         # identify 1 (pos)
-        mask = mask.permute(0, 2, 1, 3, 5, 4).contiguous().view(
+        mask = np.transpose(mask, (0, 2, 1, 3, 5, 4)).reshape(
             B * D2, PS, B * D2, PS
             )
         for j in range(B * D2):
             mask[
-                j, torch.arange(PS), 
-                j, torch.arange(PS)
+                j, np.arange(PS), 
+                j, np.arange(PS)
                 ] = 1
 
+        mask = torch.tensor(
+            mask, dtype=torch.int8, requires_grad=False
+            ).detach().cuda()
+
         # mask: B x PS x D2 x B x PS x D2
-        self.mask = mask.view(B, D2, PS, B, D2, PS).permute(0, 2, 1, 3, 5, 4)
+        self.mask = mask.reshape(B, D2, PS, B, D2, PS).contiguous().permute(
+            0, 2, 1, 3, 5, 4
+        )
 
         return 
 
@@ -170,7 +184,7 @@ class DPC_RNN(torch.nn.Module):
         # batch: [B, N, C, SL, H, W]
         ### extract feature ###
         (B, N, C, SL, H, W) = batch.shape
-        batch = batch.view(B * N, C, SL, H, W)
+        batch = batch.reshape(B * N, C, SL, H, W)
         feature = self.backbone(batch)
         del batch
         feature = F.avg_pool3d(
@@ -179,7 +193,7 @@ class DPC_RNN(torch.nn.Module):
             stride=(1, 1, 1)
             )
 
-        feature = feature.view(
+        feature = feature.reshape(
             B, N, self.param["feature_size"], self.last_size, self.last_size
             ) # [-inf, +inf)
 
@@ -213,10 +227,8 @@ class LC(torch.nn.Module):
         self.sample_size = sample_size
         self.num_seq = num_seq
         self.seq_len = seq_len
-        self.num_classes = num_classes 
-        logger.info("=> Using RNN + FC model ")
+        self.num_classes = num_classes
 
-        logger.info(f"=> Use 2D-3D {network}!")
         self.last_duration = int(math.ceil(seq_len / 4))
         self.last_size = int(math.ceil(sample_size / 32))
         track_running_stats = True 
@@ -227,12 +239,13 @@ class LC(torch.nn.Module):
             )
         self.param["num_layers"] = 1
         self.param["hidden_size"] = self.param["feature_size"]
+        self.param["kernel_size"] = 1
 
-        logger.info("=> using ConvRNN, kernel_size = 1")
+        logger.info("=> Loading RNN + FC model (ConvRNN, kernel size: 1)")
         self.agg = convrnn.ConvGRU(
             input_size=self.param["feature_size"],
             hidden_size=self.param["hidden_size"],
-            kernel_size=1,
+            kernel_size=self.param["kernel_size"],
             num_layers=self.param["num_layers"]
             )
         self._initialize_weights(self.agg)
@@ -243,8 +256,9 @@ class LC(torch.nn.Module):
 
         self.final_fc = torch.nn.Sequential(
             torch.nn.Dropout(dropout),
-            torch.nn.Linear(self.param["feature_size"], 
-            self.num_class)
+            torch.nn.Linear(
+                self.param["feature_size"], self.num_classes
+                )
             )
         self._initialize_weights(self.final_fc)
 
@@ -252,13 +266,13 @@ class LC(torch.nn.Module):
     def forward(self, batch):
         # seq1: [B, N, C, SL, H, W]
         (B, N, C, SL, H, W) = batch.shape
-        batch = batch.view(B * N, C, SL, H, W)
+        batch = batch.reshape(B * N, C, SL, H, W)
         feature = self.backbone(batch)
         del batch 
         feature = F.relu(feature)
         
         feature = F.avg_pool3d(feature, (self.last_duration, 1, 1), stride=1)
-        feature = feature.view(
+        feature = feature.reshape(
             B, N, self.param["feature_size"], self.last_size, self.last_size
             ) 
         context, _ = self.agg(feature)
@@ -270,7 +284,7 @@ class LC(torch.nn.Module):
 
         # [B, N, C] -> [B, C, N] for BN() (operates on dim 1), then [B, N, C] 
         context = self.final_bn(context.transpose(-1, -2)).transpose(-1, -2) 
-        output = self.final_fc(context).view(B, -1, self.num_class)
+        output = self.final_fc(context).reshape(B, -1, self.num_classes)
 
         return output, context
 

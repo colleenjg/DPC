@@ -12,8 +12,14 @@ from joblib import delayed, Parallel
 from tqdm import tqdm 
 from wurlitzer import pipes # catch C-level pipes in python
 
-sys.path.extend(["..", str(Path("..", "..")), str(Path("..", "..", "utils"))])
+sys.path.extend([
+    "..", 
+    str(Path("..", "..")), 
+    str(Path("..", "..", "utils")), 
+    str(Path("..", "..", "dataset"))
+    ])
 from utils import misc_utils, training_utils
+from dataset import dataset_3d
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +322,7 @@ def main_Kinetics400(v_root, f_root=None, dim=None, parallel=True):
     if dim is None:
         dim = 150 # default value
 
-    for split in ["train", "val"]:
+    for split in ["train", "val", "test"]:
         v_root_split = Path(v_root, f"{split}_split")
         f_root_split = Path(f_root, f"{split}_split")
 
@@ -336,6 +342,10 @@ if __name__ == "__main__":
             "structure {args.d_root}/{args.dataset}/videos.")
         )
     parser.add_argument("--dataset", default="UCF101", help="dataset name")
+    parser.add_argument("--k400_big", action="store_true", 
+                        help=("if True, and dataset is k400, the larger "
+                        "version frames are stored (256 instead of 150)."))
+
     parser.add_argument("--log_level", default="info", 
                         help="logging level, e.g., debug, info, error")
     parser.add_argument("--not_parallel", action="store_true", 
@@ -347,11 +357,10 @@ if __name__ == "__main__":
     misc_utils.get_logger_with_basic_format(level=args.log_level)
     parallel = not(args.not_parallel)
 
-    # make adjustments for Kinetics400_256
-    dataset = args.dataset
+    dataset = dataset_3d.normalize_dataset_name(args.dataset)
+
     dim, dim_str = None, ""
-    if dataset == "Kinetics400_256":
-        dataset = "Kinetics400"
+    if dataset == "Kinetics400" and args.k400_big:
         dim = 256
         dim_str = f"_{dim}"
 

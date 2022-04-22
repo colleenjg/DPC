@@ -12,7 +12,6 @@ This code requires:
 - [pip](https://pip.pypa.io/en/stable/)
 - [cuda](https://developer.nvidia.com/cuda-toolkit-archive) (e.g., 10.2)
 - [cudnn](https://developer.nvidia.com/rdp/cudnn-archive) (e.g., 7.6.5)
-- [DPC GitHub repo](https://github.com/TengdaHan/DPC), copied into the same directory (**without** overwriting any files!)
 
 Once these are installed, the required conda environment can be created from `ssl.yml` by running:  
 `conda env create -f ssl.yml`  
@@ -27,28 +26,26 @@ The code is written in `Python 3`.
 
 The scripts are designed to run on a cuda-enabled machine. Bash scripts are provided for running analyses with Slurm on a GPU node of a specific cluster (Mila cluster). They can be adapted to a different cluster, or used as templates to run local jobs, for example.  
 
-In all cases, before running, the environment variable `SAVE_DIR` must be updated in each bash script to point to a directory that exists on the machine.
-
 
 - ### Training DPC model with Gabor stimuli
 
-    To train a ResNET18 model from scratch on the Gabor stimuli, run `bash_dpc`.
+    To train a ResNET18 model from scratch on the Gabor stimuli, run `sbatch run_dpc.sh` with Slurm.
 
 
 - ### Training a pre-trained DPC model with Gabor stimuli
 
     To train a ResNET18 model with 29 different seeds on the Gabor stimuli that has been pre-trained on the Kinetics400 dataset:
     1. Download the [3D-ResNet18-Kinetics400-128x128](https://drive.google.com/file/d/1jbMg2EAX8armIQA6_0YwfATh_h7rQz4u/view?usp=sharing) pre-trained DPC weights provided on the [DPC GitHub repo](https://github.com/TengdaHan/DPC).
-    2. Run `bash_traineddpc`, ensuring that the script points to the location where the pre-trained weights are saved,  
-    e.g. by running `sbatch bash_traineddpc` if using Slurm.
+    2. Run `run_dpc`, ensuring that the script points to the location where the pre-trained weights are saved,  
+    e.g. by running `sbatch --export=ALL,PRETRAIN=1 run_dpc.sh` if using Slurm.
 
     To test the script with just one seed, if using Slurm, run  
-    `sbatch --export=ALL,TEST=1 --time=0:45:00 --array=0 bash_traineddpc`.
+    `sbatch --export=ALL,TEST=1 --time=0:45:00 --array=0 run_dpc.sh`.
 
 
 - ### Plotting results of loss analyses after training the pre-trained DPC model with Gabor stimuli
 
-    To plot the loss analysis results obtained by running `bash_traineddpc`, run `bash_plot_losses`.  
+    To plot the loss analysis results obtained by running `run_dpc.sh`, run `plot_losses.sh`.  
 
 
 ## 4. Seeding
@@ -57,8 +54,20 @@ Seeding is partially implemented in the codebase, but does not ensure fully dete
 
 ## 5. Citation
 
-**Original DPC code:** Han T, Xie W, Zisserman A. (2019) Video Representation Learning by Dense Predictive Coding. 
+**Original DPC code:** Han T, Xie W, Zisserman A (2019) Video Representation Learning by Dense Predictive Coding. 
 _Workshop on Large Scale Holistic Video Understanding (ICCV)_.
 
-**Gabor stimuli:** Gillon C _et al._ (2021) Learning from unexpected events in the neocortical microcircuit. _biorxiv_.
+**Gabor stimuli:** Gillon CJ _et al._ (2021) Learning from unexpected events in the neocortical microcircuit. _bioRxiv_.
+
+## 6. Licenses
+
+- Content that is original or derived from the [DPC repository](https://github.com/TengdaHan/DPC) is covered under **LICENSE_DPC**:  
+    - `train_model.py`
+    - `asset`
+    - `dataset`, except `gabor_stimuli.py`
+    - `model`
+    - `process_data`
+    - `utils`
+
+- The remaining content is covered under **LICENSE**.
 

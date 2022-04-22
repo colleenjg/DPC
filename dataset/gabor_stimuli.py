@@ -12,6 +12,7 @@ NUM_MEAN_ORIS = 4
 
 logger = logging.getLogger(__name__)
 
+TAB = "    "
 
 #############################################
 def get_num_classes():
@@ -259,8 +260,8 @@ class GaborSequenceGenerator(torch.utils.data.DataLoader):
         G = G.unsqueeze(2)
         # Repeat across frame and channel dimensions (B x N x C x F x W x H)
         G = G.repeat(1, 1, 3, self.num_frames, 1, 1)
-        logger.debug("G")
-        logger.debug(G.shape)
+        logger.debug("G", extra={"spacing": TAB})
+        logger.debug(G.shape, extra={"spacing": TAB})
         return G
     
     #def generate_batch():

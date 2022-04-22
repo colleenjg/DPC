@@ -11,8 +11,14 @@ from joblib import Parallel, delayed
 import pandas as pd
 from tqdm import tqdm 
 
-sys.path.extend(["..", str(Path("..", "..")), str(Path("..", "..", "utils"))])
+sys.path.extend([
+    "..", 
+    str(Path("..", "..")), 
+    str(Path("..", "..", "utils")), 
+    str(Path("..", "..", "dataset"))
+    ])
 from utils import misc_utils, training_utils
+from dataset import dataset_3d
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +48,45 @@ def write_list(data_list, target_path, delimiter=","):
             if row: 
                 writer.writerow(row)
     logger.info(f"Split saved to {target_path}.")
+
+
+#############################################
+def write_class_index_file(action_names, csv_root, expected_n=400):
+    """
+    write_class_index_file(action_names, csv_root)
+
+    Write class indices to a txt file.
+
+    Required args:
+        - action_names (list): 
+            list of action names
+        - csv_root (Path): 
+            directory under which to save class indices file. 
+
+    Optional args:
+        - expected_n (int): 
+            expected number of unique action names
+            default: 400
+
+    """
+
+    action_names = sorted(list(set(action_names)))
+
+    if len(action_names) != expected_n:
+        raise RuntimeError(
+            f"Expected to find {expected_n} actions, but found "
+            f"{len(action_names)}."
+            )
+
+    class_index_lines = [
+        f"{idx} {action_name}" for idx, action_name in enumerate(action_names)
+        ]
+    class_index_lines = "\n".join(class_index_lines)
+
+    target_path = Path(csv_root, "classInd.txt")
+    with open(target_path, "w") as f:
+        f.writelines(class_index_lines)
+    logger.info(f"Class indices saved to {target_path}.")
 
 
 #############################################
@@ -78,10 +123,10 @@ def main_UCF101(f_root, splits_root=None, csv_root=None):
         csv_root = Path(splits_root).parent
 
     Path(csv_root).mkdir(exist_ok=True, parents=True)
-    for which_split in [1, 2, 3]:
+    for split_n in [1, 2, 3]:
         train_set = []
         test_set = []
-        train_split_file = Path(splits_root, f"trainlist{which_split:02}.txt")
+        train_split_file = Path(splits_root, f"trainlist{split_n:02}.txt")
         with open(train_split_file, "r") as f:
             for line in f:
                 vpath = Path(f_root, line.split(" ")[0])
@@ -91,7 +136,7 @@ def main_UCF101(f_root, splits_root=None, csv_root=None):
                     len(glob.glob(str(Path(vpath_no_suffix, "*.jpg"))))]
                     )
 
-        test_split_file = Path(splits_root, f"testlist{which_split:02}.txt")
+        test_split_file = Path(splits_root, f"testlist{split_n:02}.txt")
         with open(test_split_file, "r") as f:
             for line in f:
                 vpath = Path(f_root, line.rstrip())
@@ -102,11 +147,20 @@ def main_UCF101(f_root, splits_root=None, csv_root=None):
                     )
 
         write_list(
-            train_set, str(Path(csv_root, f"train_split{which_split:02}.csv"))
+            train_set, str(Path(csv_root, f"train_split{split_n:02}.csv"))
             )
         write_list(
-            test_set, str(Path(csv_root, f"test_split{which_split:02}.csv"))
+            test_set, str(Path(csv_root, f"test_split{split_n:02}.csv"))
             )
+    
+    # load class index file, and save a new version in csv_root
+    class_index_file = Path(splits_root, "classInd.txt")
+    if not class_index_file.is_file():
+        raise OSError(
+            f"Expected to find class index file under {class_index_file}."
+            )
+    class_index_df = pd.read_csv(str(class_index_file), sep=" ", header=None)
+    write_class_index_file(class_index_df[1].tolist(), csv_root, expected_n=101)
 
 
 #############################################
@@ -142,11 +196,13 @@ def main_HMDB51(f_root, splits_root=None, csv_root=None):
     if csv_root is None:
         csv_root = Path(splits_root).parent
 
+
     Path(csv_root).mkdir(exist_ok=True, parents=True)
-    for which_split in [1, 2, 3]:
+    for split_n in [1, 2, 3]:
+        action_names = []
         train_set = []
         test_set = []
-        pattern = f"_test_split{which_split}.txt"
+        pattern = f"_test_split{split_n}.txt"
         split_files = sorted(glob.glob(str(Path(splits_root, f"*{pattern}"))))
         if len(split_files) != 51:
             raise RuntimeError(
@@ -154,6 +210,7 @@ def main_HMDB51(f_root, splits_root=None, csv_root=None):
                 )
         for split_file in split_files:
             action_name = Path(split_file).name.replace(pattern, "")
+            action_names.append(action_name)
             with open(split_file, "r") as f:
                 for line in f:
                     video_name = Path(line.split(" ")[0])
@@ -171,11 +228,13 @@ def main_HMDB51(f_root, splits_root=None, csv_root=None):
                             )
 
         write_list(
-            train_set, str(Path(csv_root, f"train_split{which_split:02}.csv"))
+            train_set, str(Path(csv_root, f"train_split{split_n:02}.csv"))
             )
         write_list(
-            test_set, str(Path(csv_root, f"test_split{which_split:02}.csv"))
+            test_set, str(Path(csv_root, f"test_split{split_n:02}.csv"))
             )
+
+    write_class_index_file(action_names, csv_root, expected_n=51)
 
 
 ### For Kinetics ###
@@ -255,7 +314,7 @@ def get_split(split_root, split_path, mode="train"):
 
 
 #############################################
-def main_Kinetics400(f_root, splits_root=None, modes=["train", "val"], 
+def main_Kinetics400(f_root, splits_root=None, modes=["train", "val", "test"], 
                      csv_root=None):
     """
     main_Kinetics400(f_root)
@@ -296,10 +355,27 @@ def main_Kinetics400(f_root, splits_root=None, modes=["train", "val"],
     for mode in modes:
         if mode not in ["train", "val", "test"]:
             raise ValueError("'mode' must be 'train', 'val' or 'test'.")
-    
+
         mode_path = Path(splits_root, f"{mode}_split.csv")    
+
+        target_csv = Path(csv_root, f"{mode}_split.csv")
+        if target_csv.is_file():
+            logger.info(
+                f"Skipping {mode} split, as {target_csv} already exists."
+                )
+            continue
+
         split = get_split(Path(f_root, f"{mode}_split"), mode_path, mode)
-        write_list(split, Path(csv_root, f"{mode}_split.csv"))        
+
+        write_list(split, target_csv)    
+
+    # create class index file
+    split_df = pd.read_csv(mode_path)
+    action_names = [
+        action_name.replace("(", "").replace(")", "").replace(" ", "_") 
+        for action_name in split_df["label"].tolist()
+        ]
+    write_class_index_file(action_names, csv_root, expected_n=400)
 
 
 #############################################
@@ -314,8 +390,11 @@ if __name__ == "__main__":
     parser.add_argument("--csv_root", type=Path, default=Path("..", "data"),
         help="root directory in which to save the csv with the list of paths."
         )
-
     parser.add_argument("--dataset", default="UCF101", help="dataset name")
+    parser.add_argument("--k400_big", action="store_true", 
+                        help=("if True, and dataset is k400, the larger "
+                        "version frames are compiled (256 instead of 150)."))
+
     parser.add_argument("--log_level", default="info", 
                         help="logging level, e.g., debug, info, error")
 
@@ -323,11 +402,10 @@ if __name__ == "__main__":
 
     misc_utils.get_logger_with_basic_format(level=args.log_level)
 
-    # make adjustments for Kinetics400_256
-    dataset = args.dataset
+    dataset = dataset_3d.normalize_dataset_name(args.dataset)
+
     dim, dim_str = None, ""
-    if dataset == "Kinetics400_256":
-        dataset = "Kinetics400"
+    if dataset == "Kinetics400" and args.k400_big:
         dim = 256
         dim_str = f"_{dim}"
 

@@ -9,10 +9,12 @@ import torch
 
 logger = logging.getLogger(__name__)
 
+TAB = "    "
 
 #############################################
 class AverageMeter(object):
     """Computes and stores the average and current value"""
+    
     def __init__(self):
         self.reset()
 
@@ -52,7 +54,8 @@ class AverageMeter(object):
 
 #############################################
 class AccuracyTable(object):
-    """compute accuracy for each class"""
+    """Compute accuracy for each class"""
+
     def __init__(self):
         self.dict = {}
 
@@ -81,6 +84,7 @@ class AccuracyTable(object):
 #############################################
 class ConfusionMeter(object):
     """Compute and show confusion matrix"""
+
     def __init__(self, num_class):
         self.num_class = num_class
         self.mat = np.zeros((num_class, num_class))
@@ -132,8 +136,12 @@ class ConfusionMeter(object):
 
 
 #############################################
-def get_stats(losses, topk_meters, ks=[1, 3, 5], local=False, last=False):
-
+def get_stats(losses, topk_meters, ks=[1, 3, 5], local=False, last=False, 
+              chance=None):
+    """
+    get_stats(losses, topk_meters)
+    """
+    
     if len(topk_meters) != len(ks):
         raise ValueError(
             "Must provide as many topK meter objects as 'ks'."
@@ -142,7 +150,7 @@ def get_stats(losses, topk_meters, ks=[1, 3, 5], local=False, last=False):
     avg_type = "local_avg" if local else "avg"
 
     topk_str = ", ".join(
-        [f"top{k} {topk_meter.get(avg_type):.4f}" 
+        [f"top{k}: {100 * getattr(topk_meter, avg_type):05.2f}%" 
         for (k, topk_meter) in zip(ks, topk_meters)]
         )
 
@@ -150,22 +158,26 @@ def get_stats(losses, topk_meters, ks=[1, 3, 5], local=False, last=False):
         raise ValueError("To calculate accuracy, ks must include 1.")
     accuracies = topk_meters[ks.index(1)]
 
-    loss_avg = losses.get(avg_type)
-    acc_avg = accuracies.get(avg_type)
+    loss_avg = getattr(losses, avg_type)
+    acc_avg = getattr(accuracies, avg_type)
 
     loss_val = losses.val
     acc_val = accuracies.val
 
+    chance_str = ""
+    if chance is not None:
+        chance_str = f" (chance: {100 * chance:05.2f}%)"
+
     if last:
         log_str = (
-            f"Loss: {loss_val:.6f} ({loss_avg:.4f})\t"
-            f"Acc: {acc_val:.6f} ({topk_str})"
+            f"Loss: {loss_val:.6f} (avg: {loss_avg:.4f}){TAB}"
+            f"Acc{chance_str}: {100 * acc_val:07.4f}% (avg {topk_str})"
             )
         returns = loss_avg, acc_avg, loss_val, acc_val, log_str
     else:
         log_str = (
-            f"Loss: {loss_avg:.4f}\t"
-            f"Acc: {topk_str}"
+            f"Loss: {loss_avg:.4f}{TAB}"
+            f"Acc{chance_str}: {topk_str}"
             )
         returns = loss_avg, acc_avg, log_str
 
@@ -175,6 +187,8 @@ def get_stats(losses, topk_meters, ks=[1, 3, 5], local=False, last=False):
 #############################################
 def calc_topk_accuracy(output, target, topk=(1,)):
     """
+    calc_topk_accuracy(output, target)
+
     Modified from: 
     https://gist.github.com/agermanidis/275b23ad7a10ee89adccf021536bb97e
     Given predicted and ground truth labels, calculate top-k accuracies.
@@ -184,18 +198,21 @@ def calc_topk_accuracy(output, target, topk=(1,)):
 
     _, pred = output.topk(maxk, 1, True, True)
     pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
+    correct = pred.eq(target.reshape(1, -1).expand_as(pred))
 
     res = []
     for k in topk:
-        correct_k = correct[:k].contiguous().view(-1).float().sum(0)
+        correct_k = correct[:k].reshape(-1).float().sum(0)
         res.append(correct_k.mul_(1 / batch_size))
     return res
 
 
 #############################################
 def update_topk_meters(topk_meters, output, target, ks=[1, 3, 5]):
-    """updates topK meters in place"""
+    """
+    update_topk_meters(topk_meters, output, target)
+    """
+    
     if len(topk_meters) != len(ks):
         raise ValueError(
             "Must provide as many topK meter objects as 'ks'."
@@ -209,7 +226,12 @@ def update_topk_meters(topk_meters, output, target, ks=[1, 3, 5]):
 
 #############################################
 def calc_accuracy(output, target):
-    """output: (B, N); target: (B)"""
+    """
+    calc_accuracy(output, target)
+
+    output: (B, N); target: (B)
+    """
+
     target = target.squeeze()
     _, pred = torch.max(output, 1)
     return torch.mean((pred == target).float())
@@ -217,43 +239,136 @@ def calc_accuracy(output, target):
 
 #############################################
 def calc_accuracy_binary(output, target):
-    """output, target: (B, N), output is logits, before sigmoid """
+    """
+    calc_accuracy_binary(output, target)
+
+    output, target: (B, N), output is logits, before sigmoid
+    """
+
     pred = output > 0
     acc = torch.mean((pred == target.byte()).float())
     return acc
 
 
 #############################################
-def init_loss_dict(dataset="gabors"):
-    
-    shared_keys = ["epoch_n", "loss"]
-    train_keys = [
-        "detailed_loss", "loss_by_batch", "dot_by_batch", "target_by_batch"
-        ]
+def init_loss_dict(direc=None, dataset="gabors", ks=[1, 3, 5], val=True, 
+                   save_by_batch=False):
+    """
+    init_loss_dict()
+    """
 
-    loss_dict = dict()    
-    for main_key in ["train", "val"]:
-        loss_dict[main_key] = dict()
+    loss_dict_path = Path(direc, "loss_data.json")
+
+    if loss_dict_path.is_file():
+        with open(loss_dict_path, "r") as f:
+            loss_dict = json.load(f)
+    else:
+        loss_dict = dict()
+
+    main_keys = ["train", "val"] if val else ["train"]
+    
+    topk_keys = [f"top{k}" for k in ks]
+    shared_keys = ["epoch_n", "loss", "acc"] + topk_keys
+
+    train_keys = []
+    if save_by_batch:
+        train_keys = [
+            "batch_epoch_n", "detailed_loss", "loss_by_batch", "dot_by_batch", 
+            "target_by_batch"
+            ]
+
+    for main_key in main_keys:
+        if main_key not in loss_dict.keys():
+            loss_dict[main_key] = dict()
         sub_keys = shared_keys
         if main_key == "train":
             sub_keys = shared_keys + train_keys
             if dataset == "gabors":
                 sub_keys.append("seq")
         for key in sub_keys:
-            loss_dict[main_key][key] = list()
+            if key not in loss_dict[main_key].keys():
+                loss_dict[main_key][key] = list()
     
     return loss_dict
 
 
 #############################################
-def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="gabors", 
-                   unexp_epoch=10):
+def plot_loss_dict(loss_dict, chance=None):
+    """
+    plot_loss_dict(loss_dict)
+    """
 
-    seed_str = "" if seed is None else f"_{seed}"
-    unexp_str = f"_{unexp_epoch}" if dataset == "gabors" else ""
-    full_path = Path(
-        output_dir, f"loss_data{unexp_str}{seed_str}.json"
-        )
-    with json.load(full_path, "w"):
-        json.dump(loss_dict, full_path)
+    fig, ax = plt.subplots(2, figsize=[7, 5], sharex=True)
+
+    colors = ["blue", "orange"]
+    ls = ["dashed", None]
+
+    for d, datatype in enumerate(["train", "val"]):
+        if datatype not in loss_dict.keys():
+            continue
+        epoch_ns = loss_dict[datatype]["epoch_n"]
+        ax[0].plot(
+            epoch_ns, loss_dict[datatype]["loss"], 
+            color=colors[d], ls=ls[d], label=f"{datatype} loss"
+            )
+        acc_keys = sorted(
+            [key for key in loss_dict[datatype].keys() if "top" in key]
+            )
+        if chance is not None:
+            ax[1].axhline(100 * chance, color="k", ls="dashed", alpha=0.8)
+        for a, acc_key in enumerate(acc_keys):
+            accuracies = 100 * np.asarray(loss_dict[datatype][acc_key])
+            alpha = 0.7 ** a
+            ax[1].plot(
+                epoch_ns, accuracies, color=colors[d], ls=ls[d], 
+                alpha=alpha, label=f"{datatype} {acc_key}"
+                )
+        
+        if datatype == "val":
+            best_epoch_n = epoch_ns[np.argmax(loss_dict[datatype]["acc"])]
+            for sub_ax in ax.reshape(-1):
+                sub_ax.axvline(best_epoch_n, color="k", ls="dashed", alpha=0.8)
+
+    for sub_ax in ax.reshape(-1):
+        sub_ax.legend(fontsize="small")
+        sub_ax.spines["right"].set_visible(False)
+        sub_ax.spines["top"].set_visible(False)
+
+    ax[0].set_ylabel("Loss")    
+    ax[1].set_xlabel("Epoch")
+    ax[1].set_ylabel("Accuracy (%)")
+
+    return fig
+
+
+#############################################
+def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="gabors", 
+                   unexp_epoch=10, plot=True, chance=None):
+    """
+    save_loss_dict(loss_dict)
+    """
+
+    seed_str, seed_str_pr = "", ""
+    if seed is not None:
+        seed_str = f"_seed{seed}"
+        seed_str_pr = f" (seed {seed})"
+
+    unexp_str, unexp_str_pr = "", ""
+    if dataset == "gabors":
+        unexp_str = f"_unexp{unexp_epoch}"
+        unexp_str_pr = f" (unexp. epoch: {unexp_epoch})"
+
+    savename = f"loss_data{unexp_str}{seed_str}"
+    full_path = Path(output_dir, f"{savename}.json")
+        
+    with open(full_path, "w") as f:
+        json.dump(loss_dict, f)
+
+    if plot:
+        fig = plot_loss_dict(loss_dict, chance=chance)
+        title = f"{dataset.capitalize()} dataset{unexp_str_pr}{seed_str_pr}"
+        fig.suptitle(title)
+
+        full_path = Path(output_dir, f"{savename}.svg")
+        fig.savefig(full_path, bbox_inches="tight")
 

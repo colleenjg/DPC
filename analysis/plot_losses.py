@@ -22,7 +22,7 @@ def tsplot(ax, x, mean, std, **kwargs):
     ax.plot(x, mean, lw=2, **kwargs)
 
 def get_losses(all_sequences, all_losses, batch_size=20):
-    
+
     losses = dict()
     for trial_type_key in ["A", "B", "C", "D", "U"]:
         losses[trial_type_key] = dict()
@@ -38,18 +38,18 @@ def get_losses(all_sequences, all_losses, batch_size=20):
 
 
 def get_simple_loss_array(all_sequences, all_losses, batch_size=20):
-    losses = np.zeros(len(seq))
-    #print(loss)
-    epoch=0
-    #print(len(seq))
 
-    for i in np.arange(len(seq)):
-        j = int(i/batch_size)
-        losses[i] = loss[epoch][j%epoch_size]
-        if (j!=0) & (i%(epoch_size*batch_size)==0):
-                epoch+=1
+    
+    losses = np.zeros(len(all_sequences))
+    epoch = 0
 
-    return losses, np.arange(len(seq))
+    for i in np.arange(len(all_sequences)):
+        j = int(i / batch_size)
+        losses[i] = loss[epoch][j % epoch_size]
+        if (j != 0) & (i % (epoch_size * batch_size) == 0):
+            epoch += 1
+
+    return losses, np.arange(len(all_sequences))
 
 
 def get_losses2(seq, loss, epoch_size, batch_size):

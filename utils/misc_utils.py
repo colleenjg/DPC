@@ -1,8 +1,11 @@
 import logging
-import numpy as np
 import os
 from pathlib import Path
+import shutil
 import sys
+import time
+
+import numpy as np
 import torch
 
 from torchvision import transforms
@@ -12,7 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 #############################################
-def seed_all(seed):
+def seed_all(seed=None, deterministic_algorithms=True):
+    """
+    seed_all()
+    """
 
     if seed is not None:
         logger.debug(f'Random state seed: {seed}')
@@ -21,8 +27,49 @@ def seed_all(seed):
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
         torch.backends.cudnn.benchmark = False
-        torch.use_deterministic_algorithms(True)
+        if deterministic_algorithms:
+            torch.use_deterministic_algorithms(True)
         os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8' # for cuda > 10.2
+
+
+#############################################
+def format_time(duration, sep_min=True):
+    """
+    format_time(duration)
+    """
+    
+    if sep_min:
+        minutes = int(duration // 60)
+        seconds = duration - minutes * 60
+        time_str = f"{minutes}m {seconds:05.3f}s"
+    else:
+        time_str = f"{duration:.3f}s"
+
+    return time_str
+
+
+#############################################
+def get_unique_direc(direc, overwrite=False):
+    """
+    get_unique_direc(direc)
+    """
+    
+    if Path(direc).is_dir():
+        if overwrite:
+            logger.warning(
+                f"{direc} already exists. Removing, as it will be overwritten.", 
+                extra={"spacing": "\n"}
+                )
+            time.sleep(5) # to allow for skipping directory removal.
+            shutil.rmtree(str(direc))
+        else:
+            i = 0
+            base_direc = direc
+            while Path(direc).is_dir():
+                i += 1
+                direc = f"{base_direc}_{i:03}"
+
+    return direc
 
 
 #############################################
@@ -78,6 +125,9 @@ class BasicLogFormatter(logging.Formatter):
 
 #############################################
 def set_logger_level(logger, level="info"):
+    """
+    set_logger_level(logger)
+    """
 
     if str(level).isdigit():
         logger.setLevel(int(level))
@@ -158,6 +208,10 @@ def get_logger_with_basic_format(**logger_kw):
 
 #############################################
 def init_tb_writers(direc=".", val=False):
+    """
+    init_tb_writers()
+    """
+
     from tensorboardX import SummaryWriter
 
     if direc is None:
@@ -173,18 +227,25 @@ def init_tb_writers(direc=".", val=False):
 
 #############################################
 def denorm(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+    """
+    denorm()
+    """
+    
     if len(mean) != 3:
         raise ValueError("'mean' must comprise 3 values.")
     if len(std) != 3:
         raise ValueError("'std' must comprise 3 values.")
     inv_mean = [-mean[i] / std[i] for i in range(3)]
     inv_std = [1 / i for i in std]
+    
     return transforms.Normalize(mean=inv_mean, std=inv_std)
 
 
 #############################################
 def write_input_seq_tb(writer, input_seq, n=2, i=0):
     """
+    write_input_seq_tb(writer, input_seq)
+
     Write input sequences to a tensorboard writer.
     """
 
@@ -192,7 +253,7 @@ def write_input_seq_tb(writer, input_seq, n=2, i=0):
     writer.add_image(
         "input_seq", 
         denorm(vutils.make_grid(
-            input_seq[:n].transpose(2, 3).contiguous().view(-1, C, H, W), 
+            input_seq[:n].transpose(2, 3).reshape(-1, C, H, W), 
             nrow=N * SL)
         ), i
     )
@@ -200,7 +261,10 @@ def write_input_seq_tb(writer, input_seq, n=2, i=0):
 
 #############################################
 def update_tb(writer_train, train_dict, epoch_n=0, writer_val=None, 
-                  val_dict=None):
+              val_dict=None):
+    """
+    update_tb(writer_train, train_dict)
+    """
 
     datatypes = [
         "global/loss", 

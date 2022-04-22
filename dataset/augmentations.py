@@ -298,6 +298,7 @@ class ColorJitter(object):
             [-hue, hue] or the given [min, max].
             Should have 0 <= hue <= 0.5 or -0.5 <= min <= max <= 0.5.
     """
+
     def __init__(self, brightness=0, contrast=0, saturation=0, hue=0, 
                  consistent=False, p=1.0):
         self.brightness = self._check_input(brightness, "brightness")
@@ -334,13 +335,18 @@ class ColorJitter(object):
         return value
 
     @staticmethod
-    def get_params(brightness, contrast, saturation, hue):
-        """Get a randomized transform to be applied on image.
+    def get_params(brightness=None, contrast=None, saturation=None, hue=None):
+        """
+        get_params()
+        
+        Get a randomized transform to be applied on image.
+
         Arguments are same as that of __init__.
         Returns:
             Transform which randomly adjusts brightness, contrast and
             saturation in a random order.
         """
+
         transforms = []
 
         if brightness is not None:
