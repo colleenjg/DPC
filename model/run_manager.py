@@ -87,6 +87,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         if writer is not None and idx % log_freq == 0:
             misc_utils.write_input_seq_tb(writer, input_seq, n=2, i=log_idx)
         del input_seq
+        del data_items
 
         if supervised:
             B, N, num_classes = output_.size()
@@ -97,20 +98,23 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
             logger.debug(
                 "Model called next.\n"
                 f"Input sequence shape: {input_seq_shape} "
-                "(expecting [10, 4, 3, 5, 128, 128]).\n"
-                f"Score shape: {output_.shape} "
-                "(expecting a 6D tensor: [B, PS, D2, B, PS, D2]).\n"
+                "(expecting [B, N, C, SL, H, W]).\n"
+                f"Output shape: {output_.shape} "
+                "(expecting a 6D tensor: [B, PS, D2, B_per, PS, D2]).\n"
                 f"Mask shape: {mask_.size()}"
             )
-            # batch x pred step x dim squared (x 2)
-            (B, PS, D2, _, _, _) = mask_.size()
-            flat_dim = B * PS * D2
-            target = training_utils.get_target_from_mask(mask_)
+
+            # batch x pred step x dim squared x batch/GPU x pred step x dim squared
+            if idx == 0:
+                (B, PS, D2, B_per, _, _) = mask_.size()
+                flat_dim = B * PS * D2
+                flat_dim_per = B_per * PS * D2 # B_per: batch size per GPU
+                target = training_utils.get_target_from_mask(mask_)
         
-            # output is a 6d tensor: [B, PS, D2, B, PS, D2]
-            output_flattened = output_.reshape(flat_dim, flat_dim)
+            # output is a 6d tensor: [B, PS, D2, B_per, PS, D2]
+            output_flattened = output_.reshape(flat_dim, flat_dim_per)
             target_flattened = target.reshape(
-                flat_dim, flat_dim).argmax(dim=1)
+                flat_dim, flat_dim_per).argmax(dim=1)
 
         target_flattened = target_flattened.to(device)
         loss = criterion(output_flattened, target_flattened)
@@ -166,7 +170,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
                 f"{log_str}{TAB}Time: {mean_batch_time}/batch", 
                 extra={"spacing": spacing}
                 )
-            spacing = "" # for all but first print of the epoch
+            spacing = "" # for all but first log of the epoch
 
             if writer is not None:
                 writer.add_scalar("local/loss", loss_val, log_idx)
@@ -182,8 +186,8 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
 
             logger.debug(log_str)
 
-            if train and optimizer:
-                training_utils.log_weight_decay_prop(model) # increment decay
+            if train and supervised and optimizer:
+                training_utils.log_weight_decay_prop(model) # log decay info
             
             log_idx += 1
 
@@ -216,6 +220,8 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
     if supervised and output_dir is not None:
         confusion_mat = loss_utils.ConfusionMeter(num_classes)
         Path(output_dir).mkdir(exist_ok=True)
+    if not supervised:
+        chance_level = loss_utils.AverageMeter()
 
     shared_pred = False
     start_time = time.perf_counter()
@@ -256,15 +262,20 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
                     target_flattened = target.repeat(1, N).reshape(-1)
             
             else:
-                if idx == 0: # same across all batches
-                    # batch x pred step x dim squared (x 2)
-                    (B, PS, D2, _, _, _) = mask_.size()
-                    flat_dim = B * PS * D2
-                    target = training_utils.get_target_from_mask(mask_)
-                
+                # batch x pred step x dim squared x batch/GPU x pred step x dim squared
+                (B, PS, D2, B_per, _, _) = mask_.size()
+                flat_dim = B * PS * D2
+                flat_dim_per = B_per * PS * D2 # B_per: batch size per GPU
+                target = training_utils.get_target_from_mask(mask_)
+                                
                 # output is a 6d tensor: [B, PS, D2, B, PS, D2]
-                output_flattened = output_.reshape(flat_dim, flat_dim)
-                target_flattened = target.reshape(flat_dim, flat_dim).argmax(dim=1)
+                output_flattened = output_.reshape(flat_dim, flat_dim_per)
+                target_flattened = target.reshape(
+                    flat_dim, flat_dim_per
+                    ).argmax(dim=1)
+                
+                chance_level.update(1 / np.product(flat_dim_per), 1)
+
                   
             target_flattened = target_flattened.to(device)
             loss = criterion(output_flattened, target_flattened)
@@ -278,7 +289,10 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
                 _, pred = torch.max(output_flattened, 1)
                 confusion_mat.update(pred, target_flattened.reshape(-1).byte())
 
-    chance = 1 / num_classes if supervised else None
+    if supervised:
+        chance = 1 / num_classes
+    else:
+        chance = chance_level.avg
     loss_avg, acc_avg, log_str = loss_utils.get_stats(
             losses, topk_meters, ks=topk, local=False, chance=chance
         )
@@ -330,7 +344,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
 
     model = model.to(device)
 
-    optimizer, log_idx, best_acc, start_epoch_n = \
+    log_idx, best_acc, start_epoch_n = \
         training_utils.load_checkpoint(model, optimizer, **reload_kwargs)
     num_classes = training_utils.get_num_classes(model)
 

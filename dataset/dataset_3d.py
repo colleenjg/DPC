@@ -269,8 +269,11 @@ class GeneralDataset(data.Dataset):
         seq = [
             pil_loader(Path(vpath, f"image_{i+1:05}.jpg")) for i in seq_idx
             ]
-        t_seq = self.transform(seq) # apply same transform
-
+        if self.transform is not None:
+            t_seq = self.transform(seq) # apply same transform
+        else:
+            t_seq = seq
+            
         return t_seq
 
 

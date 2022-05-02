@@ -210,7 +210,7 @@ class RandomSizedCrop:
             scale = Scale(self.size, interpolation=self.interpolation)
             crop = CenterCrop(self.size)
             return crop(scale(imgmap))
-        else: # don"t do RandomSizedCrop, do CenterCrop
+        else: # don't do RandomSizedCrop, do CenterCrop
             crop = CenterCrop(self.size)
             return crop(imgmap)
 

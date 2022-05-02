@@ -78,7 +78,7 @@ class DPC_RNN(torch.nn.Module):
         # returns: [B, pred_step, D, last_size, last_size] #
         pred = []
         for _ in range(self.pred_step):
-            # sequentially pred future
+            # sequentially predict future
             p_tmp = self.network_pred(hidden)
             pred.append(p_tmp)
             _, hidden = self.agg(
@@ -129,7 +129,7 @@ class DPC_RNN(torch.nn.Module):
         self.mask = None
 
 
-    def compute_mask(self, B):
+    def compute_mask(self, B, device="cpu"):
         # mask meaning: 
         # -3: spatial neg
         # (-2: omit)
@@ -170,7 +170,7 @@ class DPC_RNN(torch.nn.Module):
 
         mask = torch.tensor(
             mask, dtype=torch.int8, requires_grad=False
-            ).detach().cuda()
+            ).to(device)
 
         # mask: B x PS x D2 x B x PS x D2
         self.mask = mask.reshape(B, D2, PS, B, D2, PS).contiguous().permute(
@@ -213,7 +213,7 @@ class DPC_RNN(torch.nn.Module):
         score = self.get_similarity_score(pred, ground_truth)
         del ground_truth, pred
 
-        self.compute_mask(B)
+        self.compute_mask(B, device=feature.device)
 
         return [score, self.mask]
 
@@ -294,6 +294,7 @@ class LC(torch.nn.Module):
             if "bias" in name:
                 torch.nn.init.constant_(param, 0.0)
             elif "weight" in name:
-                torch.nn.init.orthogonal_(param, 1)        
+                torch.nn.init.orthogonal_(param, 1)
+                 
         # other resnet weights have been initialized in resnet_3d.py
 

@@ -56,6 +56,13 @@ def check_adjust_args(args):
             f"for {args.model} model."
             )
 
+    # set weight decay, if needed
+    if args.wd is None:
+        if args.supervised:
+            args.wd = 1e-3
+        else:
+            args.wd = 1e-5
+
     # adjust if test is True
     if args.test:
         if args.supervised:
@@ -208,21 +215,23 @@ def set_gradients(model, supervised=False, train_what="all", lr=1e-3):
     set_gradients(model)
     """
 
+    model = training_utils.get_model(model)
+
     params = model.parameters()
     if train_what == "last":
         logger.info("=> Training only the last layer")
         if supervised:
-            for name, param in model.module.named_parameters():
+            for name, param in model.named_parameters():
                 if ("resnet" in name) or ("rnn" in name):
                     param.requires_grad = False
         else:
-            for name, param in model.module.resnet.named_parameters():
+            for name, param in model.resnet.named_parameters():
                 param.requires_grad = False
 
     elif supervised and train_what == "ft":
         logger.info("=> Finetuning backbone with a smaller learning rate")
         params = []
-        for name, param in model.module.named_parameters():
+        for name, param in model.named_parameters():
             if ("resnet" in name) or ("rnn" in name):
                 params.append({"params": param, "lr": lr / 10})
             else:
@@ -277,8 +286,12 @@ def run_training(args):
     model = get_model(args.supervised)
 
     # get device
-    device, args.num_workers = training_utils.get_device(args.num_workers)
-    model = torch.nn.DataParallel(model)
+    device, args.num_workers = training_utils.get_device(
+        args.num_workers, args.cpu_only
+        )
+    if device.type != "cpu":
+        model = torch.nn.DataParallel(model)
+    
     model = model.to(device)
 
     # get optimizer and scheduler
@@ -286,7 +299,7 @@ def run_training(args):
         model, lr=args.lr, wd=args.wd, dataset=args.dataset, 
         img_dim=args.img_dim, supervised=args.supervised, 
         train_what=args.train_what, test=args.test
-    )        
+    )
 
     # get dataloaders
     main_loader, val_loader = get_dataloaders(args)
@@ -364,7 +377,8 @@ if __name__ == "__main__":
         help="'all', 'last' or 'ft' (supervised only)")
     parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--lr", default=1e-3, type=float, help="learning rate")
-    parser.add_argument("--wd", default=1e-5, type=float, help="weight decay")
+    parser.add_argument("--wd", default=None,
+        help="weight decay (different defaults for supervised and self-supervised)")
     parser.add_argument("--not_save_best", action="store_true", 
         help="if True, best model is not identified and saved")
     parser.add_argument("--num_epochs", default=10, type=int, 
@@ -396,6 +410,8 @@ if __name__ == "__main__":
         help="if True, tensorboard is used")
     parser.add_argument('--log_level', default='info', 
                         help='logging level, e.g., debug, info, error')
+    parser.add_argument('--cpu_only', action='store_true', 
+                        help='run on CPU (very slow)')
 
     # supervised only
     parser.add_argument("--dropout", default=0.5, type=float, 

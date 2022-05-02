@@ -30,6 +30,10 @@ __all__ = [
 
 #############################################
 def conv3x3x3(in_planes, out_planes, stride=1, bias=False):
+    """
+    conv3x3x3(in_planes, out_planes)
+    """
+    
     # 3x3x3 convolution with padding
     return nn.Conv3d(
         in_planes,
@@ -37,30 +41,38 @@ def conv3x3x3(in_planes, out_planes, stride=1, bias=False):
         kernel_size=3,
         stride=stride,
         padding=1,
-        bias=bias)
+        bias=bias
+        )
 
 
 #############################################
 def conv1x3x3(in_planes, out_planes, stride=1, bias=False):
+    """
+    conv1x3x3(in_planes, out_planes)
+    """
+    
     # 1x3x3 convolution with padding
     return nn.Conv3d(
         in_planes,
         out_planes,
-        kernel_size=(1,3,3),
-        stride=(1,stride,stride),
-        padding=(0,1,1),
-        bias=bias)
+        kernel_size=(1, 3, 3),
+        stride=(1, stride, stride),
+        padding=(0, 1, 1),
+        bias=bias
+        )
 
 
 #############################################
-def downsample_basic_block(x, planes, stride):
+def downsample_basic_block(x, planes, stride=1):
+    """
+    downsample_basic_block(x, planes)
+    """
+    
     out = F.avg_pool3d(x, kernel_size=1, stride=stride)
     zero_pads = torch.Tensor(
         out.size(0), planes - out.size(1), out.size(2), out.size(3),
         out.size(4)
-        ).zero_()
-    if isinstance(out.data, torch.cuda.FloatTensor):
-        zero_pads = zero_pads.cuda()
+        ).zero_().to(x.device)
 
     out = Variable(torch.cat([out.data, zero_pads], dim=1))
 
@@ -374,7 +386,12 @@ class ResNet2d3d_full(nn.Module):
 ### full resnet ###
 #############################################
 def resnet18_2d3d_full(**kwargs):
-    """Constructs a ResNet-18 model. """
+    """
+    resnet18_2d3d_full(**kwargs)
+
+    Constructs a ResNet-18 model.
+    """
+
     model = ResNet2d3d_full(
         [BasicBlock2d, BasicBlock2d, BasicBlock3d, BasicBlock3d], 
         [2, 2, 2, 2], 
@@ -385,7 +402,12 @@ def resnet18_2d3d_full(**kwargs):
 
 #############################################
 def resnet34_2d3d_full(**kwargs):
-    """Constructs a ResNet-34 model. """
+    """
+    resnet34_2d3d_full(**kwargs)
+    
+    Constructs a ResNet-34 model. 
+    """
+
     model = ResNet2d3d_full(
         [BasicBlock2d, BasicBlock2d, BasicBlock3d, BasicBlock3d], 
         [3, 4, 6, 3], 
@@ -396,7 +418,12 @@ def resnet34_2d3d_full(**kwargs):
 
 #############################################
 def resnet50_2d3d_full(**kwargs):
-    """Constructs a ResNet-50 model. """
+    """
+    resnet50_2d3d_full(**kwargs)
+
+    Constructs a ResNet-50 model.
+    """
+
     model = ResNet2d3d_full(
         [Bottleneck2d, Bottleneck2d, Bottleneck3d, Bottleneck3d], 
         [3, 4, 6, 3], 
@@ -407,7 +434,12 @@ def resnet50_2d3d_full(**kwargs):
 
 #############################################
 def resnet101_2d3d_full(**kwargs):
-    """Constructs a ResNet-101 model. """
+    """
+    resnet101_2d3d_full(**kwargs)
+
+    Constructs a ResNet-101 model.
+    """
+
     model = ResNet2d3d_full(
         [Bottleneck2d, Bottleneck2d, Bottleneck3d, Bottleneck3d], 
         [3, 4, 23, 3], 
@@ -417,8 +449,13 @@ def resnet101_2d3d_full(**kwargs):
 
 
 #############################################
-def resnet152_2d3d_full(**kwargs):
-    """Constructs a ResNet-101 model. """
+def resnet200_2d3d_full(**kwargs):
+    """
+    resnet200_2d3d_full(**kwargs)
+    
+    Constructs a ResNet-101 model.
+    """
+
     model = ResNet2d3d_full(
         [Bottleneck2d, Bottleneck2d, Bottleneck3d, Bottleneck3d], 
         [3, 8, 36, 3], 
@@ -429,7 +466,12 @@ def resnet152_2d3d_full(**kwargs):
 
 #############################################
 def resnet200_2d3d_full(**kwargs):
-    """Constructs a ResNet-101 model. """
+    """
+    resnet200_2d3d_full(**kwargs)
+
+    Constructs a ResNet-101 model.
+    """
+
     model = ResNet2d3d_full(
         [Bottleneck2d, Bottleneck2d, Bottleneck3d, Bottleneck3d], 
         [3, 24, 36, 3], 
@@ -440,10 +482,14 @@ def resnet200_2d3d_full(**kwargs):
 
 #############################################
 def neq_load_customized(model, pretrained_dict):
-    """ Load pre-trained model in a not-equal way,
-    when new model has been partially modified. """
+    """
+    neq_load_customized(model, pretrained_dict)
+    
+    Load pre-trained model in a not-equal way, when new model has been 
+    partially modified. 
+    """
     model_dict = model.state_dict()
-    tmp = {}
+    tmp = dict()
 
     log_str = "\n========= Weight loading ========="
     log_str = f"{log_str}\nWeights not used from pretrained file:"
@@ -466,11 +512,15 @@ def neq_load_customized(model, pretrained_dict):
     model_dict.update(tmp)
     del tmp
     model.load_state_dict(model_dict)
+    
     return model
 
 
 #############################################
 def select_resnet(network, track_running_stats=True):
+    """
+    select_resnet(network)
+    """
     
     resnet_n = network.replace("resnet", "")
     if not resnet_n.isdigit():

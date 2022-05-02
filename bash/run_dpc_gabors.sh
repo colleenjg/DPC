@@ -16,16 +16,15 @@ module load cuda/10.2/cudnn/7.6
 conda activate ssl
 
 
-# 2. Optionally, copy pre-trained model weights (downloaded from DPC repo) 
-# from SCRATCH to SLURM_TMPDIR 
+# 2. Set the pretrain path, if applicable
 if [[ $PRETRAIN == 1 ]]; then
-    echo "Copying pre-trained model to slurm temporary directory."
-    PRETRAIN_STR="pretrained_"
-    PRETRAIN="--pretrain $SLURM_TMPDIR/k400_128_r18_dpc-rnn.pth.tar"
-    cp $SCRATCH/dpc/pretrained/k400_128_r18_dpc-rnn.pth.tar $SLURM_TMPDIR/
+    MODEL=lc
+    TRAIN_WHAT=ft
+    PRETRAIN=$SCRATCH"/dpc/pretrained/k400_128_r18_dpc-rnn/model/k400_128_r18_dpc-rnn.pth.tar"
 
-    code="$?"
-    if [ "$code" -ne 0 ]; then exit "$code"; fi # exit, if failed
+else
+    MODEL=dpc-rnn
+    TRAIN_WHAT=all
 fi
 
 
@@ -47,7 +46,7 @@ STOP_SEED=$((START_SEED + N_PER - 1)) # inclusive
 SEEDS=($( seq $START_SEED 1 $STOP_SEED ))
 
 
-# 5. Results are saved in $SLURM_TMPDIR
+# 5. Results are saved in $SCRATCH
 EXIT=0
 
 for SEED in "${SEEDS[@]}"
@@ -55,23 +54,23 @@ do
     set -x # echo commands to console
 
     python train_model.py \
-        --output_dir $SLURM_TMPDIR \
-        $PRETRAIN \
+        --output_dir $SCRATCH \
         --net resnet18 \
-        --model "dpc-rnn" \
         --dataset gabors \
         --img_dim 128 \
-        --seq_len $SE \
-        --num_seq $N_SEQ \
-        --train_what ft \
         --batch_size 10 \
         --num_epochs 25 \
         --log_freq 1 \
-        --seed $SEED \
         --pred_step 1 \
         --unexp_epoch 5 \
         --roll \
+        --model $MODEL \
+        --train_what $TRAIN_WHAT \
+        --seq_len $SE \
+        --num_seq $N_SEQ \
         --U_prob $U_PROB \
+        --seed $SEED \
+        $PRETRAIN \
 
     code="$?"
     if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code

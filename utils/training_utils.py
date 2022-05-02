@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 import re
 
-import json
 import torch
 
 from dataset import dataset_3d
@@ -45,12 +44,12 @@ def get_num_jobs(max_n=None, min_n=1):
 
 
 #############################################
-def get_device(num_workers=None):
+def get_device(num_workers=None, cpu_only=False):
     """
     get_device()
     """
 
-    device_name = "cuda" if torch.cuda.is_available() else "cpu"
+    device_name = "cuda" if torch.cuda.is_available() and not cpu_only else "cpu"
     device = torch.device(device_name)
 
     if num_workers is None:
@@ -92,6 +91,7 @@ def get_target_from_mask(mask):
     # mask meaning: 1: pos
     target = (mask == 1).to(int)
     target.requires_grad = False
+
     return target
 
 
@@ -100,6 +100,8 @@ def check_grad(model):
     """
     check_grad(model)
     """
+
+    model = get_model(model)
     
     logger.debug("\n===========Check Grad============")
     for name, param in model.named_parameters():
@@ -156,27 +158,37 @@ def get_lr_lambda(dataset="HMDB51", img_dim=224):
 
 
 #############################################
+def get_model(model):
+    """
+    get_model(model)
+    """
+    
+    # in case the model is wrapped with DataParallel()
+    if hasattr(model, "device_ids"):
+        model = model.module
+
+    return model
+
+
+#############################################
 def get_num_classes(model):
     """
     get_num_classes(model)
     """
     
+    model = get_model(model)
     num_classes = None
     
     if hasattr(model, "num_classes"):
         num_classes = model.num_classes
     
-    # in case the model is wrapped with DataParallel()
-    elif hasattr(model, "module") and hasattr(model.module, "num_classes"):
-        num_classes = model.module.num_classes
-
     return num_classes
 
 
 #############################################
-def load_from_checkpoint(checkpoint, keys):
+def load_key_from_checkpoint(checkpoint, keys):
     """
-    load_from_checkpoint(checkpoint, keys)
+    load_key_from_checkpoint(checkpoint, keys)
     """
 
     if len(keys) != 2:
@@ -188,6 +200,25 @@ def load_from_checkpoint(checkpoint, keys):
         value = checkpoint[keys[1]]
 
     return value
+
+
+#############################################
+def get_state_dict(model, state_dict):
+
+    # in case there is a mismatch: model wrapped or not with DataParallel()
+    state_dict = copy.deepcopy(state_dict)
+    if not hasattr(model, "device_ids"):
+        for key in list(state_dict.keys()):
+            if key.startswith("module."):
+                new_key = key[7:]
+                state_dict[new_key] = state_dict.pop(key)
+    else:
+        for key in list(state_dict.keys()):
+            if not key.startswith("module."):
+                new_key = f"module.{key}"
+                state_dict[new_key] = state_dict.pop(key)
+
+    return state_dict
 
 
 #############################################
@@ -209,13 +240,16 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
             if "_lr" in str(resume):
                 old_lr = float(re.search("_lr(.+?)_", resume).group(1))
             checkpoint = torch.load(resume, map_location=torch.device("cpu"))
-            checkpoint_epoch_n = load_from_checkpoint(
+            checkpoint_epoch_n = load_key_from_checkpoint(
                 checkpoint, ["epoch_n", "epoch"]
                 )
             start_epoch_n = checkpoint_epoch_n + 1
-            log_idx = load_from_checkpoint(checkpoint, ["log_idx", "iteration"])
+            log_idx = load_key_from_checkpoint(checkpoint, ["log_idx", "iteration"])
             best_acc = checkpoint["best_acc"]
             try:
+                checkpoint["state_dict"] = get_state_dict(
+                    model, checkpoint["state_dict"]
+                    )
                 model.load_state_dict(checkpoint["state_dict"])
             except RuntimeError as err:
                 if "Missing key" in str(err):
@@ -230,7 +264,6 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
                     raise err
             # if not resetting lr, load old optimizer
             if optimizer is not None and not reset_lr: 
-                optimizer = copy.deepcopy(optimizer)
                 optimizer.load_state_dict(checkpoint["optimizer"])
             else: 
                 # optimizer state is not reloaded
@@ -258,12 +291,15 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
             checkpoint = torch.load(
                 reload_model, map_location=torch.device("cpu")
                 )
-            checkpoint_epoch_n = load_from_checkpoint(
+            checkpoint_epoch_n = load_key_from_checkpoint(
                 checkpoint, ["epoch_n", "epoch"]
                 )
             if test:
-                try: 
-                    model.load_state_dict(checkpoint['state_dict'])
+                try:
+                    checkpoint["state_dict"] = get_state_dict(
+                        model, checkpoint["state_dict"]
+                        )
+                    model.load_state_dict(checkpoint["state_dict"])
                     test_loaded = True
                 except:
                     logger.warning(
@@ -272,6 +308,9 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
                         )
                     test_loaded = False
             if pretrained or not test_loaded:
+                checkpoint["state_dict"] = get_state_dict(
+                    model, checkpoint["state_dict"]
+                    )
                 model = resnet_2d3d.neq_load_customized(
                     model, checkpoint["state_dict"]
                     )
@@ -282,7 +321,7 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
         else: 
             logger.warning(f"=> No checkpoint found at '{reload_model}'.")
     
-    return optimizer, log_idx, best_acc, start_epoch_n
+    return log_idx, best_acc, start_epoch_n
 
 
 #############################################
