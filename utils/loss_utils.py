@@ -257,7 +257,8 @@ def calc_accuracy_binary(output, target):
 
 
 #############################################
-def init_loss_dict(direc=".", ks=[1, 3, 5], val=True):
+def init_loss_dict(direc=".", dataset="UCF101", ks=[1, 3, 5], val=True, 
+                   save_by_batch=False):
     """
     init_loss_dict()
     """
@@ -275,10 +276,21 @@ def init_loss_dict(direc=".", ks=[1, 3, 5], val=True):
     topk_keys = [f"top{k}" for k in ks]
     shared_keys = ["epoch_n", "loss", "acc"] + topk_keys
 
+    train_keys = []
+    if save_by_batch:
+        train_keys = [
+            "batch_epoch_n", "detailed_loss", "loss_by_batch", "dot_by_batch", 
+            "target_by_batch"
+            ]
+
     for main_key in main_keys:
         if main_key not in loss_dict.keys():
             loss_dict[main_key] = dict()
         sub_keys = shared_keys
+        if main_key == "train":
+            sub_keys = shared_keys + train_keys
+            if dataset == "Gabors":
+                sub_keys.append("seq")
         for key in sub_keys:
             if key not in loss_dict[main_key].keys():
                 loss_dict[main_key][key] = list()
@@ -347,24 +359,29 @@ def plot_loss_dict(loss_dict, chance=None):
 
 #############################################
 def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101", 
-                   plot=True, chance=None):
+                   unexp_epoch=10, plot=True, chance=None):
     """
     save_loss_dict(loss_dict)
     """
 
-    seed_str_pr = "", ""
+    seed_str_pr = ""
     if seed is not None:
         seed_str_pr = f" (seed {seed})"
 
-    savename = f"loss_data"
-    full_path = Path(output_dir, f"{savename}.json")
+    unexp_str_pr = ""
+    if dataset == "Gabors":
+        unexp_str_pr = f" (unexp. epoch: {unexp_epoch})"
+
+    savename = "loss_data"
+    full_path = Path(output_dir, f"loss_data.json")
         
     with open(full_path, "w") as f:
         json.dump(loss_dict, f)
 
     if plot:
         fig = plot_loss_dict(loss_dict, chance=chance)
-        title = f"{dataset[0].capitalize()}{dataset[1:]} dataset{seed_str_pr}"
+        title = (f"{dataset[0].capitalize()}{dataset[1:]} dataset"
+            f"{unexp_str_pr}{seed_str_pr}")
         fig.suptitle(title)
 
         full_path = Path(output_dir, f"{savename}.svg")

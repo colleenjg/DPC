@@ -34,6 +34,8 @@ def normalize_dataset_name(dataset_name="UCF101", short=False):
         dataset_name = "HMDB51"
     elif dataset_name.lower() in ["kinetics400", "k400"]:
         dataset_name = "k400" if short else "Kinetics400"
+    elif dataset_name.lower() == "gabors":
+        dataset_name = "Gabors"
     else:
         raise ValueError(f"{dataset_name} dataset not recognized.")
 

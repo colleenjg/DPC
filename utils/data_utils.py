@@ -62,6 +62,9 @@ def get_transform(dataset, img_dim=256, mode="train"):
             augmentations.Normalize(),
         ])
 
+    elif dataset == "Gabors":
+        raise NotImplementedError("Gabors dataset not implemented.")
+
     elif dataset is None:
         if mode in ["train", "val"]:
             crop_p = 1.0 if mode == "train" else 0.3
@@ -69,7 +72,9 @@ def get_transform(dataset, img_dim=256, mode="train"):
             hue = 0.25 if mode == "train" else 0.1
 
             transform = transforms.Compose([
-                augmentations.RandomSizedCrop(consistent=True, size=224, p=crop_p),
+                augmentations.RandomSizedCrop(
+                    consistent=True, size=224, p=crop_p
+                    ),
                 augmentations.Scale(size=(img_dim, img_dim)),
                 augmentations.RandomHorizontalFlip(consistent=True),
                 augmentations.ColorJitter(

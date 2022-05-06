@@ -1,7 +1,8 @@
-# Representation Learning by Dense Predictive Coding
+# Representation Learning by Dense Predictive Coding with Gabor stimuli
 
 This repository contains a modified implementation of the Dense Predictive Coding (DPC) algorithm ([Han _et al._, 2019, _ICCV_](https://arxiv.org/abs/1909.04656), hosted [here](https://github.com/TengdaHan/DPC)).  
 
+The Gabor stimulus design is based on the stimuli used in [Gillon _et al._, 2021, _bioRxiv_](https://www.biorxiv.org/content/10.1101/2021.01.15.426915).
 
 ## 1. Installation
 
@@ -49,3 +50,22 @@ The codebase allows for seeding of random processes. However, fully deterministi
 **Original DPC code:** Han T, Xie W, Zisserman A (2019) Video Representation Learning by Dense Predictive Coding. 
 _Workshop on Large Scale Holistic Video Understanding (ICCV)_.
 
+**Gabor stimuli:** Gillon CJ _et al._ (2021) Learning from unexpected events in the neocortical microcircuit. _bioRxiv_.
+
+
+## 5. Additional credit
+
+[Katharina Wilmes](https://github.com/k47h4) and [Luke Y. Prince](https://github.com/lyprince) developped the **Gabor stimulus code** used in this repository, based on [Gillon _et al._, 2021, _bioRxiv_](https://www.biorxiv.org/content/10.1101/2021.01.15.426915).
+
+
+## 6. Licenses
+
+- Content that is original or derived from the [DPC repository](https://github.com/TengdaHan/DPC) is covered under **LICENSE_DPC**:  
+    - `train_model.py`
+    - `asset`
+    - `dataset`, except `gabor_stimuli.py`
+    - `model`
+    - `process_data`
+    - `utils`
+
+- The remaining content is covered under **LICENSE**.

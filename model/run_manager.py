@@ -36,7 +36,7 @@ def resize_input_seq(input_seq):
 #############################################
 def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50, 
                 log_idx=0, topk=TOPK, device="cpu", log_freq=5, 
-                writer=None):
+                writer=None, save_by_batch=False):
     """
     train_epoch(data_loader, model, optimizer)
     """
@@ -58,9 +58,18 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         train = True
         model.train()
 
+    train_dict = dict()
+    if save_by_batch:
+        loss_keys = [
+            "batch_epoch_n", "detailed_loss", "loss_by_batch", "dot_by_batch", 
+            "target_by_batch"
+            ]
+        train_dict = {key: list() for key in loss_keys}
+
     supervised = training_utils.get_num_classes(model) is not None
     
     criterion = CRITERION_FCT()
+    criterion_no_reduction = CRITERION_FCT(reduction="none")
 
     batch_times = []
     for idx, data_items in enumerate(data_loader):
@@ -121,6 +130,20 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
             topk_meters, output_flattened, target_flattened, ks=topk
             )
 
+        # collect some values
+        batch_loss = criterion_no_reduction(
+            output_flattened, target_flattened
+            ).to("cpu")
+        if not supervised:
+            batch_loss = batch_loss.reshape(B, PS * HW).mean(axis=1)
+
+        if save_by_batch:  
+            train_dict["batch_epoch_n"].append(epoch_n)
+            train_dict["detailed_loss"].append(losses.val)
+            train_dict["loss_by_batch"].append(batch_loss.to("cpu").tolist())
+            train_dict["dot_by_batch"].append(output_.to("cpu").tolist())
+            train_dict["target_by_batch"].append(target.to("cpu").tolist())
+
         del output_
         del target_flattened
 
@@ -153,12 +176,21 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
                 writer.add_scalar("local/loss", loss_val, log_idx)
                 writer.add_scalar("local/accuracy", acc_val, log_idx)
 
+            log_str = f"Batch loss: {batch_loss[-1]}"
+            if hasattr(data_loader, "prev_seq"):
+                log_str = (
+                    f"{log_str}\n"
+                    f"Previous sequence: {data_loader.prev_seq[-1]}\n"
+                    f"Batch sequences: {data_loader.prev_seq[-B:]}"
+                )
+
+            logger.debug(log_str)
+
             if train and supervised and optimizer:
                 training_utils.log_weight_decay_prop(model) # log decay info
             
             log_idx += 1
 
-    train_dict = dict()
     train_dict["loss"]         = loss_avg
     train_dict["acc"]          = acc_avg
     for i, k in enumerate(topk):
@@ -303,8 +335,9 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
 #############################################
 def train_full(main_loader, model, optimizer, output_dir=".", net_name=None, 
                dataset="UCF101", num_epochs=10, topk=TOPK, scheduler=None, 
-               device="cuda", val_loader=None, seed_info=None, log_freq=5, 
-               use_tb=False, reload_kwargs=dict()):
+               device="cuda", val_loader=None, seed_info=None, unexp_epoch=10, 
+               log_freq=5, use_tb=False, save_by_batch=False, 
+               reload_kwargs=dict()):
     """
     train_full(train_loader, model, optimizer)
     """
@@ -351,11 +384,17 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             return
 
         # initialize loss dictionary or load, if it exists
-        loss_dict = loss_utils.init_loss_dict(output_dir, ks=topk)
+        loss_dict = loss_utils.init_loss_dict(
+            output_dir, dataset, ks=topk, save_by_batch=save_by_batch
+            )
 
     ### main loop ###
     for epoch_n in range(start_epoch_n, num_epochs + 1):
         start_time = time.perf_counter()
+        if dataset == "Gabors":
+            if not main_loader.unexp and epoch_n > unexp_epoch:
+                main_loader.unexp = True
+                logger.info(f"Mode: {main_loader.mode}")
         
         if not test:
             train_dict, log_idx = train_epoch(
@@ -369,12 +408,15 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 topk=topk,
                 device=device, 
                 log_freq=log_freq,
+                save_by_batch=save_by_batch,
                 )
 
             loss_dict["train"]["epoch_n"].append(epoch_n)
             for key in train_dict.keys():
                 if key in loss_dict["train"].keys():
                     loss_dict["train"][key].append(train_dict[key])
+            if dataset == "Gabors":
+                loss_dict["train"]["seq"].append(main_loader.prev_seq)
 
         if save_best or test:
             val_dict = val_or_test_epoch(
@@ -408,7 +450,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         chance = None if num_classes is None else 1 / num_classes
         loss_utils.save_loss_dict(
             loss_dict, output_dir=output_dir, seed=seed_info, dataset=dataset, 
-            plot=True, chance=chance
+            unexp_epoch=unexp_epoch, plot=True, chance=chance
             )
 
         if use_tb:
