@@ -8,6 +8,7 @@ import sys
 
 import csv
 from joblib import Parallel, delayed
+import numpy as np
 import pandas as pd
 from tqdm import tqdm 
 
@@ -51,41 +52,42 @@ def write_list(data_list, target_path, delimiter=","):
 
 
 #############################################
-def write_class_index_file(action_names, csv_root, expected_n=400):
+def write_class_index_file(class_names, csv_root, expected_n=None):
     """
-    write_class_index_file(action_names, csv_root)
+    write_class_index_file(class_names, csv_root)
 
     Write class indices to a txt file.
 
     Required args:
-        - action_names (list): 
+        - class_names (list): 
             list of action names
         - csv_root (Path): 
             directory under which to save class indices file. 
 
     Optional args:
         - expected_n (int): 
-            expected number of unique action names
-            default: 400
+            if not None, expected number of unique class names
+            default: None
 
     """
 
-    action_names = sorted(list(set(action_names)))
+    class_names = sorted(list(set(class_names)))
 
-    if len(action_names) != expected_n:
+    if expected_n is not None and len(class_names) != expected_n:
         raise RuntimeError(
-            f"Expected to find {expected_n} actions, but found "
-            f"{len(action_names)}."
+            f"Expected to find {expected_n} classes, but found "
+            f"{len(class_names)}."
             )
 
     class_index_lines = [
-        f"{idx} {action_name}" for idx, action_name in enumerate(action_names)
+        f"{idx} {class_name}" for idx, class_name in enumerate(class_names)
         ]
     class_index_lines = "\n".join(class_index_lines)
 
     target_path = Path(csv_root, "classInd.txt")
     with open(target_path, "w") as f:
         f.writelines(class_index_lines)
+
     logger.info(f"Class indices saved to {target_path}.")
 
 
@@ -378,6 +380,98 @@ def main_Kinetics400(f_root, splits_root=None, modes=["train", "val", "test"],
     write_class_index_file(action_names, csv_root, expected_n=400)
 
 
+### For MouseSim ###
+#############################################
+def main_MouseSim(f_root, csv_root=None, splits_seed=100, prop_test=0.2):
+    """
+    main_MouseSim(f_root)
+
+    Creates a CSV for each split, listing the frames directory name, and number 
+    of extracted frames for each included video.  
+
+    Required args:
+        - f_root (Path): 
+            main folder in which frames for the dataset are stored.
+
+    Optional args:
+        - splits_seed (int): 
+            random seed to use to split the videos into splits
+            default: 100
+        - csv_root (Path): 
+            path in which to store CSVs for each split. If None, the parent 
+            directory of f_root is used.
+            default: None
+        - prop_test (float):
+            proportion of videos per class to put into test split
+            default: 0.2
+    """
+
+    splits_rng = np.random.RandomState(splits_seed)
+    if prop_test <= 0 or prop_test >= 1:
+        raise ValueError(
+            "'prop_test' must be greater than 0 and smaller than 1."
+            )
+
+    if not Path(f_root).is_dir():
+        raise ValueError(f"{f_root} does not exist.")
+
+    if csv_root is None:
+        csv_root = Path(f_root).parent
+
+    csv_root_orig = csv_root
+    f_root_orig = f_root
+    for eye in [False, "left", "right"]:
+        eye_str = f"_{eye}" if eye else ""
+        f_root = f"{f_root_orig}{eye_str}"
+        csv_root = f"{csv_root_orig}{eye_str}"
+        Path(csv_root).mkdir(exist_ok=True, parents=True)
+
+        class_names = [
+            Path(direc).stem for direc in Path(f_root).iterdir() 
+            if Path(direc).is_dir()
+            ]
+        train_split, test_split = [], []
+        for class_name in class_names:
+            video_direcs = list(sorted([
+                Path(direc) for direc in Path(f_root, class_name).iterdir() 
+                if Path(direc).is_dir()
+                ]))
+
+            n_videos = len(video_direcs)
+            if n_videos < 2:
+                raise RuntimeError("Expected at least 2 videos per class.")
+            n_test = int(np.around(n_videos * prop_test))
+            n_test = min([n_videos - 1, max([1, n_test])])
+
+            test_idxs = np.sort(
+                splits_rng.choice(n_videos, n_test, replace=False)
+                )
+            train_idxs = np.delete(np.arange(n_videos), test_idxs)
+
+            for split, idxs in [("train", train_idxs), ("test", test_idxs)]:
+                for i in idxs:
+                    video_direc = video_direcs[i]
+                    n_frames = len(
+                        glob.glob(str(Path(video_direcs[i], "*.jpg")))
+                        )
+                    if split == "train":
+                        split_list = train_split
+                    elif split == "test":
+                        split_list = test_split
+                    else:
+                        raise ValueError("'split' must be 'train' or 'test'.")
+                    split_list.append([video_direc, n_frames])
+
+        write_list(
+            train_split, str(Path(csv_root, "train_split.csv"))
+            )
+        write_list(
+            test_split, str(Path(csv_root, "test_split.csv"))
+            )
+
+        write_class_index_file(class_names, csv_root, expected_n=None)
+
+
 #############################################
 if __name__ == "__main__":
 
@@ -427,7 +521,15 @@ if __name__ == "__main__":
         main_Kinetics400(
             f_root=f_root, splits_root=splits_root, csv_root=csv_root,
         )
-    
+
+    elif args.dataset == "MouseSim":
+        main_MouseSim(f_root=f_root, csv_root=csv_root)
+
+    elif args.dataset == "Gabors":
+        raise ValueError(
+            "Gabors are generated on the fly, and do not require CSV writing."
+            )
+
     else:
         raise ValueError(f"{dataset} dataset not recognized.")
 

@@ -113,7 +113,7 @@ class ConfusionMeter(object):
                 0.5
                 )
             )
-        width, height = self.mat.shape
+        height, width = self.mat.shape
         if annotate:
             for x in range(width):
                 for y in range(height):
@@ -123,7 +123,14 @@ class ConfusionMeter(object):
                         verticalalignment="center", fontsize=8
                         )
 
-        if dictionary is not None:
+        if dictionary is None:
+            xtick_diff = min(np.diff(ax.get_xticks()))
+            if xtick_diff < 1:
+                ax.set_xticks(np.arange(width) + 1)
+            ytick_diff = min(np.diff(ax.get_yticks()))
+            if ytick_diff < 1:
+                ax.set_yticks(np.arange(height) + 1)
+        else:
             ax.set_xticks(
                 np.arange(width) + 1, [dictionary[i] for i in range(width)],
                 rotation="vertical"
@@ -131,6 +138,7 @@ class ConfusionMeter(object):
             ax.set_yticks(
                 np.arange(height) + 1, [dictionary[i] for i in range(height)]
                 )
+
         ax.set_xlabel("Ground Truth")
         ax.set_ylabel("Prediction")
         
@@ -139,6 +147,18 @@ class ConfusionMeter(object):
         
         fig.savefig(path, format="svg", bbox_inches="tight", dpi=600)
         plt.close(fig)
+
+
+#############################################
+def check_topk(ks=[1, 3, 5], num_classes=None):
+    """
+    check_topk()
+    """
+    
+    if num_classes is not None:
+        ks = [k for k in ks if k < num_classes]
+
+    return ks
 
 
 #############################################

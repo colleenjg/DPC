@@ -21,13 +21,20 @@ if [[ $SEED == "" ]]; then
     SEED=100
 fi
 
-if [[ $DATASET == "" ]]; then
-    DATASET=k400
-fi
-
 if [[ $NUM_EPOCHS == "" ]]; then
     NUM_EPOCHS=100
 fi
+
+BATCH_SIZE=64
+if [[ $DATASET == "" ]]; then
+    DATASET=k400
+elif [[ $DATASET == "mousesim" || $DATASET == "MouseSim" ]]; then
+    NUM_EPOCHS=1000
+    BATCH_SIZE=10
+    LR_ARG="--lr 0.0001"
+    NUM_SEQ_ARG="--num_seq 25"
+fi
+
 
 if [[ $PRETRAINED == 1 ]]; then
     MODEL="lc-rnn"
@@ -49,12 +56,14 @@ python train_model.py \
     --output_dir $SCRATCH/dpc/models \
     --net resnet18 \
     --img_dim 128 \
-    --batch_size 64 \
     --num_workers 8 \
+    --batch_size $BATCH_SIZE \
     --dataset $DATASET \
     --model $MODEL \
     --num_epochs $NUM_EPOCHS \
     --train_what $TRAIN_WHAT \
+    $LR_ARG \
+    $NUM_SEQ_ARG \
     --seed $SEED \
     $PRETRAINED \
 

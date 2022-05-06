@@ -9,6 +9,7 @@ import warnings
 
 import cv2
 from joblib import delayed, Parallel
+import numpy as np
 from tqdm import tqdm 
 from wurlitzer import pipes # catch C-level pipes in python
 
@@ -22,6 +23,47 @@ from utils import misc_utils, training_utils
 from dataset import dataset_3d
 
 logger = logging.getLogger(__name__)
+
+TAB = "    "
+
+
+#############################################
+def get_split_width(width=224, half_wid="left"): 
+    """
+    get_split_width()
+    
+    Returns new width and slice for splitting image in half width-wise.
+
+    Optional args:
+        - width (int):
+            original width
+            default: 224
+        - half_wid (str or bool):
+            if not False, "left" or "right", depending on which side of the 
+            image should be retained
+            default: "left"
+    
+    Returns:
+        - width (int):
+            resliced width
+        - wid_slice (tuple):
+            slice for slicing image width
+    """
+
+    wid_slice = slice(None)
+    if half_wid:
+        if half_wid == "left":
+            split_pt = int(np.ceil(width / 2))
+            wid_slice = slice(0, split_pt)
+            width = split_pt
+        elif half_wid == "right":
+            split_pt = int(np.floor(width / 2))
+            wid_slice = slice(split_pt, int(width))
+            width = int(width - split_pt)
+        else:
+            raise ValueError(f"{half_wid} value for 'half_wid' not recognized.")
+
+    return width, wid_slice
 
 
 #############################################
@@ -51,10 +93,10 @@ def resize_dim(width, height, target):
         return (int(target * width / height), int(target))
     else:
         return (int(target), int(target * height / width)) 
-        
+
 
 #############################################
-def extract_video_opencv(v_path, f_root, dim=None):
+def extract_video_opencv(v_path, f_root, dim=None, half_wid=False):
     """
     extract_video_opencv(v_path, f_root)
 
@@ -71,7 +113,11 @@ def extract_video_opencv(v_path, f_root, dim=None):
             dimension to use in resizing images (shortest side). If None, 
             a default value is used (see extract_video_opencv()).
             default: None
-    
+        - half_wid (bool):
+            if True, only one half of the frame width is retained 
+            ("left" or "right")
+            default: False    
+
     Returns:
         - success_code (float):
             success code, where a value of 
@@ -126,13 +172,18 @@ def extract_video_opencv(v_path, f_root, dim=None):
     nb_frames = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
     width = vidcap.get(cv2.CAP_PROP_FRAME_WIDTH)   # float
     height = vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT) # float
+
+    width, wid_slice = get_split_width(width, half_wid)
+
     new_dim = resize_dim(width, height, dim)
 
     count = 0
     success, image = vidcap.read()
     while success:
         count += 1
-        image = cv2.resize(image, new_dim, interpolation=cv2.INTER_LINEAR)
+        image = cv2.resize(
+            image[:, wid_slice], new_dim, interpolation=cv2.INTER_LINEAR
+            )
         # quality from 0-100, 95 is default, high is good
         cv2.imwrite(
             str(Path(out_dir, f"image_{count:05}.jpg")), 
@@ -157,7 +208,7 @@ def extract_video_opencv(v_path, f_root, dim=None):
 
 #############################################
 def extract_videos_opencv(v_root, f_root, dim=None, video_ext="avi", 
-                          parallel=True):
+                          half_wid=False, parallel=True):
     """
     extract_videos_opencv(v_root, f_root)
 
@@ -177,6 +228,10 @@ def extract_videos_opencv(v_root, f_root, dim=None, video_ext="avi",
         - video_ext (str):
             video extension to use to identify videos for frame extraction
             default: "avi"
+        - half_wid (bool):
+            if True, only one half of the frame width is retained 
+            ("left" or "right")
+            default: False
         - parallel (bool):
             if True, frames for different videos for an action class are 
             extracted in parallel
@@ -224,14 +279,16 @@ def extract_videos_opencv(v_root, f_root, dim=None, video_ext="avi",
         if parallel:
             n_jobs = training_utils.get_num_jobs(len(v_paths))
             success_codes = Parallel(n_jobs=n_jobs)(
-                delayed(extract_video_opencv)(p, f_root, dim=dim) 
+                delayed(extract_video_opencv)(
+                    p, f_root, dim=dim, half_wid=half_wid
+                    ) 
                 for p in tqdm(v_paths, total=len(v_paths))
                 )
         else:
             success_codes = []
             for p in tqdm(v_paths, total=len(v_paths)):
                 success_codes.append(
-                    extract_video_opencv(p, f_root, dim=dim)
+                    extract_video_opencv(p, f_root, dim=dim, half_wid=half_wid)
                     )
         all_success_codes.append(success_codes)
     
@@ -345,6 +402,45 @@ def main_Kinetics400(v_root, f_root=None, dim=None, parallel=True):
 
 
 #############################################
+def main_MouseSim(v_root, f_root=None, parallel=True):
+    """
+    main_MouseSim(v_root)
+
+    Extracts frames from MouseSim dataset videos.
+
+    Required args:
+        - v_root (Path):
+            main folder containing videos for the dataset
+    
+    Optional args:
+        - f_root (Path): 
+            main folder in which to save frames for the dataset. If None, 
+            a default location is identified, based on v_root.
+            default: None
+        - parallel (bool):
+            if True, frames for different videos for an action class are 
+            extracted in parallel
+            default: True
+    """
+    
+    f_root_orig = f_root
+    for eye in [False, "left", "right"]:
+        eye_str_pr = f" ({eye} eye only)" if eye else "" 
+        eye_str = f"_{eye}" if eye else ""
+
+        f_root = f_root_orig
+        if f_root is None:
+            f_root = Path(Path(v_root).parent, f"frames{eye_str}")
+        else:
+            f_root = Path(f"{str(f_root)}{eye_str}")
+
+        logger.info(f"Extracting frames for MouseSim{eye_str_pr}... ")
+        extract_videos_opencv(
+            v_root, f_root, video_ext="mov", half_wid=eye, parallel=parallel
+            )
+
+
+#############################################
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -393,7 +489,16 @@ if __name__ == "__main__":
         main_Kinetics400(
             v_root=v_root, f_root=f_root, dim=dim, parallel=parallel
             )
-    
+
+    elif args.dataset == "MouseSim":
+        main_MouseSim(v_root=v_root, f_root=f_root, parallel=parallel)
+
+    elif args.dataset == "Gabors":
+        raise ValueError(
+            "Gabors are generated on the fly, and do not require frame "
+            "extraction."
+            )
+
     else:
         raise ValueError(f"{dataset} dataset not recognized.")
 

@@ -26,7 +26,10 @@ def pil_loader(path_name):
 
 
 #############################################
-def normalize_dataset_name(dataset_name="UCF101", short=False):
+def normalize_dataset_name(dataset_name="UCF101", short=False, eye="left"):
+    """
+    normalize_dataset_name()
+    """
 
     if dataset_name.lower() == "ucf101":
         dataset_name = "UCF101"
@@ -36,6 +39,12 @@ def normalize_dataset_name(dataset_name="UCF101", short=False):
         dataset_name = "k400" if short else "Kinetics400"
     elif dataset_name.lower() == "gabors":
         dataset_name = "Gabors"
+    elif dataset_name.lower() == "mousesim":
+        dataset_name = "MouseSim"
+        if eye not in ["both", "left", "right"]:
+            raise ValueError(f"{eye} value for 'eye' not recognized")
+        if short and eye != "both":
+            dataset_name = f"{dataset_name}_{eye}"
     else:
         raise ValueError(f"{dataset_name} dataset not recognized.")
 
@@ -68,6 +77,8 @@ def get_num_classes(dataset=None, dataset_name="UCF101"):
             num_classes = 51
         elif dataset_name == "Kinetics400":
             num_classes = 400
+        elif dataset_name == "MouseSim":
+            num_classes = 2
         else:
             raise ValueError(
                 f"Cannot retrieve number of classes for {dataset_name}."
@@ -498,3 +509,56 @@ class HMDB51_3d(GeneralDataset):
             seed=seed,
             )
 
+
+#############################################
+class MouseSim_3d(GeneralDataset):
+    def __init__(self,
+                 data_path_dir=Path("process_data", "data"),
+                 mode="train",
+                 eye="left",
+                 transform=None,
+                 seq_len=10,
+                 num_seq=5,
+                 downsample=1,
+                 epsilon=5,
+                 unit_test=False,
+                 return_label=False,
+                 supervised=False,
+                 seed=None
+                 ):
+
+        if eye == "both": 
+            logger.info("Using MouseSim (both eyes) data")
+            eye_str = ""
+        elif eye in ["left", "right"]: 
+            logger.info(f"Using MouseSim ({eye} eye) data")
+            eye_str = f"_{eye}"
+        else:
+            raise ValueError(f"{eye} value for 'eye' not recognized.")
+
+        super().__init__(
+            data_path_dir,
+            mode=mode,
+            dataset_name=f"MouseSim{eye_str}",
+            transform=transform,
+            seq_len=seq_len,
+            num_seq=num_seq,
+            downsample=downsample,
+            epsilon=epsilon,
+            unit_test=unit_test,
+            split_n=None,
+            return_label=return_label,
+            supervised=supervised,
+            seed=seed,
+            )
+
+    @property
+    def action_file_dir(self):
+        if not hasattr(self, "_action_file_dir"):
+            self._action_file_dir = Path(self.data_path_dir, "MouseSim")
+            if not self._action_file_dir.is_dir():
+                raise OSError(
+                    "Did not find action file directory under "
+                    f"{self._action_file_dir}."
+                    )
+        return self._action_file_dir

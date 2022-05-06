@@ -4,6 +4,7 @@ import argparse
 import copy
 import logging
 from pathlib import Path
+import warnings
 
 import matplotlib.pyplot as plt
 import torch
@@ -105,7 +106,7 @@ def set_path(args):
             pretrained_str = f"_pt-{pretrained_str}"
         
         dataset_str = dataset_3d.normalize_dataset_name(
-            args.dataset, short=True
+            args.dataset, short=True, eye=args.eye
             )
         
         seed_str = ""
@@ -114,7 +115,7 @@ def set_path(args):
         
         ds_str = ""
         if dataset_str in ["UCF101", "HMDB51"]:
-            ds_str = f"_ds{args.ucf_hmdb_ds}" 
+            ds_str = f"_ds{args.ucf_hmdb_ms_ds}"
 
         pred_str = ""
         if not args.supervised:
@@ -156,6 +157,9 @@ def get_dataloaders(args):
         ]
     data_kwargs["transform"] = "default"
     get_dataloader_fn = data_utils.get_dataloader
+
+    if "mousesim" in args.dataset.lower():
+        dataset_keys = dataset_keys + ["eye"]
 
     for key in add_keys + dataset_keys:
         data_kwargs[key] = args.__dict__[key]
@@ -289,20 +293,21 @@ def run_training(args):
 
     output_dir = set_path(args)
 
-    # get device
+    # get device and dataloaders
     device, args.num_workers = training_utils.get_device(
         args.num_workers, args.cpu_only
         )
 
-    # get dataloaders
     main_loader, val_loader = get_dataloaders(args)
 
-    # get model
     model = get_model(args, dataset=main_loader.dataset)
 
-    if device.type != "cpu":
+    allow_data_parallel = training_utils.allow_data_parallel(
+        main_loader, device, args.supervised
+        )
+    if device.type != "cpu" and allow_data_parallel:
         model = torch.nn.DataParallel(model)
-    
+
     model = model.to(device)
 
     # get optimizer and scheduler
@@ -379,8 +384,8 @@ if __name__ == "__main__":
         help="number of frames in each video block")
     parser.add_argument("--num_seq", default=8, type=int, 
         help="number of video blocks")
-    parser.add_argument("--ucf_hmdb_ds", default=3, type=int, 
-        help="frame downsampling rate for UCF and HMDB datasets")
+    parser.add_argument("--ucf_hmdb_ms_ds", default=3, type=int, 
+        help="frame downsampling rate for UCF, HMDB and MouseSim datasets")
 
     # training parameters
     parser.add_argument("--train_what", default="all", 
@@ -417,10 +422,14 @@ if __name__ == "__main__":
             "overwritten (ignored if loading a checkpoint)"))
     parser.add_argument("--use_tb", action="store_true", 
         help="if True, tensorboard is used")
-    parser.add_argument('--log_level', default='info', 
-        help='logging level, e.g., debug, info, error')
-    parser.add_argument('--cpu_only', action='store_true', 
-        help='run on CPU (very slow)')
+    parser.add_argument("--log_level", default="info", 
+        help="logging level, e.g., debug, info, error")
+    parser.add_argument("--cpu_only", action="store_true", 
+        help="run on CPU (very slow)")
+
+    # MouseSim only
+    parser.add_argument("--eye", default="left", 
+        help="which eye to include (left, right or both)")
 
     # supervised only
     parser.add_argument("--dropout", default=0.5, type=float, 

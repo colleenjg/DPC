@@ -8,6 +8,7 @@ import multiprocessing
 import os
 from pathlib import Path
 import re
+import warnings
 
 import torch
 
@@ -58,6 +59,28 @@ def get_device(num_workers=None, cpu_only=False):
         num_workers = min(num_devices * 2, num_cores) # approx rule of thumb
     
     return device, num_workers
+
+
+#############################################
+def allow_data_parallel(data_loader, device="cpu", supervised=False):
+    """
+    allow_data_parallel(data_loader, device="cpu")
+    """
+    
+    allow_parallel = False
+    if device.type != "cpu" and torch.cuda.device_count() > 1:
+        if supervised:
+            allow_parallel = True
+        else:
+            if data_loader.drop_last:
+                allow_parallel = True
+            else:
+                warnings.warn(
+                    "Only 1 GPU will be used, as the data loader is not set "
+                    "to drop final batches, when they are smaller."
+                    )
+
+    return allow_parallel      
 
 
 #############################################
@@ -149,7 +172,11 @@ def get_lr_lambda(dataset="UCF101", img_dim=224):
 
     elif dataset == "Kinetics400":
         steps = [150, 250, 300] if big else [30, 40, 50]
-    
+
+    elif dataset == "MouseSim":
+        steps = [300, 400, 500] if big else [60, 80, 100]
+
+
     else:
         raise ValueError(f"{dataset} dataset not recognized.")
 
@@ -186,6 +213,22 @@ def get_num_classes(model):
         num_classes = model.num_classes
     
     return num_classes
+
+
+#############################################
+def class_weight(dataset="MouseSim", supervised=True):
+
+    weight = None
+    dataset = dataset_3d.normalize_dataset_name(dataset)
+    if supervised and dataset == "MouseSim":
+        weight = [6, 1]
+        logger.warning(
+            f"Loss will be weighted per class as follows: {weight}"
+            )
+
+        weight = torch.Tensor(weight) # based on training set
+
+    return weight
 
 
 #############################################
@@ -283,7 +326,7 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
                 f"(epoch {checkpoint_epoch_n})."
                 )
         else:
-            logger.warning(f"No checkpoint found at '{resume}'.")
+            warnings.warn(f"No checkpoint found at '{resume}'.")
 
     elif pretrained or test:
         reload_model = pretrained if pretrained else test
@@ -322,7 +365,7 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
                 f"(epoch {checkpoint_epoch_n})."
                 )
         else: 
-            logger.warning(f"=> No checkpoint found at '{reload_model}'.")
+            warnings.warn(f"=> No checkpoint found at '{reload_model}'.")
     
     return log_idx, best_acc, start_epoch_n
 

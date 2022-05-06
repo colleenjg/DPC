@@ -454,6 +454,16 @@ if __name__ == "__main__":
             d_root=d_root, minimal=args.minimal, parallel=not(args.not_parallel)
             )
     
+    elif args.dataset == "MouseSim":
+        raise ValueError(
+            "Downloading data is not implemented for the MouseSim dataset."
+            )
+
+    elif args.dataset == "Gabors":
+        raise ValueError(
+            "Gabors are generated on the fly, and do not require downloading."
+            )    
+
     else:
         raise ValueError(f"{args.dataset} dataset not recognized.")
 

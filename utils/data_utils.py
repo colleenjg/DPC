@@ -32,7 +32,7 @@ def get_transform(dataset, img_dim=256, mode="train"):
     if dataset is not None:
         dataset = dataset_3d.normalize_dataset_name(dataset)
     
-    if dataset in ["UCF101", "HMDB51"]: 
+    if dataset in ["UCF101", "HMDB51", "MouseSim"]: 
         # designed for ucf101 and hmdb51: 
         # short size is 256 for ucf101, and 240 for hmdb51 
         # -> rand crop to 224 x 224 -> scale to img_dim x img_dim 
@@ -110,9 +110,9 @@ def get_transform(dataset, img_dim=256, mode="train"):
 
 #############################################
 def get_dataloader(data_path_dir="process_data", transform=None, 
-                   dataset="UCF101", mode="train", 
+                   dataset="UCF101", mode="train", eye="both",
                    batch_size=4, img_dim=128, seq_len=5, num_seq=8, 
-                   ucf_hmdb_ds=3, split_n=1, supervised=False, 
+                   ucf_hmdb_ms_ds=3, split_n=1, supervised=False, 
                    num_workers=4):
     """
     get_dataloader()
@@ -122,6 +122,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
 
     dataset = dataset_3d.normalize_dataset_name(dataset)
 
+    drop_last = True
     if transform == "default":
         transform = get_transform(dataset, img_dim, mode=mode)
 
@@ -145,7 +146,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             transform=transform,
             seq_len=seq_len,
             num_seq=num_seq,
-            downsample=ucf_hmdb_ds,
+            downsample=ucf_hmdb_ms_ds,
             split_n=split_n,
             supervised=supervised,
             )
@@ -157,10 +158,23 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             transform=transform,
             seq_len=seq_len,
             num_seq=num_seq,
-            downsample=ucf_hmdb_ds,
+            downsample=ucf_hmdb_ms_ds,
             split_n=split_n,
             supervised=supervised,
-            )        
+            )
+
+    elif dataset == "MouseSim":
+        drop_last = False # not compatible with DataParallel
+        dataset = dataset_3d.MouseSim_3d(
+            data_path_dir=data_path_dir,
+            eye=eye,
+            mode=mode,
+            transform=transform,
+            seq_len=seq_len,
+            num_seq=num_seq,
+            downsample=ucf_hmdb_ms_ds,
+            supervised=supervised,
+            ) 
 
     else:
         raise NotImplementedError(
@@ -178,7 +192,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
         num_workers=num_workers,
         worker_init_fn=worker_init_fn,
         pin_memory=True,
-        drop_last=True
+        drop_last=drop_last
         )
     
     logger.info(f"{mode.capitalize()} dataset size: {len(dataset)}.")

@@ -35,8 +35,8 @@ def resize_input_seq(input_seq):
 
 #############################################
 def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50, 
-                log_idx=0, topk=TOPK, device="cpu", log_freq=5, 
-                writer=None, save_by_batch=False):
+                log_idx=0, topk=TOPK, loss_weight=None, device="cpu", 
+                log_freq=5, writer=None, save_by_batch=False):
     """
     train_epoch(data_loader, model, optimizer)
     """
@@ -68,8 +68,10 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
 
     supervised = training_utils.get_num_classes(model) is not None
     
-    criterion = CRITERION_FCT()
-    criterion_no_reduction = CRITERION_FCT(reduction="none")
+    criterion = CRITERION_FCT(weight=loss_weight.to(device))
+    criterion_no_reduction = CRITERION_FCT(
+        weight=loss_weight.to(device), reduction="none"
+        )
 
     batch_times = []
     for idx, data_items in enumerate(data_loader):
@@ -105,11 +107,10 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
             )
 
             # batch x pred step x dim squared x batch/GPU x pred step x dim squared
-            if idx == 0:
-                (B, PS, HW, B_per, _, _) = mask_.size()
-                flat_dim = B * PS * HW
-                flat_dim_per = B_per * PS * HW # B_per: batch size per GPU
-                target = training_utils.get_target_from_mask(mask_)
+            (B, PS, HW, B_per, _, _) = mask_.size()
+            flat_dim = B * PS * HW
+            flat_dim_per = B_per * PS * HW # B_per: batch size per GPU
+            target = training_utils.get_target_from_mask(mask_)
         
             # output is a 6d tensor: [B, PS, HW, B_per, PS, HW]
             output_flattened = output_.reshape(flat_dim, flat_dim_per)
@@ -191,8 +192,8 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
             
             log_idx += 1
 
-    train_dict["loss"]         = loss_avg
-    train_dict["acc"]          = acc_avg
+    train_dict["loss"] = loss_avg
+    train_dict["acc"]  = acc_avg
     for i, k in enumerate(topk):
         train_dict[f"top{k}"] = topk_meters[i].local_avg
 
@@ -201,7 +202,8 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
 
 #############################################
 def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10, 
-                      topk=TOPK, device="cpu", test=False, output_dir=None):
+                      topk=TOPK, loss_weight=None, device="cpu", test=False, 
+                      output_dir=None):
     """
     val_or_test_epoch(data_loader, model)
     """
@@ -211,7 +213,7 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
     model = model.to(device)
     model.eval()
 
-    criterion = CRITERION_FCT()
+    criterion = CRITERION_FCT(weight=loss_weight.to(device))
 
     confusion_mat = None
     num_classes = training_utils.get_num_classes(model)
@@ -342,11 +344,17 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     train_full(train_loader, model, optimizer)
     """
 
+    topk = loss_utils.check_topk(
+        topk, num_classes=training_utils.get_num_classes(model)
+        )
+
     model = model.to(device)
 
     log_idx, best_acc, start_epoch_n = \
         training_utils.load_checkpoint(model, optimizer, **reload_kwargs)
     num_classes = training_utils.get_num_classes(model)
+    supervised = num_classes is not None
+    loss_weight = training_utils.class_weight(dataset, supervised)
 
     # setup tools
     model_direc = Path(output_dir, "model")
@@ -406,6 +414,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 writer=writer_train,
                 log_idx=log_idx, 
                 topk=topk,
+                loss_weight=loss_weight,
                 device=device, 
                 log_freq=log_freq,
                 save_by_batch=save_by_batch,
@@ -425,6 +434,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 epoch_n=epoch_n, 
                 num_epochs=num_epochs, 
                 topk=topk,
+                loss_weight=loss_weight,
                 device=device,
                 output_dir=output_dir,
                 test=test,
