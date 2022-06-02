@@ -7,7 +7,10 @@ import pandas as pd
 from PIL import Image
 import torch
 from torch.utils import data
+import torchvision
 from tqdm import tqdm
+
+from dataset import augmentations
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +112,6 @@ class GeneralDataset(data.Dataset):
         self.mode = mode
         self.dataset_name = dataset_name
         self.supervised = supervised
-        self.transform = transform
         self.seq_len = seq_len
         self.num_seq = num_seq
         self.downsample = downsample
@@ -121,6 +123,7 @@ class GeneralDataset(data.Dataset):
             return_label = True
 
         self.return_label = return_label
+        self._set_transform(transform)
         self._set_action_dicts()
         self._set_video_info(mode=mode, drop_short=True, seed=seed)
 
@@ -139,6 +142,20 @@ class GeneralDataset(data.Dataset):
     @property
     def action_file_dir(self):
         return self.dataset_dir
+
+
+    def _set_transform(self, transform=None):
+        """
+        self._set_transform()
+        """
+
+        if transform is None:
+            self.transform = torchvision.transforms.Compose([
+                augmentations.ToTensor(),
+                augmentations.Normalize(),
+            ])
+        else:
+            self.transform = transform
 
 
     def _set_action_dicts(self):
@@ -293,10 +310,7 @@ class GeneralDataset(data.Dataset):
         seq = [
             pil_loader(Path(vpath, f"image_{i+1:05}.jpg")) for i in seq_idx
             ]
-        if self.transform is not None:
-            t_seq = self.transform(seq) # apply same transform
-        else:
-            t_seq = seq
+        t_seq = self.transform(seq) # apply same transform
             
         return t_seq
 

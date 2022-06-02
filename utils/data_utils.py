@@ -6,7 +6,7 @@ import torch
 from torch.utils import data
 from torchvision import transforms
 
-from dataset import augmentations, dataset_3d
+from dataset import augmentations, dataset_3d, gabor_stimuli
 
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,9 @@ def get_transform(dataset, img_dim=256, mode="train"):
     if dataset is not None:
         dataset = dataset_3d.normalize_dataset_name(dataset)
     
-    if dataset in ["UCF101", "HMDB51", "MouseSim"]: 
+    if dataset in ["UCF101", "HMDB51", "MouseSim", "Gabors"]: 
+        if img_dim < 224:
+            raise ValueError("img_dim must be at least 224.")
         # designed for ucf101 and hmdb51: 
         # short size is 256 for ucf101, and 240 for hmdb51 
         # -> rand crop to 224 x 224 -> scale to img_dim x img_dim 
@@ -61,9 +63,6 @@ def get_transform(dataset, img_dim=256, mode="train"):
             augmentations.ToTensor(),
             augmentations.Normalize(),
         ])
-
-    elif dataset == "Gabors":
-        raise NotImplementedError("Gabors dataset not implemented.")
 
     elif dataset is None:
         if mode in ["train", "val"]:
@@ -113,7 +112,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
                    dataset="UCF101", mode="train", eye="both",
                    batch_size=4, img_dim=128, seq_len=5, num_seq=8, 
                    ucf_hmdb_ms_ds=3, split_n=1, supervised=False, 
-                   num_workers=4):
+                   num_workers=4, **gabor_kwargs):
     """
     get_dataloader()
     """
@@ -164,7 +163,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             )
 
     elif dataset == "MouseSim":
-        drop_last = False # not compatible with DataParallel
+        drop_last = False # False is not compatible with DataParallel
         dataset = dataset_3d.MouseSim_3d(
             data_path_dir=data_path_dir,
             eye=eye,
@@ -176,10 +175,20 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             supervised=supervised,
             ) 
 
+    elif dataset == "Gabors":
+        dataset = gabor_stimuli.GaborSequenceGenerator(
+            mode=mode,
+            transform=transform,
+            seq_len=seq_len,
+            num_seq=num_seq,
+            supervised=supervised,
+            **gabor_kwargs
+            ) 
+
     else:
         raise NotImplementedError(
             "get_data_loader() only implemented for the 'Kinetics400', "
-            "'UCF101', and 'HMDB51', datasets."
+            "'UCF101', 'HMDB51', 'MouseSim', and 'Gabors' datasets."
             )
 
     sampler = data.RandomSampler(dataset)

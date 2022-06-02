@@ -29,6 +29,10 @@ def check_adjust_args(args):
     # normalize the dataset name
     args.dataset = dataset_3d.normalize_dataset_name(args.dataset, short=False)
 
+    # adjust Gabor arguments
+    args.same_possizes = not(args.diff_possizes)
+    args.gray = not(args.no_gray)
+
     # check model, and add supervised argument
     if "dpc" in args.model:
         if args.model not in ["dpc-rnn", "dpc"]:
@@ -156,10 +160,15 @@ def get_dataloaders(args):
         "data_path_dir", "dataset", "seq_len", "num_seq", "ucf_hmdb_ms_ds"
         ]
     data_kwargs["transform"] = "default"
-    get_dataloader_fn = data_utils.get_dataloader
 
     if "mousesim" in args.dataset.lower():
         dataset_keys = dataset_keys + ["eye"]
+    elif "gabors" in args.dataset.lower():
+        gabor_keys = [
+            "num_gabors", "gab_img_len", "same_possizes", "gray", "roll", 
+            "U_prob", "diff_possizes"
+            ]
+        dataset_keys = dataset_keys + gabor_keys
 
     for key in add_keys + dataset_keys:
         data_kwargs[key] = args.__dict__[key]
@@ -172,7 +181,7 @@ def get_dataloaders(args):
             )
 
     # get the main dataloader
-    main_loader = get_dataloader_fn(mode=mode, **data_kwargs)
+    main_loader = data_utils.get_dataloader(mode=mode, **data_kwargs)
     
     # get the validation dataloader, if applicable
     val_loader = None
@@ -182,7 +191,7 @@ def get_dataloaders(args):
             data_kwargs["transform"] = data_utils.get_transform(
                 None, args.img_dim, mode=mode
                 )
-        val_loader = get_dataloader_fn(mode=mode, **data_kwargs)
+        val_loader = data_utils.get_dataloader(mode=mode, **data_kwargs)
 
     return main_loader, val_loader
 
@@ -368,7 +377,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--output_dir", default="output_dir", 
         help=("directory for saving files (ignored if resuming from or "
-+           "testing on a checkpoint)"))
+            "testing on a checkpoint)"))
     parser.add_argument("--net", default="resnet18")
     parser.add_argument("--model", default="dpc-rnn")
     parser.add_argument("--suffix", default="", 
@@ -430,6 +439,22 @@ if __name__ == "__main__":
     # MouseSim only
     parser.add_argument("--eye", default="left", 
         help="which eye to include (left, right or both)")
+
+    # Gabors only
+    parser.add_argument("--num_gabors", default=30, type=int,
+        help="number of Gabor patches per image")
+    parser.add_argument("--gab_img_len", default=1, type=int,
+        help="number of frames per image")
+    parser.add_argument("--diff_possizes", action="store_true", 
+        help="if True, new positions/sizes are select for each sequence")
+    parser.add_argument("--no_gray", action="store_true", 
+        help="if True, no gray images are included in the sequences")
+    parser.add_argument("--roll", action="store_true", 
+        help="if True, sequences starting images are rolled")
+    parser.add_argument("--U_prob", default=0, type=float,
+        help="frequency at which to include U images")
+    parser.add_argument("--diff_possizes", action="store_true", 
+        help="if True, U positions/sizes are difference from D ones")
 
     # supervised only
     parser.add_argument("--dropout", default=0.5, type=float, 
