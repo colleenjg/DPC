@@ -212,7 +212,7 @@ class DPC_RNN(torch.nn.Module):
         _, hidden = self.agg(feature[:, : N - self.pred_step].contiguous())
         # after tanh (-1, 1) get the hidden state of last layer/time step
         hidden = hidden[:, -1, :] 
-        
+
         pred = self.pred_steps(hidden) # predict next steps
         del hidden
 

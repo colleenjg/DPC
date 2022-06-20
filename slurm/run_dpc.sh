@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=main
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=cn:48GB:2
+#SBATCH --gres=gpu:rtx8000:2
 #SBATCH --mem=48GB
 #SBATCH --array=0
 #SBATCH --time=8:00:00
@@ -39,11 +39,11 @@ fi
 if [[ $PRETRAINED == 1 ]]; then
     MODEL="lc-rnn"
     TRAIN_WHAT=ft
-    PRETRAINED="--pretrained "$SCRATCH"/dpc/pretrained/k400_128_r18_dpc-rnn/model/k400_128_r18_dpc-rnn.pth.tar"
+    PRETRAINED_ARG="--pretrained "$SCRATCH"/dpc/pretrained/k400_128_r18_dpc-rnn/model/k400_128_r18_dpc-rnn.pth.tar"
 else
     MODEL="dpc-rnn"
     TRAIN_WHAT=all
-    PRETRAINED=""
+    PRETRAINED_ARG=""
 fi
 
 
@@ -65,7 +65,7 @@ python train_model.py \
     $LR_ARG \
     $NUM_SEQ_ARG \
     --seed $SEED \
-    $PRETRAINED \
+    $PRETRAINED_ARG \
 
 code="$?"
 if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code

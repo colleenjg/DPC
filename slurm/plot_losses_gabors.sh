@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=main
 #SBATCH --cpus-per-task=2
-#SBATCH --gres=cn:12GB:2
+#SBATCH --gres=gpu:rtx8000:2
 #SBATCH --mem=12GB
 #SBATCH --array=0
 #SBATCH --time=4:00:00

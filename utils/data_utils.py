@@ -24,17 +24,22 @@ def worker_init_fn(worker_id):
 
 
 #############################################
-def get_transform(dataset, img_dim=256, mode="train"):
+def get_transform(dataset, img_dim=256, mode="train", no_transforms=False):
     """
     get_transform(dataset)
     """
 
     if dataset is not None:
         dataset = dataset_3d.normalize_dataset_name(dataset)
-    
-    if dataset in ["UCF101", "HMDB51", "MouseSim", "Gabors"]: 
-        if img_dim < 224:
-            raise ValueError("img_dim must be at least 224.")
+
+    if no_transforms:
+        transform = transforms.Compose([
+            augmentations.Scale(size=(img_dim, img_dim)),
+            augmentations.ToTensor(),
+            augmentations.Normalize(),
+        ])
+
+    elif dataset in ["UCF101", "HMDB51", "MouseSim", "Gabors"]: 
         # designed for ucf101 and hmdb51: 
         # short size is 256 for ucf101, and 240 for hmdb51 
         # -> rand crop to 224 x 224 -> scale to img_dim x img_dim 
@@ -64,7 +69,7 @@ def get_transform(dataset, img_dim=256, mode="train"):
             augmentations.Normalize(),
         ])
 
-    elif dataset is None:
+    elif dataset is None: # e.g., used for supervised learning
         if mode in ["train", "val"]:
             crop_p = 1.0 if mode == "train" else 0.3
             bright_cont_sat = 0.5 if mode == "train" else 0.2
@@ -112,7 +117,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
                    dataset="UCF101", mode="train", eye="both",
                    batch_size=4, img_dim=128, seq_len=5, num_seq=8, 
                    ucf_hmdb_ms_ds=3, split_n=1, supervised=False, 
-                   num_workers=4, **gabor_kwargs):
+                   num_workers=4, no_transforms=False, **gabor_kwargs):
     """
     get_dataloader()
     """
@@ -123,7 +128,9 @@ def get_dataloader(data_path_dir="process_data", transform=None,
 
     drop_last = True
     if transform == "default":
-        transform = get_transform(dataset, img_dim, mode=mode)
+        transform = get_transform(
+            dataset, img_dim, mode=mode, no_transforms=no_transforms
+            )
 
     if dataset == "Kinetics400":
         use_big_K400 = img_dim > 140
@@ -136,6 +143,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             downsample=5,
             big=use_big_K400,
             supervised=supervised,
+            return_label=True,
             )
 
     elif dataset == "UCF101":
@@ -148,6 +156,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             downsample=ucf_hmdb_ms_ds,
             split_n=split_n,
             supervised=supervised,
+            return_label=True,
             )
     
     elif dataset == "HMDB51":
@@ -160,6 +169,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             downsample=ucf_hmdb_ms_ds,
             split_n=split_n,
             supervised=supervised,
+            return_label=True,
             )
 
     elif dataset == "MouseSim":
@@ -173,15 +183,18 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             num_seq=num_seq,
             downsample=ucf_hmdb_ms_ds,
             supervised=supervised,
+            return_label=True,
             ) 
 
     elif dataset == "Gabors":
         dataset = gabor_stimuli.GaborSequenceGenerator(
+            unexp=False,
             mode=mode,
             transform=transform,
             seq_len=seq_len,
             num_seq=num_seq,
             supervised=supervised,
+            return_label=True,
             **gabor_kwargs
             ) 
 

@@ -1,8 +1,8 @@
 import copy
-import cv2
 import logging
 import warnings
 
+import cv2
 from PIL import Image
 import numpy as np
 import torch
@@ -37,7 +37,7 @@ class GaborSequenceGenerator(data.Dataset):
         mode="train",
         dataset_name="Gabors",
         transform=None,
-        dataset_len=2000, 
+        train_len=5000, # training dataset length
         seq_len=10,
         num_seq=5,
         num_gabors=NUM_GABORS, 
@@ -45,6 +45,8 @@ class GaborSequenceGenerator(data.Dataset):
         same_possizes=True,
         gray=True, 
         roll=False, 
+        shift_frames=False,
+        unexp=True,
         U_prob=0.1, 
         diff_U_possizes=False, 
         size_ran=[10, 20], # degrees
@@ -64,11 +66,16 @@ class GaborSequenceGenerator(data.Dataset):
 
         self.width           = int(width) # pixels
         self.height          = int(height) # pixels
-        self.dataset_len     = int(dataset_len)
         self.seq_len         = int(seq_len) # nbr frames per seq
         self.num_seq         = int(num_seq) # nbr of sequences to sample
         self.num_gabors      = int(num_gabors) # nbr of Gabor patches
         self.gab_img_len     = int(gab_img_len) # nbr frames per Gabor image
+
+        if self.mode == "train":
+            self.dataset_len = int(train_len)
+        else:
+            self.dataset_len = int(train_len / 2)
+
         self.full_len        = int(seq_len * num_seq) # full sequence length
         if self.mode == "test" and self.supervised:
             self.full_len *= 5
@@ -76,6 +83,8 @@ class GaborSequenceGenerator(data.Dataset):
         self.same_possizes   = bool(same_possizes)
         self.gray            = bool(gray)
         self.roll            = bool(roll)
+        self.shift_frames    = bool(shift_frames)
+        self.unexp           = bool(unexp)
         self.diff_U_possizes = bool(diff_U_possizes)
         
         self.size_ran           = size_ran # base gabor patch size range
@@ -95,9 +104,9 @@ class GaborSequenceGenerator(data.Dataset):
         self.num_base_seq_repeats
         self.mean_oris
         self.image_type_dict
-        if same_possizes:
-            self._possize_rng = np.random.RandomState(seed)
-            self.set_possizes()
+
+        if self.same_possizes:
+            self.set_possizes(seed=seed)
 
         if supervised:
             return_label = True
@@ -352,14 +361,18 @@ class GaborSequenceGenerator(data.Dataset):
         return self._sub_batch_idxs
 
 
-    def set_possizes(self, reset=True):
+    def set_possizes(self, seed=None, reset=True):
         """
         self.set_possizes()
         """
         
+        if seed is not None:
+            self._possize_rng = np.random.RandomState(seed)
+ 
         for attr_name in ["_sizes", "_positions"]:
             if hasattr(self, attr_name) and reset:
                 delattr(self, attr_name)                    
+ 
         self.sizes
         self.positions
 
@@ -415,7 +428,7 @@ class GaborSequenceGenerator(data.Dataset):
         """
         
         seq_images = seq_images[:]
-        if self.U_prob == 0:
+        if not self.unexp or self.U_prob == 0:
             return seq_images
         
         num_Ds  = seq_images.count("D")
@@ -579,7 +592,7 @@ class GaborSequenceGenerator(data.Dataset):
 
         # normalize to 0 to 1
         if image.max() == image.min():
-            image = image + image.min() + 0.5
+            image[:] = 0.5
         else:
             max_val = max(np.absolute([image.min(), image.max()])) * 1.1
             image = (image + max_val) / (2 * max_val)
@@ -639,7 +652,7 @@ class GaborSequenceGenerator(data.Dataset):
         seq_labels = np.repeat(seq_labels, self.gab_img_len, axis=0)
 
         # Randomly shift the start point
-        if self.roll and self.gab_img_len > 1:
+        if self.roll and self.shift_frames and self.gab_img_len > 1:
             shift = np.random.choice(self.gab_img_len)
             gabor_seq = gabor_seq[shift : shift + self.full_len]
             seq_labels = seq_labels[shift : shift + self.full_len]

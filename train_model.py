@@ -160,13 +160,14 @@ def get_dataloaders(args):
         "data_path_dir", "dataset", "seq_len", "num_seq", "ucf_hmdb_ms_ds"
         ]
     data_kwargs["transform"] = "default"
+    data_kwargs["no_transforms"] = args.no_transforms
 
     if "mousesim" in args.dataset.lower():
         dataset_keys = dataset_keys + ["eye"]
     elif "gabors" in args.dataset.lower():
         gabor_keys = [
             "num_gabors", "gab_img_len", "same_possizes", "gray", "roll", 
-            "U_prob", "diff_possizes"
+            "U_prob", "diff_U_possizes", "train_len"
             ]
         dataset_keys = dataset_keys + gabor_keys
 
@@ -177,7 +178,7 @@ def get_dataloaders(args):
     mode = "test" if args.test else "train"
     if args.supervised:
         data_kwargs["transform"] = data_utils.get_transform(
-            None, args.img_dim, mode=mode
+            None, args.img_dim, mode=mode, no_transforms=args.no_transforms
             )
 
     # get the main dataloader
@@ -187,9 +188,9 @@ def get_dataloaders(args):
     val_loader = None
     if args.save_best:
         mode = "val"
-        if args.supervised:
+        if args.supervised and not args.no_transforms:
             data_kwargs["transform"] = data_utils.get_transform(
-                None, args.img_dim, mode=mode
+                None, args.img_dim, mode=mode, no_transforms=args.no_transforms
                 )
         val_loader = data_utils.get_dataloader(mode=mode, **data_kwargs)
 
@@ -326,6 +327,10 @@ def run_training(args):
         train_what=args.train_what, test=args.test
     )
 
+    # get whether to save by batch
+    dataset = dataset_3d.normalize_dataset_name(args.dataset)
+    save_by_batch = (dataset == "Gabors")
+
     ### train DPC model
     reload_keys = ["resume", "pretrained", "test", "lr", "reset_lr"]
     reload_kwargs = {key: args.__dict__[key] for key in reload_keys}
@@ -341,9 +346,11 @@ def run_training(args):
         scheduler=scheduler,
         device=device, 
         val_loader=val_loader,
-        seed_info=args.seed,
+        seed=args.seed,
+        unexp_epoch=args.unexp_epoch,
         log_freq=args.log_freq,
         use_tb=args.use_tb,
+        save_by_batch=save_by_batch,
         reload_kwargs=reload_kwargs,
         )
 
@@ -409,6 +416,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_epochs", default=10, type=int, 
         help=("total number of epochs to run (in addition to epoch 0 which "
             "computes a pre-training baseline)"))
+    parser.add_argument("--no_transforms", action="store_true", 
+        help="if True, no augmentation transforms are used")
     
     # pretrained/resuming parameters
     parser.add_argument("--resume", default="", 
@@ -443,18 +452,23 @@ if __name__ == "__main__":
     # Gabors only
     parser.add_argument("--num_gabors", default=30, type=int,
         help="number of Gabor patches per image")
-    parser.add_argument("--gab_img_len", default=1, type=int,
+    parser.add_argument("--gab_img_len", default=3, type=int,
         help="number of frames per image")
     parser.add_argument("--diff_possizes", action="store_true", 
-        help="if True, new positions/sizes are select for each sequence")
+        help=("if True, new positions/sizes are selected for each sequence. "
+            "Otherwise, they are fixed at the start of each epoch."))
     parser.add_argument("--no_gray", action="store_true", 
         help="if True, no gray images are included in the sequences")
     parser.add_argument("--roll", action="store_true", 
         help="if True, sequences starting images are rolled")
-    parser.add_argument("--U_prob", default=0, type=float,
-        help="frequency at which to include U images")
-    parser.add_argument("--diff_possizes", action="store_true", 
-        help="if True, U positions/sizes are difference from D ones")
+    parser.add_argument("--unexp_epoch", default=5, type=int,
+        help="epoch at which to introduce unexpected U images")
+    parser.add_argument("--U_prob", default=0.1, type=float,
+        help="frequency at which to include unexpected U images")
+    parser.add_argument("--diff_U_possizes", action="store_true", 
+        help="if True, U positions/sizes are different from D ones")
+    parser.add_argument("--train_len", default=1000, type=int,
+        help="size of Gabors training dataset")
 
     # supervised only
     parser.add_argument("--dropout", default=0.5, type=float, 

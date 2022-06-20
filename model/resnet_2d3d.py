@@ -488,23 +488,33 @@ def neq_load_customized(model, pretrained_dict):
     Load pre-trained model in a not-equal way, when new model has been 
     partially modified. 
     """
+    
     model_dict = model.state_dict()
     tmp = dict()
 
     log_str = "\n========= Weight loading ========="
-    log_str = f"{log_str}\nWeights not used from pretrained file:"
 
+    # check for weights not used from pretrained file
+    not_used = ""
     for k, v in pretrained_dict.items():
         if k in model_dict:
             tmp[k] = v
         else:
-            log_str = f"{log_str}\n{TAB}{k}"
+            not_used = f"{not_used}\n{TAB}{k}"
 
-    log_str = f"{log_str}\n---------------------------"
-    log_str = f"{log_str}\nWeights not loaded into new model:"
+    if len(not_used):
+        log_str = f"{log_str}\nWeights not used from pretrained file:{not_used}"
+
+    # check for weights not loaded into new model
+    not_loaded = ""
     for k, v in model_dict.items():
         if k not in pretrained_dict:
-            log_str = f"{log_str}\n{TAB}{k}"
+            not_loaded = f"{not_loaded}\n{TAB}{k}"
+    if len(not_loaded):
+        if len(not_used):
+            log_str = f"{log_str}\n---------------------------"
+        log_str = f"{log_str}\nWeights not loaded into new model:{not_loaded}"
+    
     log_str = f"{log_str}\n==================================="
     logger.warning(log_str, extra={"spacing": "\n"})
 

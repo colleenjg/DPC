@@ -290,7 +290,9 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
                 checkpoint, ["epoch_n", "epoch"]
                 )
             start_epoch_n = checkpoint_epoch_n + 1
-            log_idx = load_key_from_checkpoint(checkpoint, ["log_idx", "iteration"])
+            log_idx = load_key_from_checkpoint(
+                checkpoint, ["log_idx", "iteration"]
+                )
             best_acc = checkpoint["best_acc"]
             try:
                 checkpoint["state_dict"] = get_state_dict(
