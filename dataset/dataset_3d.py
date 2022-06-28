@@ -182,7 +182,7 @@ class GeneralDataset(data.Dataset):
         
         drop_idx = []
         logger.info(
-            "Filtering out videos that are too short", extra={"spacing": TAB}
+            "Filtering out videos that are too short.", extra={"spacing": TAB}
             )
         for idx, row in tqdm(video_info.iterrows(), total=len(video_info)):
             _, vlen = row

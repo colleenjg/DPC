@@ -154,22 +154,24 @@ def get_dataloaders(args):
     get_dataloaders(args)
     """
 
+    dataset = dataset_3d.normalize_dataset_name(args.dataset)
+
     data_kwargs = dict()
     add_keys = ["batch_size", "img_dim", "num_workers", "supervised"]
-    dataset_keys = [
-        "data_path_dir", "dataset", "seq_len", "num_seq", "ucf_hmdb_ms_ds"
-        ]
+    dataset_keys = ["data_path_dir", "dataset", "seq_len", "num_seq"]
     data_kwargs["transform"] = "default"
     data_kwargs["no_transforms"] = args.no_transforms
-
-    if "mousesim" in args.dataset.lower():
-        dataset_keys = dataset_keys + ["eye"]
-    elif "gabors" in args.dataset.lower():
+        
+    if dataset == "Gabors":
         gabor_keys = [
             "num_gabors", "gab_img_len", "same_possizes", "gray", "roll", 
             "U_prob", "diff_U_possizes", "train_len"
             ]
         dataset_keys = dataset_keys + gabor_keys
+    elif dataset in ["UCF101", "HMDB51", "MouseSim"]:
+        dataset_keys = dataset_keys + ["ucf_hmdb_ms_ds"]
+        if dataset == "MouseSim":
+            dataset_keys = dataset_keys + ["eye"]
 
     for key in add_keys + dataset_keys:
         data_kwargs[key] = args.__dict__[key]
@@ -239,7 +241,7 @@ def set_gradients(model, supervised=False, train_what="all", lr=1e-3):
 
     params = model.parameters()
     if train_what == "last":
-        logger.info("=> Training only the last layer")
+        logger.info("=> Training only the last layer.")
         if supervised:
             for name, param in model.named_parameters():
                 if ("resnet" in name) or ("rnn" in name):
@@ -249,7 +251,7 @@ def set_gradients(model, supervised=False, train_what="all", lr=1e-3):
                 param.requires_grad = False
 
     elif supervised and train_what == "ft":
-        logger.info("=> Finetuning backbone with a smaller learning rate")
+        logger.info("=> Finetuning backbone with a smaller learning rate.")
         params = []
         for name, param in model.named_parameters():
             if ("resnet" in name) or ("rnn" in name):
@@ -299,14 +301,17 @@ def run_training(args):
     run_training(args)
     """
 
+    args = copy.deepcopy(args)
+
     args = check_adjust_args(args)
 
-    output_dir = set_path(args)
+    args.output_dir = set_path(args)
 
     # get device and dataloaders
     device, args.num_workers = training_utils.get_device(
         args.num_workers, args.cpu_only
         )
+    args.device_type = str(device.type)
 
     main_loader, val_loader = get_dataloaders(args)
 
@@ -315,7 +320,8 @@ def run_training(args):
     allow_data_parallel = training_utils.allow_data_parallel(
         main_loader, device, args.supervised
         )
-    if device.type != "cpu" and allow_data_parallel:
+    args.data_parallel = (args.device_type != "cpu" and allow_data_parallel)
+    if args.data_parallel:
         model = torch.nn.DataParallel(model)
 
     model = model.to(device)
@@ -328,8 +334,11 @@ def run_training(args):
     )
 
     # get whether to save by batch
-    dataset = dataset_3d.normalize_dataset_name(args.dataset)
-    save_by_batch = (dataset == "Gabors")
+    args.dataset = dataset_3d.normalize_dataset_name(args.dataset)
+    args.save_by_batch = (args.dataset == "Gabors")
+
+    # save hyperparameters
+    misc_utils.save_hyperparameters(args.__dict__)
 
     ### train DPC model
     reload_keys = ["resume", "pretrained", "test", "lr", "reset_lr"]
@@ -339,7 +348,7 @@ def run_training(args):
         main_loader, 
         model, 
         optimizer, 
-        output_dir=output_dir,
+        output_dir=args.output_dir,
         net_name=args.net,
         dataset=args.dataset,
         num_epochs=args.num_epochs,
@@ -350,7 +359,7 @@ def run_training(args):
         unexp_epoch=args.unexp_epoch,
         log_freq=args.log_freq,
         use_tb=args.use_tb,
-        save_by_batch=save_by_batch,
+        save_by_batch=args.save_by_batch,
         reload_kwargs=reload_kwargs,
         )
 
@@ -477,7 +486,7 @@ if __name__ == "__main__":
         help=("if not False, must be 'random' or the path to a saved model, "
             "and supervised network will be run in test mode"))
 
-    # unsupervised only
+    # self-supervised only
     parser.add_argument("--pred_step", default=3, type=int)
 
     args = parser.parse_args()

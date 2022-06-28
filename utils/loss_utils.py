@@ -163,6 +163,40 @@ def check_topk(ks=[1, 3, 5], num_classes=None):
 
 
 #############################################
+def init_meters(n_topk=3):
+    """
+    init_meters()
+    """
+    
+    losses = AverageMeter()
+    topk_meters = [AverageMeter() for _ in range(n_topk)]
+
+    return losses, topk_meters
+
+
+
+#############################################
+def get_criteria(criterion="cross-entropy", loss_weight=None, device="cpu"):
+    """
+    get_criteria()
+    """
+
+    if criterion == "cross-entropy":
+        criterion_fct = torch.nn.CrossEntropyLoss
+    else:
+        raise NotImplementedError("Only 'cross-entropy' loss is implemented.")
+
+    if loss_weight is not None:
+        loss_weight = loss_weight.to(device)
+    criterion = criterion_fct(weight=loss_weight)
+    criterion_no_reduction = criterion_fct(
+        weight=loss_weight, reduction="none"
+        )
+
+    return criterion, criterion_no_reduction
+
+
+#############################################
 def get_stats(losses, topk_meters, ks=[1, 3, 5], local=False, last=False, 
               chance=None):
     """
@@ -278,8 +312,22 @@ def calc_accuracy_binary(output, target):
 
 
 #############################################
+def get_best_acc(best_acc=None, save_best=True):
+    """
+    get_best_acc()
+    """
+    
+    if save_best:
+        best_acc = -np.inf if best_acc is None else best_acc
+    else:
+        best_acc = None
+
+    return best_acc
+
+
+##############################################
 def init_loss_dict(direc=".", ks=[1, 3, 5], val=True, supervised=False, 
-                   save_by_batch=False):
+                   save_by_batch=False, light=True):
     """
     init_loss_dict()
     """
@@ -304,8 +352,9 @@ def init_loss_dict(direc=".", ks=[1, 3, 5], val=True, supervised=False,
     if save_by_batch:
         batch_keys = [
             "batch_epoch_n", "loss_by_batch", "loss_by_item", 
-            "output_by_batch", "target_by_batch"
             ]
+        if not light:
+            batch_keys.extend(["output_by_batch", "target_by_batch"])
 
     for main_key in main_keys:
         if main_key not in loss_dict.keys():
@@ -319,56 +368,63 @@ def init_loss_dict(direc=".", ks=[1, 3, 5], val=True, supervised=False,
 
 
 #############################################
-def plot_acc(sub_ax, loss_dict, epoch_ns, chance=None, color="k", ls=None, 
-             datatype="train"):
+def plot_acc(sub_ax, data_dict, epoch_ns, chance=None, color="k", ls=None, 
+             data_label="train"):
     """
-    plot_acc(sub_ax, loss_dict, epoch_ns)
+    plot_acc(sub_ax, data_dict, epoch_ns)
     """
-    
-    acc_keys = sorted([key for key in loss_dict.keys() if "top" in key])
+
+    if len(data_label) and data_label[-1] != " ":
+        data_label = f"{data_label} "
+
+    acc_keys = sorted([key for key in data_dict.keys() if "top" in key])
     if chance is not None:
         sub_ax.axhline(100 * chance, color="k", ls="dashed", alpha=0.8)
     for a, acc_key in enumerate(acc_keys):
-        accuracies = 100 * np.asarray(loss_dict[acc_key])
+        accuracies = 100 * np.asarray(data_dict[acc_key])
         alpha = 0.7 ** a
         label = None
         if a == 0:
-            label=f"{datatype} {', '.join(acc_keys)}"
+            label = f"{data_label}{', '.join(acc_keys)}"
         sub_ax.plot(
-            epoch_ns, accuracies, color=color, ls=ls, alpha=alpha, label=label
+            epoch_ns, accuracies, color=color, ls=ls, alpha=alpha, 
+            label=label
             )
 
 
 #############################################
-def plot_batches(batch_ax, loss_dict, epoch_ns, U_ax=None, datatype="train", 
+def plot_batches(batch_ax, data_dict, epoch_ns, U_ax=None, data_label="train", 
                  colors="Blues"):
     """
     plot_batches(batch_ax, loss_dict, epoch_ns)
     """
     
-    loss_by_batch = np.asarray(
-        loss_dict[datatype]["loss_by_batch"]
-        ).mean(axis=-1).T
+    loss_by_batch = np.asarray(data_dict["loss_by_batch"]).T
     n_batches = len(loss_by_batch)
     batch_cmap = mpl.cm.get_cmap(colors)
     cmap_samples = np.linspace(1.0, 0.3, n_batches)
 
     if U_ax is not None:
+        target_key = "target_by_batch"
+        if "sup_target_by_batch" in data_dict.keys():
+            target_key = "sup_target_by_batch"
+ 
         freqs = []
         for gfr in ["U", "D"]:
+            # retrieve only the Gabor frame (not orientations)
             freqs.append((
-                np.asarray(loss_dict[datatype]["seq_by_batch"]) == gfr
+                np.asarray(data_dict[target_key])[:, :, 0] == gfr
                 ).astype(float).mean(axis=(2, 3, 4)).T)
         U_freqs_over_DU = freqs[0] / (freqs[0] + freqs[1]) * 100
 
     for b, batch_losses in enumerate(loss_by_batch):
         batch_color = batch_cmap(cmap_samples[b])
-        label = f"{datatype} batch losses" if b == 0 else None
+        label = data_label if b == 0 and len(data_label) else None
         batch_ax.plot(
             epoch_ns, batch_losses, color=batch_color, alpha=0.8, label=label
             )
         if U_ax is not None:
-            label = f"{datatype} batch U/(D+U) freq" if b == 0 else None
+            label = data_label if b == 0 and len(data_label) else None
             U_ax.plot(
                 epoch_ns, U_freqs_over_DU[b], color=batch_color, 
                 alpha=0.8, label=label, marker="."
@@ -385,8 +441,8 @@ def plot_batches(batch_ax, loss_dict, epoch_ns, U_ax=None, datatype="train",
 
 
 #############################################
-def plot_loss_dict(loss_dict, chance=None, dataset="UCF101", unexp_epoch=10, 
-                   by_batch=False):
+def plot_loss_dict(loss_dict, num_classes=None, dataset="UCF101", 
+                   unexp_epoch=10, by_batch=False):
     """
     plot_loss_dict(loss_dict)
     """
@@ -399,8 +455,10 @@ def plot_loss_dict(loss_dict, chance=None, dataset="UCF101", unexp_epoch=10,
         colors.append("orange")
         ls.append(None)
 
+    chance = None if num_classes is None else 1 / num_classes
+
     plot_seq = by_batch and "gabors" in dataset.lower()
-    nrows = 1 + int(plot_seq)
+    nrows = 1 + int(plot_seq) if by_batch else 2
     ncols = len(datatypes) if by_batch else 1
     fig, ax = plt.subplots(
         nrows, ncols, figsize=[8.5 * ncols, 3.25 * nrows], sharex=True, 
@@ -409,22 +467,28 @@ def plot_loss_dict(loss_dict, chance=None, dataset="UCF101", unexp_epoch=10,
     ax = ax.reshape(nrows, ncols)
 
     for d, datatype in enumerate(datatypes):
-        epoch_ns = loss_dict[datatype]["epoch_n"]        
+        epoch_ns = loss_dict[datatype]["epoch_n"]  
+
+        data_label = f"{datatype} "
+        if ncols == len(datatypes):
+            ax[0, d].set_title(datatype.capitalize())
+            data_label = ""
+
         if by_batch:
             U_ax = ax[1, d] if plot_seq else None
             plot_batches(
-                ax[0, d], loss_dict, epoch_ns, U_ax=U_ax, datatype=datatype, 
-                colors=f"{colors[d]}s"
+                ax[0, d], loss_dict[datatype], epoch_ns, U_ax=U_ax, 
+                data_label="", colors=f"{colors[d].capitalize()}s"
                 )
         else:
-            ax[d, 0].plot(
+            ax[0, 0].plot(
                 epoch_ns, loss_dict[datatype]["loss"], color=colors[d], 
-                ls=ls[d], label=f"{datatype} loss"
+                ls=ls[d], label=f"{data_label}loss"
                 )
 
             plot_acc(
-                ax[d, 0], loss_dict[datatype], epoch_ns, chance=chance, 
-                color=colors[d], ls=ls[d], datatype=datatype
+                ax[1, 0], loss_dict[datatype], epoch_ns, chance=chance, 
+                color=colors[d], ls=ls[d], data_label=data_label
                 )
 
         if datatype == "val":
@@ -436,33 +500,36 @@ def plot_loss_dict(loss_dict, chance=None, dataset="UCF101", unexp_epoch=10,
                     best_acc = 100 * loss_dict[datatype]["acc"][best_idx]
                     label = f"ep {best_epoch_n}: {best_acc:.2f}%"
                 sub_ax.axvline(
-                    best_epoch_n, color="k", ls="dashed", alpha=0.8, label=label
+                    best_epoch_n, color="k", ls="dashed", alpha=0.8, 
+                    label=label
                     )
 
-    min_x, max_x = ax[0].get_xlim()
+    min_x, max_x = ax[0, 0].get_xlim()
     for sub_ax in ax.reshape(-1):
-        sub_ax.legend(fontsize="small")
+        if not by_batch:
+            sub_ax.legend(fontsize="small")
         sub_ax.spines["right"].set_visible(False)
         sub_ax.spines["top"].set_visible(False)
-        if "gabors" in dataset.lower() and unexp_epoch <= max(epoch_ns):
+        if "gabors" in dataset.lower() and unexp_epoch < max(epoch_ns):
             sub_ax.axvspan(
-                unexp_epoch, max(epoch_ns), color="k", alpha=0.06, lw=0
+                unexp_epoch, max(epoch_ns), color="k", alpha=0.1, lw=0
                 )
         sub_ax.set_xlim(min_x, max_x)
 
-    ax[0].set_ylabel("Loss")    
-    ax[1].set_xlabel("Epoch")
+    ax[0, 0].set_ylabel("Loss")
+    for c in range(ncols):
+        ax[-1, c].set_xlabel("Epoch")
     if by_batch and nrows == 2:
-        ax[1].set_ylabel("U/(D+U) frequency (%)")        
+        ax[1, 0].set_ylabel("U/(D+U) frequency (%)")        
     else:
-        ax[1].set_ylabel("Accuracy (%)")
+        ax[1, 0].set_ylabel("Accuracy (%)")
 
     return fig
 
 
 #############################################
 def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101", 
-                   unexp_epoch=10, plot=True, chance=None):
+                   unexp_epoch=10, plot=True, num_classes=None):
     """
     save_loss_dict(loss_dict)
     """
@@ -494,7 +561,7 @@ def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
                 batch_str, batch_str_pr = "", ""
 
             fig = plot_loss_dict(
-                loss_dict, chance=chance, dataset=dataset, 
+                loss_dict, num_classes=num_classes, dataset=dataset, 
                 unexp_epoch=unexp_epoch, by_batch=by_batch
                 )
             title = (f"{dataset[0].capitalize()}{dataset[1:]} dataset"

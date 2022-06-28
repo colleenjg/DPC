@@ -1,3 +1,5 @@
+import copy
+import yaml
 import logging
 import os
 from pathlib import Path
@@ -12,6 +14,8 @@ from torchvision import transforms
 from torchvision import utils as vutils
 
 logger = logging.getLogger(__name__)
+
+TAB = "    "
 
 
 #############################################
@@ -33,7 +37,7 @@ def seed_all(seed=None, deterministic_algorithms=True):
 
 
 #############################################
-def format_time(duration, sep_min=True):
+def format_time(duration, sep_min=True, lead=False):
     """
     format_time(duration)
     """
@@ -45,7 +49,37 @@ def format_time(duration, sep_min=True):
     else:
         time_str = f"{duration:.3f}s"
 
+    if lead:
+        time_str = f"Time: {time_str}"
+
     return time_str
+
+
+#############################################
+def get_unique_filename(filename, overwrite=False):
+    """
+    get_unique_filename(filename)
+    """
+    
+    if Path(filename).is_file():
+        if overwrite:
+            logger.warning(
+                (f"{filename} already exists. Removing, as it will be "
+                "overwritten."), 
+                extra={"spacing": "\n"}
+                )
+            time.sleep(5) # to allow for skipping file removal.
+            shutil.unlink(str(filename))
+        else:
+            i = 0
+            parent = Path(filename).parent
+            base_stem = Path(filename).stem
+            suffix = Path(filename).suffix
+            while Path(filename).is_file():
+                i += 1
+                filename = Path(parent, f"{base_stem}_{i:03}{suffix}")
+
+    return filename
 
 
 #############################################
@@ -67,7 +101,7 @@ def get_unique_direc(direc, overwrite=False):
             base_direc = direc
             while Path(direc).is_dir():
                 i += 1
-                direc = f"{base_direc}_{i:03}"
+                direc = Path(f"{base_direc}_{i:03}")
 
     return direc
 
@@ -207,6 +241,42 @@ def get_logger_with_basic_format(**logger_kw):
 
 
 #############################################
+def add_nested_dict(src_dict, target_dict, keys, nested_key, 
+                    raise_missing=True):
+    """
+    add_nested_dict(src_dict, target_dict, keys, nested_key)
+    """
+    
+    src_dict = copy.deepcopy(src_dict)
+
+    if nested_key in target_dict.keys():
+        raise ValueError(
+            f"{nested_key} key already exists in the target dictionary."
+            )
+        
+    target_dict[nested_key] = dict()
+    
+    missing = []
+    for key in keys:
+        if key in src_dict.keys():
+            target_dict[nested_key][key] = src_dict.pop(key)
+        else:
+            missing.append(key)
+
+    if len(missing):
+        missing_str = (
+            "The following keys were missing from the source dictionary: "
+            f"{', '.join(missing)}"
+            )
+        if raise_missing:
+            raise KeyError(missing_str)
+        else:
+            logger.warning(missing_str, extra={"spacing": "\n"})
+
+    return src_dict
+
+
+#############################################
 def init_tb_writers(direc=".", val=False):
     """
     init_tb_writers()
@@ -223,6 +293,18 @@ def init_tb_writers(direc=".", val=False):
     if val:
         writer_val = SummaryWriter(logdir=str(Path(direc, "val")))
     return writer_train, writer_val
+
+
+#############################################
+def init_model_direc(output_dir="."):
+    """
+    init_model_direc()
+    """
+    
+    model_direc = Path(output_dir, "model")
+    Path(model_direc).mkdir(exist_ok=True, parents=True)
+
+    return model_direc
 
 
 #############################################
@@ -289,4 +371,160 @@ def update_tb(writer_train, train_dict, epoch_n=0, writer_val=None,
 
         for datatype, data in zip(datatypes, all_data):
             writer.add_scalar(datatype, data, epoch_n)
+
+
+#############################################
+def save_hyperparameters(hyperparams, direc=None):
+    """
+    save_hyperparameters(hyperparams)
+    """
+
+    hyperparams = copy.deepcopy(hyperparams)
+    hyperparam_dict = dict()
+
+    # check parameters
+    necessary_params = ["dataset", "overwrite", "resume", "supervised", "test"]
+    if direc is None:
+        necessary_params.append("output_dir")
+
+    for param in necessary_params:
+        if param not in hyperparams.keys():
+            raise KeyError(f"{param} missing from hyperparams dictionary.")
+    
+    dataset = hyperparams["dataset"]
+    overwrite = hyperparams["overwrite"]
+    resume = hyperparams["resume"]
+    supervised = hyperparams["supervised"]
+    test = hyperparams["test"]
+    if direc is None:
+        direc = hyperparams["output_dir"]
+
+
+    # set lists for collecting parameters
+    ignore_params = ["diff_possizes", "no_gray", "not_save_best"]
+
+
+    # set technical parameters
+    technical_params = [
+        "cpu_only", "data_parallel", "device_type", "num_workers", "plt_bkend", 
+        "seed", "use_tb"
+        ]
+    hyperparams = add_nested_dict(
+        hyperparams, hyperparam_dict, technical_params, nested_key="technical", 
+        raise_missing=False
+        )
+
+
+    # model parameters
+    model_params = [
+        "batch_size", "model", "net", "pretrained", "resume", "supervised", 
+        "test"
+        ]
+
+    training_params = ["lr", "num_epochs", "train_what", "wd"]
+    if test:
+        ignore_params = ignore_params + training_params
+        ignore_params = ignore_params + ["dropout", "pred_step", "reset_lr"]
+    else:
+        model_params = model_params + training_params
+        if resume:
+            model_params = model_params + ["reset_lr"]
+        else:
+            ignore_params = ignore_params + ["reset_lr"]
+        if supervised:
+            model_params.append("dropout")
+            ignore_params.append("pred_step")
+        else:
+            model_params.append("pred_step")
+            ignore_params.append("dropout")
+
+    hyperparams = add_nested_dict(
+        hyperparams, hyperparam_dict, model_params, nested_key="model", 
+        raise_missing=False
+        )
+
+    # set dataset parameters
+    dataset_params = [
+        "dataset", "img_dim", "num_seq", "no_transforms", "seq_len"
+    ]
+
+    ucf_hmdb_ms_params = ["ucf_hmdb_ms_ds"]
+    if dataset in ["UCF101", "HMDB51", "MouseSim"]:
+        dataset_params = dataset_params + ucf_hmdb_ms_params
+    else:
+        ignore_params = ignore_params + ucf_hmdb_ms_params        
+
+    ms_params = ["eye"]
+    if dataset == "MouseSim":
+        dataset_params = dataset_params + ms_params
+    else:
+        ignore_params = ignore_params + ms_params
+
+    gabor_params = [
+        "diff_U_possizes", "gab_img_len", "gray", "num_gabors", 
+        "same_possizes", "roll", "train_len", "U_prob", "unexp_epoch"
+        ]
+    if dataset == "Gabors":
+        dataset_params = dataset_params + gabor_params
+    else:
+        ignore_params = ignore_params + gabor_params
+
+    hyperparams = add_nested_dict(
+        hyperparams, hyperparam_dict, dataset_params, nested_key="dataset", 
+        raise_missing=False
+        )
+
+
+    # general parameters
+    general_params = [
+        "data_path_dir", "log_freq", "log_level", "output_dir", "save_best", 
+        "save_by_batch"
+        ]
+    if resume:
+        overwrite = False
+        ignore_params.append("overwrite")
+    else:
+        general_params.append("overwrite")
+
+    hyperparams = add_nested_dict(
+        hyperparams, hyperparam_dict, general_params, nested_key="general", 
+        raise_missing=False
+        )
+    
+    # convert Path objects to strings
+    for nested_key in hyperparam_dict.keys():
+        for key in hyperparam_dict[nested_key].keys():
+            val = hyperparam_dict[nested_key][key]
+            if isinstance(val, Path):
+                hyperparam_dict[nested_key][key] = str(val)
+
+    # final check
+    left_over = []
+    for key in hyperparams.keys():
+        if key not in ignore_params:
+            left_over.append(key)
+    
+    if len(left_over):
+        left_over_str = (
+            "The following keys were left out of the hyperparameters "
+            f"dictionary: {', '.join(left_over)}"
+            )
+        logger.warning(left_over_str, extra={"spacing": "\n"})
+
+
+    # save hyperparameters (as yaml for legibility, as the file is light-weight)
+    base_name = "hyperparameters.yaml"
+    if test:
+        base_name = f"test_{base_name}"
+    if resume:
+        base_name = f"resume_{base_name}"
+
+    hyperparams_path = get_unique_filename(
+        Path(direc, base_name), overwrite=overwrite
+        )
+
+    Path(hyperparams_path).parent.mkdir(exist_ok=True, parents=True)
+
+    with open(hyperparams_path, "w") as f:
+        yaml.dump(hyperparam_dict, f)
 

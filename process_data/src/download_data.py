@@ -399,7 +399,7 @@ def main_Kinetics400(d_root, minimal=False, parallel=True):
             )
 
     v_root = Path(d_root, "videos")
-    v_root.mkdir(parents=True, exist_ok=True)
+    v_root.mkdir(exist_ok=True, parents=True)
     for item in Path(d_root).iterdir():
         if "annotations" not in str(item):
             shutil.move(str(item), str(v_root))

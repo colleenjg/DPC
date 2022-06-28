@@ -132,7 +132,7 @@ def extract_video_opencv(v_path, f_root, dim=None, half_wid=False):
     v_path = Path(v_path)
     v_class = v_path.parent.name
     out_dir = Path(f_root, v_class, v_path.stem)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(exist_ok=True, parents=True)
 
     # ignore a wurlitzer warning
     with warnings.catch_warnings():
@@ -249,7 +249,7 @@ def extract_videos_opencv(v_root, f_root, dim=None, video_ext="avi",
     if not Path(v_root).is_dir():
         raise ValueError(f"{v_root} is not a directory.")
 
-    Path(f_root).mkdir(parents=True, exist_ok=True)
+    Path(f_root).mkdir(exist_ok=True, parents=True)
 
     v_act_root = glob.glob(str(Path(v_root, "*")))
     v_act_root = sorted([j for j in v_act_root if Path(j).is_dir()])
@@ -386,7 +386,7 @@ def main_Kinetics400(v_root, f_root=None, dim=None, parallel=True):
     if f_root is None:
         f_root = Path(Path(v_root).parent, "frames")
 
-    Path(f_root).mkdir(parents=True, exist_ok=True)
+    Path(f_root).mkdir(exist_ok=True, parents=True)
 
     if dim is None:
         dim = 150 # default value

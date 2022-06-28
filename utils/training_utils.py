@@ -1,19 +1,15 @@
-#!/usr/bin/env python
-
-import copy
 from datetime import datetime
-import glob
 import logging
 import multiprocessing
 import os
 from pathlib import Path
-import re
 import warnings
 
+import numpy as np
 import torch
 
-from dataset import dataset_3d
-from model import resnet_2d3d
+from dataset import dataset_3d, gabor_stimuli
+from utils import misc_utils
 
 logger = logging.getLogger(__name__)
 
@@ -201,18 +197,19 @@ def get_model(model):
 
 
 #############################################
-def get_num_classes(model):
+def get_num_classes_sup(model):
     """
-    get_num_classes(model)
+    get_num_classes_sup(model)
     """
     
     model = get_model(model)
     num_classes = None
     
-    if hasattr(model, "num_classes"):
+    supervised = hasattr(model, "num_classes")
+    if supervised:
         num_classes = model.num_classes
     
-    return num_classes
+    return num_classes, supervised
 
 
 #############################################
@@ -232,178 +229,233 @@ def class_weight(dataset="MouseSim", supervised=True):
 
 
 #############################################
-def load_key_from_checkpoint(checkpoint, keys):
+def check_end(start_epoch_n=0, num_epochs=50):
     """
-    load_key_from_checkpoint(checkpoint, keys)
+    check_end()
     """
-
-    if len(keys) != 2:
-        raise ValueError("'keys' must have a length of 2.")
-
-    try:
-        value = checkpoint[keys[0]]
-    except KeyError:
-        value = checkpoint[keys[1]]
-
-    return value
+    
+    end = False
+    if start_epoch_n >= num_epochs + 1:
+        logger.info(
+            (f"Model already trained to epoch {start_epoch_n} "
+            f"(> {num_epochs}).")
+            )
+        end = True
+    
+    return end
 
 
 #############################################
-def get_state_dict(model, state_dict):
+def resize_input_seq(input_seq):
+    """
+    resize_input_seq(input_seq)
 
-    # in case there is a mismatch: model wrapped or not with DataParallel()
-    state_dict = copy.deepcopy(state_dict)
-    if not hasattr(model, "device_ids"):
-        for key in list(state_dict.keys()):
-            if key.startswith("module."):
-                new_key = key[7:]
-                state_dict[new_key] = state_dict.pop(key)
+    if the dataset is set to 'supervised' and 'test mode', 
+    each batch item is a sub-batch in which all sets of sequences 
+    share a label
+
+    """
+
+    B, SUB_B, N, C, SL, H, W = input_seq.size()
+    input_seq = input_seq.reshape(B * SUB_B, N, C, SL, H, W)
+
+    return input_seq, SUB_B
+
+
+#############################################
+def set_model_train_mode(model, epoch_n=0, train_off=False):
+    """
+    set_model_train_mode(model)
+    """
+
+    if epoch_n == 0 or train_off:
+        log_str = " (pre-training baseline)" if epoch_n == 0 else "" 
+        logger.info(
+            f"Running epoch {epoch_n} with no weight updates{log_str}.", 
+            extra={"spacing": "\n"}
+            )
+        spacing = ""
+        train = False # estimate untrained performance
+        model.eval()
     else:
-        for key in list(state_dict.keys()):
-            if not key.startswith("module."):
-                new_key = f"module.{key}"
-                state_dict[new_key] = state_dict.pop(key)
+        spacing = "\n" # for first log of the epoch
+        train = True
+        model.train()
 
-    return state_dict
-
-
-#############################################
-def load_checkpoint(model, optimizer=None, resume=False, pretrained=False, 
-                    test=True, lr=1e-3, reset_lr=False):
-    """
-    load_checkpoint(model)
-    """
-
-    if bool(resume) + bool(pretrained) + bool(test) > 1:
-        raise ValueError("Only resume, pretrained or test can be True.")
-    
-    log_idx, start_epoch_n = 0, 0
-    best_acc, old_lr = None, None
-
-    if resume:
-        if Path(resume).is_file():
-            old_lr = None
-            if "_lr" in str(resume):
-                old_lr = float(re.search("_lr(.+?)_", resume).group(1))
-            checkpoint = torch.load(resume, map_location=torch.device("cpu"))
-            checkpoint_epoch_n = load_key_from_checkpoint(
-                checkpoint, ["epoch_n", "epoch"]
-                )
-            start_epoch_n = checkpoint_epoch_n + 1
-            log_idx = load_key_from_checkpoint(
-                checkpoint, ["log_idx", "iteration"]
-                )
-            best_acc = checkpoint["best_acc"]
-            try:
-                checkpoint["state_dict"] = get_state_dict(
-                    model, checkpoint["state_dict"]
-                    )
-                model.load_state_dict(checkpoint["state_dict"])
-            except RuntimeError as err:
-                if "Missing key" in str(err):
-                    model_type = "supervised"
-                    if get_num_classes(model) is None:
-                        model_type = "self-supervised"
-                    raise RuntimeError(
-                        f"{err}\nEnsure that you are resuming from a "
-                        f"{model_type} model checkpoint."
-                        )
-                else:
-                    raise err
-            # if not resetting lr, load old optimizer
-            if optimizer is not None and not reset_lr: 
-                optimizer.load_state_dict(checkpoint["optimizer"])
-            else: 
-                # optimizer state is not reloaded
-                old_lr_str = "(unknown)" if old_lr is None else f"of {old_lr}"
-                if old_lr != lr:
-                    lr_str = (f", with lr of {lr} instead of previous value "
-                        f"{old_lr_str}")
-                
-                logger.info(
-                    (f"==== Using new optimizer{lr_str} ====")
-                    )
-            logger.info(
-                f"=> Loaded checkpoint to resume from: '{resume}' "
-                f"(epoch {checkpoint_epoch_n})."
-                )
-        else:
-            warnings.warn(f"No checkpoint found at '{resume}'.")
-
-    elif pretrained or test:
-        reload_model = pretrained if pretrained else test
-        reload_str = "pretrained" if pretrained else "test"
-        if reload_model == "random":
-            logger.warning("Loading random weights.")
-        elif Path(reload_model).is_file():
-            checkpoint = torch.load(
-                reload_model, map_location=torch.device("cpu")
-                )
-            checkpoint_epoch_n = load_key_from_checkpoint(
-                checkpoint, ["epoch_n", "epoch"]
-                )
-            if test:
-                try:
-                    checkpoint["state_dict"] = get_state_dict(
-                        model, checkpoint["state_dict"]
-                        )
-                    model.load_state_dict(checkpoint["state_dict"])
-                    test_loaded = True
-                except:
-                    logger.warning(
-                        "Weight structure does not match test model. Using "
-                        "non-equal load."
-                        )
-                    test_loaded = False
-            if pretrained or not test_loaded:
-                checkpoint["state_dict"] = get_state_dict(
-                    model, checkpoint["state_dict"]
-                    )
-                model = resnet_2d3d.neq_load_customized(
-                    model, checkpoint["state_dict"]
-                    )
-            logger.info(
-                f"=> Loaded {reload_str} checkpoint '{reload_model}' "
-                f"(epoch {checkpoint_epoch_n})."
-                )
-        else: 
-            warnings.warn(f"=> No checkpoint found at '{reload_model}'.")
-    
-    return log_idx, best_acc, start_epoch_n
+    return train, spacing
 
 
 #############################################
-def save_checkpoint(state_dict, is_best=0, gap=1, filename=None, 
-                    keep_all=False):
+def prep_supervised_loss(output, target, shared_pred=False, SUB_B=None):
     """
-    save_checkpoint(state_dict)
+    prep_supervised_loss(output, target)
     """
     
-    if filename is None:
-        filename = Path("models", "checkpoint.pth.tar")
+    if shared_pred:
+        if SUB_B is None:
+            raise ValueError("Must pass 'SUB_B' if shared_pred is True.")
+        B_comb, N, num_classes = output.size()
+        B = B_comb // SUB_B
+        USE_N = SUB_B * N
+
+        # group sequences that share a label
+        output_flattened = output.reshape(B, USE_N, num_classes)
+
+        # for each batch item, average the softmaxed class 
+        # predictions across sequences
+        output_flattened = torch.mean(
+            torch.nn.functional.softmax(output_flattened, 2),
+            1) # B x num_classes
+        target_flattened = target.reshape(-1)
+        loss_reshape = (B, )
+
+    else:
+        # consider all sequences separately, even if they share a label 
+        B, N, num_classes = output.size()
+        output_flattened = output.reshape(B * N, num_classes)
+        target_flattened = target.repeat(1, N).reshape(-1)
+        loss_reshape = (B, N)
+
+    return output_flattened, target_flattened, loss_reshape, target
+
+
+#############################################
+def prep_self_supervised_loss(output, mask, input_seq_shape=None):
+    """
+    prep_self_supervised_loss(output, mask)
+    """
     
-    torch.save(state_dict, filename)
-    
-    prev_epoch_n = state_dict["epoch_n"] - gap
-    last_epoch_path = Path(
-        Path(filename).parent, f"epoch{prev_epoch_n}.pth.tar"
+    input_seq_str = ""
+    if input_seq_shape is not None:
+        input_seq_str = (
+            f"Input sequence shape: {input_seq_shape} "
+            "(expecting [B, N, C, SL, H, W]).\n"
         )
-    if not keep_all and last_epoch_path.exists():
-        last_epoch_path.unlink() # remove
 
-    if is_best:
-        all_past_best = glob.glob(
-            str(Path(Path(filename).parent, "model_best_*.pth.tar"))
-            )
-        for past_best in all_past_best:
-            if Path(past_best).exists():
-                Path(past_best).unlink() # remove
+    logger.debug(
+        f"Model called next.\n{input_seq_str}"
+        f"Output shape: {output.shape} "
+        "(expecting a 6D tensor: [B, PS, HW, B_per, PS, HW]).\n"
+        f"Mask shape: {mask.size()}"
+    )
 
-        epoch_n = state_dict["epoch_n"]
-        torch.save(
-            state_dict, 
-            Path(Path(filename).parent, f"model_best_epoch{epoch_n}.pth.tar")
+    # batch x pred step x dim squared x batch/GPU x pred step x dim squared
+    (B, PS, HW, B_per, _, _) = mask.size()
+    flat_dim = B * PS * HW
+    flat_dim_per = B_per * PS * HW # B_per: batch size per GPU
+    target = get_target_from_mask(mask)
+
+    # output is a 6d tensor: [B, PS, HW, B_per, PS, HW]
+    output_flattened = output.reshape(flat_dim, flat_dim_per)
+    target_flattened = target.reshape(
+        flat_dim, flat_dim_per).argmax(dim=1)
+    loss_reshape = (B, PS, HW)
+
+    return output_flattened, target_flattened, loss_reshape, target
+
+
+#############################################
+def prep_loss(output, mask, sup_target, input_seq_shape=None, supervised=False, 
+              shared_pred=False, SUB_B=None):
+    """
+    prep_loss(output, mask, sup_target)
+    """
+
+    if supervised:
+        output_flattened, target_flattened, loss_reshape, target = \
+            prep_supervised_loss(
+                output, sup_target, shared_pred=shared_pred, SUB_B=SUB_B
+                )
+    else:
+        output_flattened, target_flattened, loss_reshape, target = \
+            prep_self_supervised_loss(
+                output, mask, input_seq_shape=input_seq_shape
+                )
+
+    return output_flattened, target_flattened, loss_reshape, target
+
+
+############################################
+def get_sup_target(dataset, sup_target):
+    """
+    get_sup_target(dataset, sup_target)
+    """
+    
+    gabors = isinstance(dataset, gabor_stimuli.GaborSequenceGenerator)
+
+    if gabors:
+        sup_target = torch.moveaxis(sup_target, -1, 0)
+        target_images = dataset.image_label_to_image(
+            sup_target[0].to("cpu").numpy().reshape(-1)
             )
+        target_images = np.asarray(target_images).reshape(
+            sup_target[0].shape
+            )
+        sup_target = [target_images.tolist(), sup_target[1].tolist()]
+    else:
+        sup_target = sup_target.tolist()
+
+    return sup_target
+
+
+############################################
+def add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item, 
+                   supervised=False, sup_target=None, output=None, target=None, 
+                   epoch_n=0):
+    """
+    add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item)
+    """
+    
+    data_dict["batch_epoch_n"].append(epoch_n)
+    data_dict["loss_by_batch"].append(batch_loss)
+    data_dict["loss_by_item"].append(batch_loss_by_item)
+
+    if output is not None and "output_by_batch" in data_dict.keys():
+        data_dict["output_by_batch"].append(output)
+
+    if target is not None and "target_by_batch" in data_dict.keys():
+        data_dict["target_by_batch"].append(target)
+
+    if not supervised and sup_target is not None:
+        data_dict["sup_target_by_batch"].append(
+            get_sup_target(dataset, sup_target)
+            )
+
+
+#############################################
+def log_epoch(stats_str, duration=None, epoch_n=0, num_epochs=50, val=False, 
+              test=False, batch_idx=0, n_batches=None, spacing="\n"):
+    """
+    log_epoch(stats_str)
+    """
+
+    if test:
+        epoch_str = f"Epoch [{epoch_n}] [test]"
+        space_batch = " "
+    elif val:
+        epoch_str = f"Epoch [{epoch_n}/{num_epochs}] [val]"
+        space_batch = " "
+    else:
+        epoch_str = f"Epoch: [{epoch_n}/{num_epochs}]"
+        space_batch = ""
+        
+
+    time_str = ""
+    if n_batches is None and duration is not None:
+        time_str = misc_utils.format_time(duration, sep_min=True, lead=True)
+    else:
+        epoch_str = f"{epoch_str}{space_batch}[{batch_idx}/{n_batches - 1}]"
+        if duration is not None:
+            time_str = misc_utils.format_time(
+                duration, sep_min=False, lead=True
+                )
+            time_str = f"{time_str}/batch"
+
+    log_str = f"{epoch_str}{TAB}{stats_str}{TAB}{time_str}"
+
+    logger.info(log_str, extra={"spacing": spacing})
+
+    return log_str
 
 
 #############################################
@@ -418,4 +470,5 @@ def write_log(content, epoch_n, filename):
         f.write(f"## Epoch {epoch_n}:\n")
         f.write(f"Time: {datetime.now()}\n")
         f.write(f"{content}\n\n")
+
 

@@ -19,7 +19,7 @@ class DPC_RNN(torch.nn.Module):
         
         super(DPC_RNN, self).__init__()
         
-        logger.info("Loading DPC-RNN model")
+        logger.info("Loading DPC-RNN model.")
         self.sample_size = sample_size
         self.num_seq = num_seq
         self.seq_len = seq_len
@@ -34,7 +34,7 @@ class DPC_RNN(torch.nn.Module):
         self.last_duration = int(math.ceil(seq_len / 4))
         self.last_size = int(math.ceil(sample_size / 32))
         logger.info(
-            f"Final feature map size: {self.last_size} x {self.last_size}", 
+            f"Final feature map size: {self.last_size} x {self.last_size}.", 
             extra={"spacing": TAB}
             )
 
@@ -248,7 +248,7 @@ class LC_RNN(torch.nn.Module):
         self.param["hidden_size"] = self.param["feature_size"]
         self.param["kernel_size"] = 1
 
-        logger.info("=> Loading RNN + FC model (ConvRNN, kernel size: 1)")
+        logger.info("=> Loading RNN + FC model (ConvRNN, kernel size: 1).")
         self.agg = convrnn.ConvGRU(
             input_size=self.param["feature_size"],
             hidden_size=self.param["hidden_size"],

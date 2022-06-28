@@ -41,6 +41,7 @@ class GaborSequenceGenerator(data.Dataset):
         seq_len=10,
         num_seq=5,
         num_gabors=NUM_GABORS, 
+        num_mean_oris=NUM_MEAN_ORIS,
         gab_img_len=GAB_IMG_LEN,
         same_possizes=True,
         gray=True, 
@@ -69,6 +70,7 @@ class GaborSequenceGenerator(data.Dataset):
         self.seq_len         = int(seq_len) # nbr frames per seq
         self.num_seq         = int(num_seq) # nbr of sequences to sample
         self.num_gabors      = int(num_gabors) # nbr of Gabor patches
+        self.num_mean_oris   = int(num_mean_oris) # nbr of mean orientations
         self.gab_img_len     = int(gab_img_len) # nbr frames per Gabor image
 
         if self.mode == "train":
@@ -171,7 +173,7 @@ class GaborSequenceGenerator(data.Dataset):
         """
         
         if not hasattr(self, "_mean_oris"):
-            self._mean_oris = np.arange(0, 360, 360 / NUM_MEAN_ORIS)
+            self._mean_oris = np.arange(0, 360, 360 / self.num_mean_oris)
         return self._mean_oris
 
 
