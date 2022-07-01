@@ -69,7 +69,7 @@ def get_unique_filename(filename, overwrite=False):
                 extra={"spacing": "\n"}
                 )
             time.sleep(5) # to allow for skipping file removal.
-            shutil.unlink(str(filename))
+            Path(filename).unlink()
         else:
             i = 0
             parent = Path(filename).parent
@@ -478,13 +478,18 @@ def save_hyperparameters(hyperparams, direc=None):
     # general parameters
     general_params = [
         "data_path_dir", "log_freq", "log_level", "output_dir", "save_best", 
-        "save_by_batch"
+        "save_by_batch", 
         ]
     if resume:
         overwrite = False
         ignore_params.append("overwrite")
     else:
         general_params.append("overwrite")
+    
+    if resume or test:
+        ignore_params.append("suffix")
+    else:
+        general_params.append("suffix")
 
     hyperparams = add_nested_dict(
         hyperparams, hyperparam_dict, general_params, nested_key="general", 
@@ -516,6 +521,7 @@ def save_hyperparameters(hyperparams, direc=None):
     base_name = "hyperparameters.yaml"
     if test:
         base_name = f"test_{base_name}"
+        overwrite = True
     if resume:
         base_name = f"resume_{base_name}"
 

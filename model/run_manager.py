@@ -259,7 +259,7 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
 def train_full(main_loader, model, optimizer, output_dir=".", net_name=None, 
                dataset="UCF101", num_epochs=10, topk=TOPK, scheduler=None, 
                device="cuda", val_loader=None, seed=None, unexp_epoch=10, 
-               log_freq=5, use_tb=False, save_by_batch=False, 
+               log_freq=5, use_tb=False, save_by_batch=False,
                reload_kwargs=dict()):
     """
     train_full(train_loader, model, optimizer)

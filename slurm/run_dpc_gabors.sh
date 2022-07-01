@@ -3,7 +3,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:rtx8000:2
 #SBATCH --mem=48GB
-#SBATCH --array=0-5
+#SBATCH --array=0-11
 #SBATCH --time=5:00:00
 #SBATCH --job-name=dpc_gab
 #SBATCH --output=/home/mila/g/gillonco/scratch/dpc_gabors_%A_%a.txt
@@ -56,7 +56,11 @@ echo -e "EXTERNALLY SET HYPERPARAMETERS\n"\
 
 # 4. Array ID hyperparameters
 PRETRAINEDS=( no yes ) # 2
+
 SIMPLES=( no semi full ) # 3
+
+U_POSSIZE_ARGS=( "" "--diff_U_possizes" ) # 2
+SUFFIX_ARGS=( "" "--suffix diff_U_possizes" )
 
 # set values for task ID
 # inner loop
@@ -64,14 +68,21 @@ PRETRAINEDS_LEN=${#PRETRAINEDS[@]}
 PRETRAINEDS_IDX=$(( $SLURM_ARRAY_TASK_ID % $PRETRAINEDS_LEN ))
 PRETRAINED=${PRETRAINEDS[$PRETRAINEDS_IDX]}
 
-# outer loop
+# middle loop
 SIMPLES_LEN=${#SIMPLES[@]}
 SIMPLES_IDX=$(( $SLURM_ARRAY_TASK_ID / $PRETRAINEDS_LEN % $SIMPLES_LEN ))
 SIMPLE=${SIMPLES[$SIMPLES_IDX]}
 
+# middle loop
+U_POSSIZE_ARGS_LEN=${#U_POSSIZE_ARGS[@]}
+U_POSSIZE_ARGS_IDX=$(( $SLURM_ARRAY_TASK_ID / ( $PRETRAINEDS_LEN * $SIMPLES_LEN ) % $U_POSSIZE_ARGS_LEN ))
+U_POSSIZE_ARG=${U_POSSIZE_ARGS[$U_POSSIZE_ARGS_IDX]}
+SUFFIX_ARG=${SUFFIX_ARGS[$U_POSSIZE_ARGS_IDX]}
+
+
 # Set the pretrain path, if applicable
 if [[ $PRETRAINED == yes ]]; then
-    PRETRAINED_ARG="--pretrained "$SCRATCH"/dpc/models/mousesim_left-128_r18_dpc-rnn_bs10_lr0.0001_nseq25_pred3_len5_train-all_seed100/model/model_best_epoch975.pth.tar"
+    PRETRAINED_ARG="--pretrained "$SCRATCH"/dpc/pretrained/mousesim_left-128_r18_dpc-rnn/model/model_best_epoch975.pth.tar"
     UNEXP_EPOCH=20
 else
     PRETRAINED_ARG=""
@@ -82,7 +93,7 @@ fi
 if [[ $SIMPLE == full ]]; then
     SEQ_LEN=$FIXED_GAB_IMG_LEN
     PRED_STEP=1
-    NUM_SEQ=5
+    NUM_SEQ=4 # gray will never appear
     ROLL_ARG=""
 else
     if [[ $SIMPLE == semi ]]; then
@@ -99,14 +110,24 @@ fi
 
 NUM_EPOCHS=$(expr $UNEXP_EPOCH \* 2 )
 
+if [[ $ROLL_ARG ]]; then
+    if [[ $SUFFIX_ARG ]]; then
+        SUFFIX_ARG=$SUFFIX_ARG"_roll"
+    else
+        SUFFIX_ARG="--suffix roll"
+    fi
+fi
+
 
 echo -e "\nARRAY ID HYPERPARAMETERS\n"\
+"U position/size argument: $U_POSSIZE_ARG\n"\
 "unexpected epoch: $UNEXP_EPOCH\n"\
 "sequence length: $SEQ_LEN\n"\
 "number of steps to predict: $PRED_STEP\n"\
 "number of sequences per batch item: $NUM_SEQ\n"\
 "roll argument: $ROLL_ARG\n"\
 "number of epochs: $NUM_EPOCHS\n"\
+"suffix argument: $SUFFIX_ARG\n"\
 "pretrained argument: $PRETRAINED_ARG\n"\
 
 
@@ -129,12 +150,14 @@ python train_model.py \
     --U_prob $FIXED_U_PROB \
     --num_workers $FIXED_NUM_WORKERS \
     $SEED_ARG \
+    $U_POSSIZE_ARG \
     --unexp_epoch $UNEXP_EPOCH \
     --seq_len $SEQ_LEN \
     --pred_step $PRED_STEP \
     --num_seq $NUM_SEQ \
     $ROLL_ARG \
     --num_epochs $NUM_EPOCHS \
+    $SUFFIX_ARG \
     $PRETRAINED_ARG \
 
 code="$?"

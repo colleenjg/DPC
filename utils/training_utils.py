@@ -343,36 +343,43 @@ def prep_self_supervised_loss(output, mask, input_seq_shape=None):
     (B, PS, HW, B_per, _, _) = mask.size()
     flat_dim = B * PS * HW
     flat_dim_per = B_per * PS * HW # B_per: batch size per GPU
+    loss_reshape = (B, PS, HW)
+
     target = get_target_from_mask(mask)
 
     # output is a 6d tensor: [B, PS, HW, B_per, PS, HW]
     output_flattened = output.reshape(flat_dim, flat_dim_per)
     target_flattened = target.reshape(
         flat_dim, flat_dim_per).argmax(dim=1)
-    loss_reshape = (B, PS, HW)
 
     return output_flattened, target_flattened, loss_reshape, target
 
 
 #############################################
-def prep_loss(output, mask, sup_target, input_seq_shape=None, supervised=False, 
-              shared_pred=False, SUB_B=None):
+def prep_loss(output, mask, sup_target=None, input_seq_shape=None, 
+              supervised=False, shared_pred=False, SUB_B=None):
     """
-    prep_loss(output, mask, sup_target)
+    prep_loss(output, mask)
     """
 
     if supervised:
+        if sup_target is None:
+            raise ValueError("Must pass 'sup_target' if 'supervised' is True.")
         output_flattened, target_flattened, loss_reshape, target = \
             prep_supervised_loss(
                 output, sup_target, shared_pred=shared_pred, SUB_B=SUB_B
                 )
+
+        return output_flattened, target_flattened, loss_reshape, target
+
     else:
         output_flattened, target_flattened, loss_reshape, target = \
             prep_self_supervised_loss(
                 output, mask, input_seq_shape=input_seq_shape
                 )
 
-    return output_flattened, target_flattened, loss_reshape, target
+        return output_flattened, target_flattened, loss_reshape, target
+
 
 
 ############################################

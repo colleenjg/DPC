@@ -250,10 +250,13 @@ def calc_topk_accuracy(output, target, topk=(1,)):
     """
     calc_topk_accuracy(output, target)
 
+    output dim are: B * PS * HW x B_per * PS * HW => (32, 1, 16) x (32, 1, 16)
+
     Modified from: 
     https://gist.github.com/agermanidis/275b23ad7a10ee89adccf021536bb97e
     Given predicted and ground truth labels, calculate top-k accuracies.
     """
+
     maxk = max(topk)
     batch_size = target.size(0)
 

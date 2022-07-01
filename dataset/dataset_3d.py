@@ -14,6 +14,8 @@ from dataset import augmentations
 
 logger = logging.getLogger(__name__)
 
+MAX_LEN = 250 # longest test sequence
+
 TAB = "    "
 
 
@@ -288,8 +290,15 @@ class GeneralDataset(data.Dataset):
                 )
         else:
             # identify indices of a single, full length sequence (1D indices)
-            all_idxs = np.arange(0, vlen, self.downsample) 
+            all_idxs = np.arange(0, vlen, self.downsample)
             n_frames = len(all_idxs)
+
+            if n_frames > MAX_LEN:
+                logger.warning(
+                    f"Sequence includes {n_frames} frames. Only the first "
+                    f"{MAX_LEN} will be retained."
+                    )
+                n_frames = MAX_LEN
 
             # identify all possible consecutive sequence indices (n x seq_len)
             seq_idx = []
@@ -310,8 +319,9 @@ class GeneralDataset(data.Dataset):
         seq = [
             pil_loader(Path(vpath, f"image_{i+1:05}.jpg")) for i in seq_idx
             ]
+
         t_seq = self.transform(seq) # apply same transform
-            
+
         return t_seq
 
 
@@ -326,6 +336,7 @@ class GeneralDataset(data.Dataset):
         t_seq = torch.stack([
             t_seq[i : i + self.num_seq] for i in range(0, num_poss, step_size)
             ], 0)
+        
         return t_seq
 
 
@@ -347,6 +358,7 @@ class GeneralDataset(data.Dataset):
             
             # get a sub-batch: SUB_B x N x C x SL x H x W
             t_seq = self._select_seq_sub_batch(t_seq)
+
         else:
             seq_idx, vpath = self.idx_sampler(
                 vlen, vpath, sample_num_seq=True, raise_none=True

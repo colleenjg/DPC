@@ -53,7 +53,7 @@ class GaborSequenceGenerator(data.Dataset):
         size_ran=[10, 20], # degrees
         deg_width=120, # image width, in degrees (if curved)
         ori_std_dev=0.25, # radians
-        num_cycles=1, # number of visible cycles (approx)
+        num_cycles=1, # number of visible cycles (approx.)
         psi=0.25, # phase (prop of cycle)
         gamma=1, # aspect ratio
         return_label=False,
@@ -91,7 +91,6 @@ class GaborSequenceGenerator(data.Dataset):
         
         self.size_ran           = size_ran # base gabor patch size range
         self.kappa              = 1.0 / (ori_std_dev ** 2)
-        self.num_cycles         = num_cycles
         self.psi_rad            = 2 * psi * np.pi
         self.gamma              = gamma
         self.num_sigmas_visible = 3
@@ -99,6 +98,7 @@ class GaborSequenceGenerator(data.Dataset):
         self.prev_seq        = []
         
         # initialize relevant properties
+        self.set_num_cycles_adj(num_cycles)
         self.set_deg_per_pix(deg_width)
         self.set_size_ran(size_ran)
         self.set_U_prob(U_prob)
@@ -113,6 +113,24 @@ class GaborSequenceGenerator(data.Dataset):
         if supervised:
             return_label = True
         self.return_label = return_label
+
+
+    def set_num_cycles_adj(self, num_cycles=1):
+
+        if num_cycles <= 0:
+            raise ValueError("num_cycles must be strictly positive.")
+
+        if num_cycles < 0.5 or num_cycles > 3:
+            raise NotImplementedError(
+                "The Gabor generation code is best suited for 1 cycle to be "
+                "visible. The approximations used work reasonably well between "
+                "0.5 and 3 cycles, but not beyond.")
+
+        self.num_cycles = num_cycles
+
+        fact = 1.2 ** (num_cycles - 1)
+        num_cycles = num_cycles * fact
+        self.num_cycles_adj = num_cycles
 
 
     def set_deg_per_pix(self, deg_width=120, curved=True):
@@ -529,7 +547,7 @@ class GaborSequenceGenerator(data.Dataset):
             self.num_sigmas_visible * gabor_size * 1.0 / 
             (2 * np.sqrt(2 * np.log(2)))
             )
-        lambd = ksize / self.num_cycles
+        lambd = ksize / self.num_cycles_adj
         sigma = ksize / (self.num_sigmas_visible * 2)
 
         ksize *= 3 # expand around Gabor to avoid artifacts
