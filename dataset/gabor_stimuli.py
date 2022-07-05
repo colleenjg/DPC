@@ -196,6 +196,32 @@ class GaborSequenceGenerator(data.Dataset):
 
 
     @property
+    def mean_oris_U(self):
+        """
+        self.mean_oris_U
+        """
+        
+        if not hasattr(self, "_mean_oris_U"):
+            self._mean_oris_U = (self.mean_oris + U_ADJ) % 360 
+        return self._mean_oris_U
+
+
+    @property
+    def all_mean_oris(self):
+        """
+        self.all_mean_oris
+        """
+        
+        if not hasattr(self, "_all_mean_oris"):
+            if self.U_prob > 0:
+                mean_oris = np.concatenate([self.mean_oris, self.mean_oris_U])
+            else:
+                mean_oris = self.mean_oris
+            self._all_mean_oris = np.unique(mean_oris)
+        return self._all_mean_oris
+
+
+    @property
     def base_seq(self):
         """
         self.base_seq

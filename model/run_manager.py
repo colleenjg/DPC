@@ -7,11 +7,12 @@ import numpy as np
 import torch
 
 from dataset import dataset_3d
-from utils import checkpoint_utils, gab_utils, loss_utils, misc_utils, \
+from utils import checkpoint_utils, gabor_utils, loss_utils, misc_utils, \
     training_utils
 
 # a few global variables
 TOPK = [1, 3, 5]
+ACC_AVG_HW = True
 
 logger = logging.getLogger(__name__)
 
@@ -20,24 +21,33 @@ TAB = "    "
 #############################################
 def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50, 
                 log_idx=0, topk=TOPK, loss_weight=None, device="cpu", 
-                log_freq=5, writer=None, train_off=False, save_by_batch=False):
+                log_freq=5, writer=None, train_off=False, save_by_batch=False, 
+                acc_avg_HW=ACC_AVG_HW):
     """
     train_epoch(data_loader, model, optimizer)
     """
     
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
-    
+    is_gabors = gabor_utils.check_if_is_gabors(data_loader.dataset)
+        
     model = model.to(device)
 
     train, spacing = training_utils.set_model_train_mode(
         model, epoch_n, train_off
         )
     _, supervised = training_utils.get_num_classes_sup(model)
+    if supervised:
+        acc_avg_HW = False
 
     train_dict = loss_utils.init_loss_dict(
         ks=topk, val=False, supervised=supervised, save_by_batch=save_by_batch
         )["train"]
     train_dict["epoch_n"] = epoch_n
+
+    if is_gabors and save_by_batch:
+        gabor_loss_dict, gabor_top1_dict, gabor_conf_mat = \
+            gabor_utils.init_gabor_records(data_loader.dataset)
+        
     
     criterion, criterion_no_reduction = loss_utils.get_criteria(
         loss_weight=loss_weight, device=device
@@ -73,7 +83,8 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         # update meters, in-place
         losses.update(loss.item(), input_seq_shape[0])
         loss_utils.update_topk_meters(
-            topk_meters, output_flattened, target_flattened, ks=topk
+            topk_meters, output_flattened, target_flattened, ks=topk, 
+            acc_avg_HW=acc_avg_HW, main_shape=loss_reshape
             )
 
         if save_by_batch:
@@ -89,11 +100,26 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
                 dataset=data_loader.dataset, 
                 batch_loss=losses.val, 
                 batch_loss_by_item=batch_loss.to("cpu").tolist(), 
+                supervised=supervised,
                 sup_target=sup_target, 
                 output=output_.to("cpu").tolist(), 
                 target=target.to("cpu").tolist(), 
                 epoch_n=epoch_n
                 )
+
+            if is_gabors:
+
+                gabor_utils.update_records(
+                    gabor_loss_dict, 
+                    gabor_top1_dict,
+                    output_flattened,
+                    target_flattened,
+                    batch_loss=batch_loss,
+                    supervised=supervised,
+                    sup_target=sup_target,
+                    confusion_mat=gabor_conf_mat,
+                    supervised=s
+                    )
 
         del output_, target, sup_target, target_flattened, output_flattened
 
@@ -137,12 +163,14 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
 #############################################
 def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10, 
                       topk=TOPK, loss_weight=None, device="cpu", test=False, 
-                      output_dir=None, save_by_batch=False):
+                      output_dir=None, save_by_batch=False, 
+                      acc_avg_HW=ACC_AVG_HW):
     """
     val_or_test_epoch(data_loader, model)
     """
 
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
+    is_gabors = gabor_utils.check_if_is_gabors(data_loader.dataset)
 
     model = model.to(device)
     model.eval()
@@ -153,6 +181,8 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
 
     confusion_mat = None
     num_classes, supervised = training_utils.get_num_classes_sup(model)
+    if supervised:
+        acc_avg_HW = False
 
     val_dict = loss_utils.init_loss_dict(
         ks=topk, val=True, supervised=supervised, save_by_batch=save_by_batch
@@ -184,18 +214,22 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
                     shared_pred=shared_pred, SUB_B=SUB_B
                     )
 
-            if not supervised:
-                flat_dim_per = output_flattened.shape[1]
-                chance_level.update(1 / np.product(flat_dim_per), 1)
-
             target_flattened = target_flattened.to(device)
             loss = criterion(output_flattened, target_flattened)
 
             # collect some values
             losses.update(loss.item(), len(output_))
             loss_utils.update_topk_meters(
-                topk_meters, output_flattened, target_flattened, ks=topk
+                topk_meters, output_flattened, target_flattened, ks=topk, 
+                acc_avg_HW=acc_avg_HW, main_shape=loss_reshape
                 )
+
+            if not supervised:
+                chance = loss_utils.calc_chance(
+                    output_flattened, loss_reshape, acc_avg_HW=acc_avg_HW
+                    )
+                chance_level.update(chance, 1)
+
             if confusion_mat is not None:
                 _, pred = torch.max(output_flattened, 1)
                 confusion_mat.update(pred, target_flattened.reshape(-1).byte())
@@ -212,7 +246,8 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
                     val_dict, 
                     dataset=data_loader.dataset, 
                     batch_loss=losses.val, 
-                    batch_loss_by_item=batch_loss.to("cpu").tolist(), 
+                    batch_loss_by_item=batch_loss.to("cpu").tolist(),
+                    supervised=supervised, 
                     sup_target=sup_target, 
                     output=output_.to("cpu").tolist(), 
                     target=target.to("cpu").tolist(), 
@@ -259,8 +294,8 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
 def train_full(main_loader, model, optimizer, output_dir=".", net_name=None, 
                dataset="UCF101", num_epochs=10, topk=TOPK, scheduler=None, 
                device="cuda", val_loader=None, seed=None, unexp_epoch=10, 
-               log_freq=5, use_tb=False, save_by_batch=False,
-               reload_kwargs=dict()):
+               log_freq=5, use_tb=False, save_by_batch=False, 
+               acc_avg_HW=ACC_AVG_HW, reload_kwargs=dict()):
     """
     train_full(train_loader, model, optimizer)
     """
@@ -312,7 +347,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         start_time = time.perf_counter()
 
         if dataset == "Gabors":
-            data_seed = gab_utils.update_gabors(
+            data_seed = gabor_utils.update_gabors(
                 main_loader, val_loader, seed=data_seed, epoch_n=epoch_n, 
                 unexp_epoch=unexp_epoch
                 )
@@ -331,6 +366,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 device=device, 
                 log_freq=log_freq,
                 save_by_batch=save_by_batch,
+                acc_avg_HW=acc_avg_HW,
                 )
 
             for key in train_dict.keys():
@@ -349,6 +385,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 output_dir=output_dir,
                 test=test,
                 save_by_batch=save_by_batch,
+                acc_avg_HW=acc_avg_HW,
                 )
             
             if test:

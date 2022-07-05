@@ -246,22 +246,119 @@ def get_stats(losses, topk_meters, ks=[1, 3, 5], local=False, last=False,
 
 
 #############################################
-def calc_topk_accuracy(output, target, topk=(1,)):
+def get_dim_per_GPU(output, main_shape):
+    """
+    get_dim_per_GPU(output, main_shape)
+    """
+
+    if len(main_shape) != 3:
+        raise ValueError(
+            ("Expected 'main_shape' to have 3 dimensions (B x PS x HW), "
+            f"but found {len(main_shape)}.")
+        )
+
+    B, PS, HW = main_shape
+    if output.shape[0] != np.product(main_shape):
+        raise ValueError(
+            "The first dimension of 'output' should be the product of "
+            "'main_shape'."
+            )
+
+    B_per = output.shape[1] / (PS * HW)
+    if B_per != int(B_per):
+        raise RuntimeError(
+            "Could not compute 'B_per' (number of examples per GPU)."
+            )
+
+    B_per = int(B_per)
+    dim_per_GPU = (B_per, PS, HW)
+
+    return dim_per_GPU
+
+
+#############################################
+def calc_chance(output, main_shape, acc_avg_HW=False):
+
+    dims_per_GPU = get_dim_per_GPU(output, main_shape)
+    if acc_avg_HW:
+        dims_per_GPU = dims_per_GPU[:1] # remove HW dim
+    chance = 1 / np.product(dims_per_GPU)
+
+    return chance
+
+
+#############################################
+def calc_avg_acr_HW(values, main_shape):
+    """
+    calc_avg_acr_HW(values, main_shape)
+    """
+    
+    if len(values.shape) == 2: # output
+        B, PS, HW = main_shape
+        B_per, _, _ = get_dim_per_GPU(values, main_shape)
+        reshape_tuple = (B, PS, HW, B_per, PS, HW)
+
+        values = values.reshape(reshape_tuple)
+        values = values.float().mean(axis=(2, 5)) # mean across HW dimension
+        values = values.reshape(B * PS, B_per * PS)
+
+    elif len(values.shape) == 1: # target
+        if np.product(values.shape) != np.product(main_shape):
+            raise ValueError(
+                "The shape of 'values' should be the product of 'main_shape'."
+                )
+        # eliminate the HW dimension
+        values = values.reshape(main_shape).float()[..., 0] / HW
+        values = values.reshape(B * PS) 
+
+    else:
+        raise ValueError("Expected 'values' to have 1 or 2 dimensions.")
+
+    return values
+
+
+#############################################
+def get_predictions(output, keep_topk=1, acc_avg_HW=False, main_shape=None):
+    """
+    get_predictions(output)
+    """
+
+    if acc_avg_HW:
+        if main_shape is None:
+            raise ValueError("If 'acc_avg_HW' is True, must pass 'main_shape'.")
+
+        output = calc_avg_acr_HW(output, main_shape)
+
+    _, pred = output.topk(keep_topk, 1, True, True)
+    pred = pred.t()
+
+    return pred
+
+
+#############################################
+def calc_topk_accuracy(output, target, topk=(1,), acc_avg_HW=False, 
+                       main_shape=None):
     """
     calc_topk_accuracy(output, target)
 
     output dim are: B * PS * HW x B_per * PS * HW => (32, 1, 16) x (32, 1, 16)
+    target dim are: B * PS * HW
 
     Modified from: 
     https://gist.github.com/agermanidis/275b23ad7a10ee89adccf021536bb97e
     Given predicted and ground truth labels, calculate top-k accuracies.
     """
 
-    maxk = max(topk)
+    pred = get_predictions(
+        output, keep_topk=max(topk), acc_avg_HW=acc_avg_HW, 
+        main_shape=main_shape
+        )
+
+    if acc_avg_HW:
+        target = calc_avg_acr_HW(target, main_shape)
+
     batch_size = target.size(0)
 
-    _, pred = output.topk(maxk, 1, True, True)
-    pred = pred.t()
     correct = pred.eq(target.reshape(1, -1).expand_as(pred))
 
     res = []
@@ -272,7 +369,8 @@ def calc_topk_accuracy(output, target, topk=(1,)):
 
 
 #############################################
-def update_topk_meters(topk_meters, output, target, ks=[1, 3, 5]):
+def update_topk_meters(topk_meters, output, target, ks=[1, 3, 5], 
+                       acc_avg_HW=False, main_shape=None):
     """
     update_topk_meters(topk_meters, output, target)
     """
@@ -282,7 +380,9 @@ def update_topk_meters(topk_meters, output, target, ks=[1, 3, 5]):
             "Must provide as many topK meter objects as 'ks'."
             )
 
-    top_vals = calc_topk_accuracy(output, target, ks)
+    top_vals = calc_topk_accuracy(
+        output, target, ks, acc_avg_HW=acc_avg_HW, main_shape=main_shape
+        )
 
     for t, top_val in enumerate(top_vals):
         topk_meters[t].update(top_val.item(), len(output))

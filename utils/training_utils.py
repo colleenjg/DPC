@@ -8,8 +8,8 @@ import warnings
 import numpy as np
 import torch
 
-from dataset import dataset_3d, gabor_stimuli
-from utils import misc_utils
+from dataset import dataset_3d
+from utils import gabor_utils, misc_utils
 
 logger = logging.getLogger(__name__)
 
@@ -388,9 +388,9 @@ def get_sup_target(dataset, sup_target):
     get_sup_target(dataset, sup_target)
     """
     
-    gabors = isinstance(dataset, gabor_stimuli.GaborSequenceGenerator)
+    is_gabors = gabor_utils.check_if_is_gabors(dataset)
 
-    if gabors:
+    if is_gabors:
         sup_target = torch.moveaxis(sup_target, -1, 0)
         target_images = dataset.image_label_to_image(
             sup_target[0].to("cpu").numpy().reshape(-1)
