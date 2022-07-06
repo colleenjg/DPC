@@ -19,7 +19,7 @@ Arranges the datasets as follows:
 
 * UCF101
 ```
-{main_path}/UCF101/videos/{action class}/{video name}.avi
+{main_path}/UCF101/videos/{class name}/{video name}.avi
 {main_path}/UCF101/splits/trainlist{01/02/03}.txt
 {main_path}/UCF101/splits/testlist{01/02/03}}.txt
 {main_path}/UCF101/splits/classInd.txt
@@ -27,14 +27,14 @@ Arranges the datasets as follows:
 
 * HMDB51
 ```
-{main_path}/HMDB51/videos/{action class}/{video name}.avi
-{main_path}/HMDB51/splits/{action class}_test_split{1/2/3}.txt
+{main_path}/HMDB51/videos/{class name}/{video name}.avi
+{main_path}/HMDB51/splits/{class name}_test_split{1/2/3}.txt
 ```
 
 * Kinetics400
 ```
-{main_path}/Kinetics400/videos/train_split/{action class}/{video name}.mp4
-{main_path}/Kinetics400/videos/val_split/{action class}/{video name}.mp4
+{main_path}/Kinetics400/videos/train_split/{class name}/{video name}.mp4
+{main_path}/Kinetics400/videos/val_split/{class name}/{video name}.mp4
 ```
 And keeps the downloaded csv files, stored as:
 ```
@@ -50,5 +50,5 @@ Run, e.g., `python extract_frames.py --d_root main_path --dataset UCF101` to ext
 
 Run, e.g., `python write_csvs.py --f_root main_path --dataset UCF101` to collect paths into a csv file.
 
-The csv file is stored under `process_data`, and the `classInd.txt` file listing each action and its class number is created. 
+The csv file is stored under `process_data`, and the `classInd.txt` file listing each class and its class label is created. 
 

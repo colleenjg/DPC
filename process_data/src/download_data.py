@@ -19,10 +19,8 @@ sys.path.extend([
     "..", 
     str(Path("..", "..")), 
     str(Path("..", "..", "utils")), 
-    str(Path("..", "..", "dataset"))
     ])
 from utils import misc_utils, training_utils
-from dataset import dataset_3d
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +201,7 @@ def main_HMDB51(d_root):
         shutil.rmtree(rm_folder)
 
     # untar individual video folders
-    logger.info("Untarring folders for each action...")
+    logger.info("Untarring folders for each class...")
     video_rars = Path(d_root, "videos", "*.rar")
     all_rars = glob.glob(str(video_rars))
     for rarfile_path in tqdm(all_rars):
@@ -272,7 +270,7 @@ class KineticsMinimal(kinetics.Kinetics):
                 raise NotImplementedError(
                     "The minimum number of tars to download has not been "
                     f"determined for Kinetics{self.num_classes} {self.split} "
-                    "to ensure that all action classes are included, with at "
+                    "to ensure that all classes are included, with at "
                     f"least {self._min_ex_per} examples per class."
                 )
 
@@ -347,16 +345,16 @@ class KineticsMinimal(kinetics.Kinetics):
         err_msg = None
         n_empty = sum([n == 0 for n in ns])
         if n_empty != 0:
-            err_msg = f"{n_empty} action directories are empty"
+            err_msg = f"{n_empty} class directories are empty"
         elif len(ns) > int(self.num_classes):
             err_msg = (
-                f"More action directories ({len(ns)}) than classes "
+                f"More class directories ({len(ns)}) than classes "
                 f"({self.num_classes})."                
             )
         elif np.min(ns) < self._min_ex_per:
             n_below = sum(np.asarray(ns) < self._min_ex_per)
             min_n = np.min(ns)
-            err_msg = (f"{n_below} action directories contain fewer than "
+            err_msg = (f"{n_below} class directories contain fewer than "
                 f"{self._min_ex_per} examples (as few as {min_n}).")
         
         if err_msg is not None:
@@ -439,7 +437,7 @@ if __name__ == "__main__":
 
     misc_utils.get_logger_with_basic_format(level=args.log_level)
 
-    args.dataset = dataset_3d.normalize_dataset_name(args.dataset)
+    args.dataset = misc_utils.normalize_dataset_name(args.dataset)
 
     d_root = Path(args.d_root, args.dataset)
 

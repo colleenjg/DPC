@@ -16,10 +16,8 @@ sys.path.extend([
     "..", 
     str(Path("..", "..")), 
     str(Path("..", "..", "utils")), 
-    str(Path("..", "..", "dataset"))
     ])
 from utils import misc_utils, training_utils
-from dataset import dataset_3d
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +58,7 @@ def write_class_index_file(class_names, csv_root, expected_n=None):
 
     Required args:
         - class_names (list): 
-            list of action names
+            list of class names
         - csv_root (Path): 
             directory under which to save class indices file. 
 
@@ -201,7 +199,7 @@ def main_HMDB51(f_root, splits_root=None, csv_root=None):
 
     Path(csv_root).mkdir(exist_ok=True, parents=True)
     for split_n in [1, 2, 3]:
-        action_names = []
+        class_names = []
         train_set = []
         test_set = []
         pattern = f"_test_split{split_n}.txt"
@@ -211,13 +209,13 @@ def main_HMDB51(f_root, splits_root=None, csv_root=None):
                 f"Expected 51 split files, but found {len(split_files)}."
                 )
         for split_file in split_files:
-            action_name = Path(split_file).name.replace(pattern, "")
-            action_names.append(action_name)
+            class_name = Path(split_file).name.replace(pattern, "")
+            class_names.append(class_name)
             with open(split_file, "r") as f:
                 for line in f:
                     video_name = Path(line.split(" ")[0])
                     vpath = Path(
-                        f_root, action_name, video_name.parent, video_name.stem
+                        f_root, class_name, video_name.parent, video_name.stem
                         )
                     _type = line.split(" ")[1]
                     if _type == "1":
@@ -236,7 +234,7 @@ def main_HMDB51(f_root, splits_root=None, csv_root=None):
             test_set, str(Path(csv_root, f"test_split{split_n:02}.csv"))
             )
 
-    write_class_index_file(action_names, csv_root, expected_n=51)
+    write_class_index_file(class_names, csv_root, expected_n=51)
 
 
 ### For Kinetics ###
@@ -373,11 +371,11 @@ def main_Kinetics400(f_root, splits_root=None, modes=["train", "val", "test"],
 
     # create class index file
     split_df = pd.read_csv(mode_path)
-    action_names = [
-        action_name.replace("(", "").replace(")", "").replace(" ", "_") 
-        for action_name in split_df["label"].tolist()
+    class_names = [
+        class_name.replace("(", "").replace(")", "").replace(" ", "_") 
+        for class_name in split_df["label"].tolist()
         ]
-    write_class_index_file(action_names, csv_root, expected_n=400)
+    write_class_index_file(class_names, csv_root, expected_n=400)
 
 
 ### For MouseSim ###
@@ -496,7 +494,7 @@ if __name__ == "__main__":
 
     misc_utils.get_logger_with_basic_format(level=args.log_level)
 
-    dataset = dataset_3d.normalize_dataset_name(args.dataset)
+    dataset = misc_utils.normalize_dataset_name(args.dataset)
 
     dim, dim_str = None, ""
     if dataset == "Kinetics400" and args.k400_big:

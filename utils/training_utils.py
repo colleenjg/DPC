@@ -8,7 +8,6 @@ import warnings
 import numpy as np
 import torch
 
-from dataset import dataset_3d
 from utils import gabor_utils, misc_utils
 
 logger = logging.getLogger(__name__)
@@ -156,7 +155,7 @@ def get_lr_lambda(dataset="UCF101", img_dim=224):
     get_lr_lambda()
     """
     
-    dataset = dataset_3d.normalize_dataset_name(dataset)
+    dataset = misc_utils.normalize_dataset_name(dataset)
 
     big = img_dim >= 224
 
@@ -172,6 +171,8 @@ def get_lr_lambda(dataset="UCF101", img_dim=224):
     elif dataset == "MouseSim":
         steps = [300, 400, 500] if big else [60, 80, 100]
 
+    elif dataset == "Gabors":
+        steps = [20, 30, 40] if big else [10, 15, 20]
 
     else:
         raise ValueError(f"{dataset} dataset not recognized.")
@@ -216,11 +217,11 @@ def get_num_classes_sup(model):
 def class_weight(dataset="MouseSim", supervised=True):
 
     weight = None
-    dataset = dataset_3d.normalize_dataset_name(dataset)
+    dataset = misc_utils.normalize_dataset_name(dataset)
     if supervised and dataset == "MouseSim":
         weight = [6, 1]
         logger.warning(
-            f"Loss will be weighted per class as follows: {weight}"
+            f"Loss will be weighted per class as follows: {weight}."
             )
 
         weight = torch.Tensor(weight) # based on training set
@@ -357,7 +358,7 @@ def prep_self_supervised_loss(output, mask, input_seq_shape=None):
 
 #############################################
 def prep_loss(output, mask, sup_target=None, input_seq_shape=None, 
-              supervised=False, shared_pred=False, SUB_B=None):
+              supervised=False, shared_pred=False, SUB_B=None, is_gabors=False):
     """
     prep_loss(output, mask)
     """
@@ -365,6 +366,8 @@ def prep_loss(output, mask, sup_target=None, input_seq_shape=None,
     if supervised:
         if sup_target is None:
             raise ValueError("Must pass 'sup_target' if 'supervised' is True.")
+        if is_gabors:
+            sup_target = gabor_utils.get_gabor_sup_label(sup_target)
         output_flattened, target_flattened, loss_reshape, target = \
             prep_supervised_loss(
                 output, sup_target, shared_pred=shared_pred, SUB_B=SUB_B
@@ -383,22 +386,17 @@ def prep_loss(output, mask, sup_target=None, input_seq_shape=None,
 
 
 ############################################
-def get_sup_target(dataset, sup_target):
+def get_sup_target_to_store(dataset, sup_target):
     """
-    get_sup_target(dataset, sup_target)
+    get_sup_target_to_store(dataset, sup_target)
     """
     
-    is_gabors = gabor_utils.check_if_is_gabors(dataset)
+    is_gabors = hasattr(dataset, "num_gabors")
 
     if is_gabors:
-        sup_target = torch.moveaxis(sup_target, -1, 0)
-        target_images = dataset.image_label_to_image(
-            sup_target[0].to("cpu").numpy().reshape(-1)
+        sup_target = gabor_utils.get_gabor_sup_target_to_store(
+            dataset, sup_target
             )
-        target_images = np.asarray(target_images).reshape(
-            sup_target[0].shape
-            )
-        sup_target = [target_images.tolist(), sup_target[1].tolist()]
     else:
         sup_target = sup_target.tolist()
 
@@ -407,14 +405,15 @@ def get_sup_target(dataset, sup_target):
 
 ############################################
 def add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item, 
-                   supervised=False, sup_target=None, output=None, target=None, 
-                   epoch_n=0):
+                   sup_target=None, output=None, target=None, epoch_n=0):
     """
     add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item)
     """
     
+    n_items = np.asarray(batch_loss_by_item).size
+    
     data_dict["batch_epoch_n"].append(epoch_n)
-    data_dict["loss_by_batch"].append(batch_loss)
+    data_dict["avg_loss_by_batch"].append(batch_loss / n_items)
     data_dict["loss_by_item"].append(batch_loss_by_item)
 
     if output is not None and "output_by_batch" in data_dict.keys():
@@ -423,9 +422,9 @@ def add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item,
     if target is not None and "target_by_batch" in data_dict.keys():
         data_dict["target_by_batch"].append(target)
 
-    if not supervised and sup_target is not None:
+    if sup_target is not None:
         data_dict["sup_target_by_batch"].append(
-            get_sup_target(dataset, sup_target)
+            get_sup_target_to_store(dataset, sup_target)
             )
 
 

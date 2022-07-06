@@ -14,7 +14,7 @@ from dataset import augmentations
 
 logger = logging.getLogger(__name__)
 
-MAX_LEN = 250 # longest test sequence
+MAX_LEN = 250 # longest allowable test sequence
 
 TAB = "    "
 
@@ -28,68 +28,6 @@ def pil_loader(path_name):
     with open(path_name, "rb") as f:
         with Image.open(f) as img:
             return img.convert("RGB")
-
-
-#############################################
-def normalize_dataset_name(dataset_name="UCF101", short=False, eye="left"):
-    """
-    normalize_dataset_name()
-    """
-
-    if dataset_name.lower() == "ucf101":
-        dataset_name = "UCF101"
-    elif dataset_name.lower() == "hmdb51":
-        dataset_name = "HMDB51"
-    elif dataset_name.lower() in ["kinetics400", "k400"]:
-        dataset_name = "k400" if short else "Kinetics400"
-    elif dataset_name.lower() == "gabors":
-        dataset_name = "Gabors"
-    elif dataset_name.lower() == "mousesim":
-        dataset_name = "MouseSim"
-        if eye not in ["both", "left", "right"]:
-            raise ValueError(f"{eye} value for 'eye' not recognized")
-        if short and eye != "both":
-            dataset_name = f"{dataset_name}_{eye}"
-    else:
-        raise ValueError(f"{dataset_name} dataset not recognized.")
-
-    if short:
-        dataset_name = dataset_name.lower()
-    
-    return dataset_name
-
-
-#############################################
-def get_num_classes(dataset=None, dataset_name="UCF101"):
-    """
-    get_num_classes()
-    """
-
-    if dataset is not None:
-        if hasattr(dataset, "action_dict_decode"):
-            num_classes = len(dataset.action_dict_decode)
-        else:
-            raise NotImplementedError(
-                "Cannot retrieve number of classes for the dataset of type "
-                f"{type(dataset)}."
-                )
-    else:
-        dataset_name = normalize_dataset_name(dataset_name)
-
-        if dataset_name == "UCF101":
-            num_classes = 101
-        elif dataset_name == "HMDB51":
-            num_classes = 51
-        elif dataset_name == "Kinetics400":
-            num_classes = 400
-        elif dataset_name == "MouseSim":
-            num_classes = 2
-        else:
-            raise ValueError(
-                f"Cannot retrieve number of classes for {dataset_name}."
-                )
-
-    return num_classes
 
 
 #############################################
@@ -126,7 +64,7 @@ class GeneralDataset(data.Dataset):
 
         self.return_label = return_label
         self._set_transform(transform)
-        self._set_action_dicts()
+        self._set_class_dicts()
         self._set_video_info(mode=mode, drop_short=True, seed=seed)
 
 
@@ -142,7 +80,7 @@ class GeneralDataset(data.Dataset):
 
 
     @property
-    def action_file_dir(self):
+    def class_file_dir(self):
         return self.dataset_dir
 
 
@@ -160,21 +98,21 @@ class GeneralDataset(data.Dataset):
             self.transform = transform
 
 
-    def _set_action_dicts(self):
+    def _set_class_dicts(self):
         """
-        self._set_action_dicts()
+        self._set_class_dicts()
         """
         
-        self.action_dict_encode = dict()
-        self.action_dict_decode = dict()
+        self.class_dict_encode = {}
+        self.class_dict_decode = {}
 
-        action_file = Path(self.action_file_dir, "classInd.txt")
-        action_df = pd.read_csv(str(action_file), sep=" ", header=None)
-        for _, row in action_df.iterrows():
+        class_file = Path(self.class_file_dir, "classInd.txt")
+        class_df = pd.read_csv(str(class_file), sep=" ", header=None)
+        for _, row in class_df.iterrows():
             act_id, act_name = row
             act_id = int(act_id)
-            self.action_dict_decode[act_id] = act_name
-            self.action_dict_encode[act_name] = act_id
+            self.class_dict_decode[act_id] = act_name
+            self.class_dict_encode[act_name] = act_id
 
 
     def _drop_short_videos(self, video_info):
@@ -384,8 +322,8 @@ class GeneralDataset(data.Dataset):
         
         if self.return_label:
             vname = Path(vpath).parts[-2]
-            action = self.encode_action(vname)
-            label = torch.LongTensor([action])
+            seq_class = self.encode_class(vname)
+            label = torch.LongTensor([seq_class])
             return t_seq, label
         else:
             return t_seq
@@ -395,24 +333,24 @@ class GeneralDataset(data.Dataset):
         return len(self.video_info)
 
 
-    def encode_action(self, action_name):
+    def encode_class(self, class_name):
         """
-        self.encode_action(action_name)
+        self.encode_class(class_name)
 
-        give action name, return category
-        """
-        
-        return self.action_dict_encode[action_name]
-
-
-    def decode_action(self, action_code):
-        """
-        self.decode_action(action_code)
-
-        give action code, return action name
+        give class name, return category
         """
         
-        return self.action_dict_decode[action_code]
+        return self.class_dict_encode[class_name]
+
+
+    def decode_class(self, class_code):
+        """
+        self.decode_class(class_code)
+
+        give class code, return class name
+        """
+        
+        return self.class_dict_decode[class_code]
 
 
 #############################################
@@ -457,15 +395,15 @@ class Kinetics400_3d(GeneralDataset):
 
 
     @property
-    def action_file_dir(self):
-        if not hasattr(self, "_action_file_dir"):
-            self._action_file_dir = Path(self.data_path_dir, "Kinetics400")
-            if not self._action_file_dir.is_dir():
+    def class_file_dir(self):
+        if not hasattr(self, "_class_file_dir"):
+            self._class_file_dir = Path(self.data_path_dir, "Kinetics400")
+            if not self._class_file_dir.is_dir():
                 raise OSError(
-                    "Did not find action file directory under "
-                    f"{self._action_file_dir}."
+                    "Did not find class file directory under "
+                    f"{self._class_file_dir}."
                     )
-        return self._action_file_dir
+        return self._class_file_dir
 
 
 #############################################
@@ -579,12 +517,12 @@ class MouseSim_3d(GeneralDataset):
             )
 
     @property
-    def action_file_dir(self):
-        if not hasattr(self, "_action_file_dir"):
-            self._action_file_dir = Path(self.data_path_dir, "MouseSim")
-            if not self._action_file_dir.is_dir():
+    def class_file_dir(self):
+        if not hasattr(self, "_class_file_dir"):
+            self._class_file_dir = Path(self.data_path_dir, "MouseSim")
+            if not self._class_file_dir.is_dir():
                 raise OSError(
-                    "Did not find action file directory under "
-                    f"{self._action_file_dir}."
+                    "Did not find class file directory under "
+                    f"{self._class_file_dir}."
                     )
-        return self._action_file_dir
+        return self._class_file_dir

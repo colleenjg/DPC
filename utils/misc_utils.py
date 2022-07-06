@@ -1,12 +1,13 @@
 import copy
-import yaml
 import logging
 import os
 from pathlib import Path
 import shutil
 import sys
 import time
+import yaml
 
+import json
 import numpy as np
 import torch
 
@@ -16,6 +17,34 @@ from torchvision import utils as vutils
 logger = logging.getLogger(__name__)
 
 TAB = "    "
+
+
+#############################################
+def renest(flat_list, target_shape):
+    """
+    renest(flat_list, target_shape)
+    """
+
+    if len(flat_list) != np.product(target_shape):
+        n_vals = len(flat_list)
+        exp_vals = np.product(target_shape)
+        raise ValueError(
+            "Based on 'target_shape', 'flat_list' should have a "
+            f"length of {exp_vals}, but found {n_vals}."
+            )
+
+    if len(target_shape) == 1:
+        reshaped_list = flat_list
+    
+    else:
+        reshaped_list = flat_list
+        for d in target_shape[::-1][:-1]:
+            n = len(reshaped_list) // d
+            reshaped_list = [
+                reshaped_list[d * j : d * (j + 1)] for j in range(n)
+            ]
+
+    return reshaped_list
 
 
 #############################################
@@ -104,6 +133,68 @@ def get_unique_direc(direc, overwrite=False):
                 direc = Path(f"{base_direc}_{i:03}")
 
     return direc
+
+
+#############################################
+def normalize_dataset_name(dataset_name="UCF101", short=False, eye="left"):
+    """
+    normalize_dataset_name()
+    """
+
+    if dataset_name.lower() == "ucf101":
+        dataset_name = "UCF101"
+    elif dataset_name.lower() == "hmdb51":
+        dataset_name = "HMDB51"
+    elif dataset_name.lower() in ["kinetics400", "k400"]:
+        dataset_name = "k400" if short else "Kinetics400"
+    elif dataset_name.lower() == "gabors":
+        dataset_name = "Gabors"
+    elif dataset_name.lower() == "mousesim":
+        dataset_name = "MouseSim"
+        if eye not in ["both", "left", "right"]:
+            raise ValueError(f"{eye} value for 'eye' not recognized")
+        if short and eye != "both":
+            dataset_name = f"{dataset_name}_{eye}"
+    else:
+        raise ValueError(f"{dataset_name} dataset not recognized.")
+
+    if short:
+        dataset_name = dataset_name.lower()
+    
+    return dataset_name
+
+
+#############################################
+def get_num_classes(dataset=None, dataset_name="UCF101"):
+    """
+    get_num_classes()
+    """
+
+    if dataset is not None:
+        if hasattr(dataset, "class_dict_decode"):
+            num_classes = len(dataset.class_dict_decode)
+        else:
+            raise NotImplementedError(
+                "Cannot retrieve number of classes for the dataset of type "
+                f"{type(dataset)}."
+                )
+    else:
+        dataset_name = normalize_dataset_name(dataset_name)
+
+        if dataset_name == "UCF101":
+            num_classes = 101
+        elif dataset_name == "HMDB51":
+            num_classes = 51
+        elif dataset_name == "Kinetics400":
+            num_classes = 400
+        elif dataset_name == "MouseSim":
+            num_classes = 2
+        else:
+            raise ValueError(
+                f"Cannot retrieve number of classes for {dataset_name}."
+                )
+
+    return num_classes
 
 
 #############################################
@@ -534,3 +625,51 @@ def save_hyperparameters(hyperparams, direc=None):
     with open(hyperparams_path, "w") as f:
         yaml.dump(hyperparam_dict, f)
 
+
+#############################################
+def save_confusion_mat_dict(conf_mat_dict, prefix=None, output_dir=".", 
+                            overwrite=True):
+    """
+    save_confusion_mat_dict(conf_mat_dict)
+    """
+
+    save_name = "confusion_matrix_data.json"
+    if prefix is not None and len(prefix):
+        save_name = f"{prefix}_{save_name}"
+
+    save_path = Path(output_dir, save_name)
+    save_path = get_unique_filename(
+        Path(output_dir, save_name), overwrite=overwrite
+        )
+
+    with open(save_path, "w") as f:
+        json.dump(conf_mat_dict, f)
+
+
+#############################################
+def load_loss_hyperparameters(model_direc, suffix=None): 
+    """
+    load_loss_hyperparameters(model_direc)
+    """
+
+    if not Path(model_direc).is_dir():
+        raise ValueError(f"{model_direc} is not a directory")
+
+    suffix_str = ""
+    if suffix is not None and len(suffix):
+        suffix_str = f"_{suffix}"
+
+    loss_dict_path = Path(model_direc, f"loss_data{suffix_str}.json")
+    hp_dict_path = Path(model_direc, f"hyperparameters{suffix_str}.yaml")
+
+    if not loss_dict_path.is_file():
+        raise OSError(f"{loss_dict_path} does not exist.")
+    if not hp_dict_path.is_file():
+        raise OSError(f"{hp_dict_path} does not exist.")
+    
+    with open(loss_dict_path, "r") as f:
+        loss_dict = json.load(f)
+    with open(hp_dict_path, "r") as f:
+        hp_dict = yaml.safe_load(f)
+
+    return loss_dict, hp_dict

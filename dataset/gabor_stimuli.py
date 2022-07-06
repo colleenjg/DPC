@@ -10,12 +10,12 @@ from torch.utils import data
 import torchvision
 
 from dataset import augmentations
+from utils import gabor_utils
 
 
 NUM_GABORS = 30
 GAB_IMG_LEN = 1
-NUM_MEAN_ORIS = 8
-U_ADJ = 90
+
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +23,15 @@ TAB = "    "
 
 
 #############################################
-def get_num_classes():
-    raise NotImplementedError(
-        "Supervised learning not implemented for Gabors dataset."
-        )
+def check_if_is_gabors(dataset):
+    """
+    check_if_is_gabors(dataset)
+    """
+
+    is_gabors = isinstance(dataset, GaborSequenceGenerator)
+
+    return is_gabors
+
 
 #############################################
 class GaborSequenceGenerator(data.Dataset):
@@ -41,7 +46,7 @@ class GaborSequenceGenerator(data.Dataset):
         seq_len=10,
         num_seq=5,
         num_gabors=NUM_GABORS, 
-        num_mean_oris=NUM_MEAN_ORIS,
+        num_mean_oris=gabor_utils.NUM_MEAN_ORIS,
         gab_img_len=GAB_IMG_LEN,
         same_possizes=True,
         gray=True, 
@@ -94,14 +99,12 @@ class GaborSequenceGenerator(data.Dataset):
         self.psi_rad            = 2 * psi * np.pi
         self.gamma              = gamma
         self.num_sigmas_visible = 3
-                
-        self.prev_seq        = []
         
         # initialize relevant properties
+        self._set_U_prob(U_prob)
         self.set_num_cycles_adj(num_cycles)
         self.set_deg_per_pix(deg_width)
         self.set_size_ran(size_ran)
-        self.set_U_prob(U_prob)
         self.set_transform(transform)
         self.num_base_seq_repeats
         self.mean_oris
@@ -110,9 +113,25 @@ class GaborSequenceGenerator(data.Dataset):
         if self.same_possizes:
             self.set_possizes(seed=seed)
 
-        if supervised:
+        if self.supervised:
             return_label = True
         self.return_label = return_label
+
+
+    def _set_U_prob(self, U_prob=0):
+        """
+        self._set_U_prob()
+        """
+
+        if hasattr(self, "U_prob"):
+            raise AttributeError(
+                "Cannot reset this attribute after initialization, as other "
+                "attributes are tied to it."
+                )
+        
+        if U_prob < 0 or U_prob > 1:
+            raise ValueError("U_prob must be between 0 and 1, inclusively.")
+        self.U_prob = U_prob
 
 
     def set_num_cycles_adj(self, num_cycles=1):
@@ -160,16 +179,6 @@ class GaborSequenceGenerator(data.Dataset):
         self.size_ran = size_ran
 
 
-    def set_U_prob(self, U_prob=0):
-        """
-        self.set_U_prob()
-        """
-        
-        if U_prob < 0 or U_prob > 1:
-            raise ValueError("U_prob must be between 0 and 1, inclusively.")
-        self.U_prob = U_prob
-
-
     def set_transform(self, transform=None):
         """
         set_transform()
@@ -191,7 +200,7 @@ class GaborSequenceGenerator(data.Dataset):
         """
         
         if not hasattr(self, "_mean_oris"):
-            self._mean_oris = np.arange(0, 360, 360 / self.num_mean_oris)
+            self._mean_oris = gabor_utils.get_mean_oris(self.num_mean_oris)
         return self._mean_oris
 
 
@@ -202,7 +211,7 @@ class GaborSequenceGenerator(data.Dataset):
         """
         
         if not hasattr(self, "_mean_oris_U"):
-            self._mean_oris_U = (self.mean_oris + U_ADJ) % 360 
+            self._mean_oris_U = gabor_utils.get_mean_U_oris(self.mean_oris) 
         return self._mean_oris_U
 
 
@@ -217,7 +226,7 @@ class GaborSequenceGenerator(data.Dataset):
                 mean_oris = np.concatenate([self.mean_oris, self.mean_oris_U])
             else:
                 mean_oris = self.mean_oris
-            self._all_mean_oris = np.unique(mean_oris)
+            self._all_mean_oris = np.sort(np.unique(mean_oris))
         return self._all_mean_oris
 
 
@@ -228,7 +237,7 @@ class GaborSequenceGenerator(data.Dataset):
         """
         
         if not hasattr(self, "_base_seq"):
-            self._base_seq = ["A", "B", "C", "D"]
+            self._base_seq = copy.deepcopy(gabor_utils.BASE_SEQ)
             if self.gray:
                 self._base_seq.append("G")
         return self._base_seq
@@ -280,32 +289,41 @@ class GaborSequenceGenerator(data.Dataset):
 
 
     @property
-    def image_type_labels(self):
+    def class_dict_encode(self):
         """
-        self.image_type_labels
-        """
+        self.class_dict_encode
 
-        if not hasattr(self, "_image_type_labels"):
-            image_type_labels_dict = dict()
-            for i, key in enumerate(self.image_type_dict.keys()):
-                image_type_labels_dict[key] = i
-            self._image_type_labels = image_type_labels_dict
-        return self._image_type_labels
+        from class name to label
+        """
         
+        if not hasattr(self, "_class_dict_encode"):
+            self._class_dict_encode = \
+                gabor_utils.get_image_class_and_label_dict(
+                    num_mean_oris=self.num_mean_oris, 
+                    gray=self.gray, 
+                    U_prob=self.U_prob, 
+                    diff_U_possizes=self.diff_U_possizes,
+                    class_to_label=True
+                    )
+
+        return self._class_dict_encode
+
 
     @property
-    def image_label_types(self):
+    def class_dict_decode(self):
         """
-        self.image_label_types
-        """
-        
-        if not hasattr(self, "_image_label_types"):
-            image_label_types_dict = dict()
-            for key, val in self.image_type_labels.items():
-                image_label_types_dict[val] = key
-            self._image_label_types = image_label_types_dict
-        return self._image_label_types
+        self.class_dict_decode
 
+        from class label to name
+        """
+
+        if not hasattr(self, "_class_dict_decode"):
+            self._class_dict_decode = {
+                label: im_cl for im_cl, label in self.class_dict_encode.items()
+                }
+
+        return self._class_dict_decode
+        
 
     @property
     def positions(self):
@@ -444,28 +462,34 @@ class GaborSequenceGenerator(data.Dataset):
         return seq_image_idxs
 
 
-    def image_to_image_label(self, seq_images):
+    def image_class_to_label(self, seq_images, seq_image_mean_oris):
         """
-        self.image_to_image_label(seq_images)
+        self.image_class_to_label(seq_images, seq_image_mean_oris)
         """
 
-        seq_image_labels = np.asarray(
-            [self.image_type_labels[i] for i in seq_images]
+        seq_image_labels = gabor_utils.image_class_to_label(
+            self.class_dict_encode, 
+            seq_images, 
+            seq_image_mean_oris, 
+            class_to_label=True
             )
 
         return seq_image_labels
 
 
-    def image_label_to_image(self, seq_image_labels):
+    def image_label_to_class(self, seq_labels, seq_unexp=None):
         """
-        self.image_label_to_image(seq_image_labels)
+        self.image_label_to_class(seq_labels)
         """
-        
-        seq_image_labels = [
-            self.image_label_types[i] for i in seq_image_labels
-        ]
-        
-        return seq_image_labels
+
+        seq_classes = gabor_utils.image_label_to_class(
+            self.class_dict_decode, 
+            seq_labels, 
+            label_to_class=True,
+            seq_unexp=seq_unexp
+            )
+
+        return seq_classes
 
 
     def _replace_Ds_with_Us(self, seq_images):
@@ -525,7 +549,7 @@ class GaborSequenceGenerator(data.Dataset):
                 mean_ori = self.sample_mean_ori()
             ori = mean_ori
             if seq_image == "U":
-                ori = (mean_ori + U_ADJ) % 360
+                ori = (mean_ori + gabor_utils.U_ADJ) % 360
             elif seq_image == "G":
                 ori = np.nan
             image_mean_oris.append(ori)
@@ -693,17 +717,18 @@ class GaborSequenceGenerator(data.Dataset):
             gabor_seq = np.repeat(gabor_seq, self.gab_img_len, axis=0)
 
         # Retrieve labels
-        seq_image_labels = self.image_to_image_label(seq_images)
-        seq_labels = np.vstack([seq_image_labels, seq_image_mean_oris]).T
-        seq_labels = np.repeat(seq_labels, self.gab_img_len, axis=0)
+        seq_labels = self.image_class_to_label(seq_images, seq_image_mean_oris)
+        seq_unexp_labels = gabor_utils.get_unexp(seq_images)
+        seq_ext_labels = np.vstack([seq_labels, seq_unexp_labels]).T
+        seq_ext_labels = np.repeat(seq_ext_labels, self.gab_img_len, axis=0)
 
         # Randomly shift the start point
         if self.roll and self.shift_frames and self.gab_img_len > 1:
             shift = np.random.choice(self.gab_img_len)
             gabor_seq = gabor_seq[shift : shift + self.full_len]
-            seq_labels = seq_labels[shift : shift + self.full_len]
+            seq_ext_labels = seq_ext_labels[shift : shift + self.full_len]
         
-        return gabor_seq, seq_labels
+        return gabor_seq, seq_ext_labels
 
 
     def generate_sequences(self):
@@ -711,7 +736,7 @@ class GaborSequenceGenerator(data.Dataset):
         self.generate_sequences()
         """
 
-        gabor_seq, seq_labels = self._generate_sequence()
+        gabor_seq, seq_ext_labels = self._generate_sequence()
 
         gabor_seq = [
             Image.fromarray(gabor_img, mode="RGB") for gabor_img in gabor_seq
@@ -728,7 +753,7 @@ class GaborSequenceGenerator(data.Dataset):
         gabor_seq = torch.stack(gabor_seq, 0)
 
          # Convert to torch 
-        seq_labels = torch.from_numpy(seq_labels)
+        seq_ext_labels = torch.from_numpy(seq_ext_labels)
 
         # Cut into sequences
         if self.mode == "test" and self.supervised:
@@ -738,7 +763,7 @@ class GaborSequenceGenerator(data.Dataset):
 
         seq_idx = self.get_sequence_idxs(get_num_seq=get_num_seq)
         gabor_seq = gabor_seq[seq_idx] # N_all x SL x C x H x W
-        seq_labels = seq_labels[seq_idx]
+        seq_ext_labels = seq_ext_labels[seq_idx]
 
         # Move color dimension
         gabor_seq = torch.moveaxis(gabor_seq, 2, 1)
@@ -746,16 +771,16 @@ class GaborSequenceGenerator(data.Dataset):
         if self.mode == "test" and self.supervised:
             # SUB_B x N x C x SL x H x W
             gabor_seq = gabor_seq[self.sub_batch_idxs]
-            seq_labels = seq_labels[self.sub_batch_idxs]
+            seq_ext_labels = seq_ext_labels[self.sub_batch_idxs]
 
-        return gabor_seq, seq_labels
+        return gabor_seq, seq_ext_labels
 
 
     def __getitem__(self, ix):
-        gabor_seq, seq_labels = self.generate_sequences()
+        gabor_seq, seq_ext_labels = self.generate_sequences()
         
         if self.return_label:
-            return gabor_seq, seq_labels
+            return gabor_seq, seq_ext_labels
         else:
             return gabor_seq
 

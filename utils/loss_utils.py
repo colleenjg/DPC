@@ -1,12 +1,19 @@
+#!/usr/bin/env python
+
+import argparse
 from collections import deque
 import json
 import logging
 from pathlib import Path
+import sys
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+
+sys.path.extend(["..", str(Path("..", "utils"))])
+from utils import misc_utils
 
 logger = logging.getLogger(__name__)
 
@@ -86,14 +93,29 @@ class AccuracyTable(object):
 class ConfusionMeter(object):
     """Compute and show confusion matrix"""
 
-    def __init__(self, num_class):
-        self.num_class = num_class
-        self.mat = np.zeros((num_class, num_class))
+    def __init__(self, class_names=None, num_classes=5):
+
+        self.reinitialize_values(class_names, num_classes=num_classes)
+
+    def reinitialize_values(self, class_names=None, num_classes=5):
+        if class_names is not None:
+            num_classes = len(class_names)
+
+        self.num_classes = num_classes
+        self.set_class_names(class_names)
+        self.mat = np.zeros((num_classes, num_classes)).astype(int)
         self.precision = []
         self.recall = []
 
+    def set_class_names(self, class_names=None):
+        if class_names is not None and (len(class_names) != self.num_classes):
+            raise ValueError(
+                f"Number of class names ({len(class_names)}) does not match "
+                f"'self.num_classes' ({self.num_classes})"
+                )
+        self.class_names = class_names
+
     def update(self, pred, target):
-        pred, target = pred.cpu().numpy(), target.cpu().numpy()
         pred = np.squeeze(pred)
         target = np.squeeze(target)
         for p, t in zip(pred.flat, target.flat):
@@ -102,7 +124,54 @@ class ConfusionMeter(object):
     def log_mat(self):
         logger.info(f"Confusion Matrix (target in columns):\n{self.mat}")
 
-    def plot_mat(self, path, dictionary=None, annotate=False):
+    def annotate(self, ax):
+        height, width = self.mat.shape
+        for x in range(width):
+            for y in range(height):
+                ax.annotate(
+                    str(int(self.mat[x][y])), xy=(y+1, x+1),
+                    horizontalalignment="center", 
+                    verticalalignment="center", fontsize=8
+                    )
+
+    def add_labels(self, ax, label_dict=None, secondary=False):
+        height, width = self.mat.shape
+        if label_dict is None:
+            xtick_diff = min(np.diff(ax.get_xticks()))
+            if xtick_diff < 1:
+                ax.set_xticks(np.arange(width) + 1)
+            ytick_diff = min(np.diff(ax.get_yticks()))
+            if ytick_diff < 1:
+                ax.set_yticks(np.arange(height) + 1)
+        else:
+            ticks = np.sort(list(label_dict.keys()))
+            n_ticks = len(ticks)
+            fontsize = 10
+            fact = 8 if secondary else 13
+            if n_ticks >= fact:
+                fontsize = np.max([np.min([10, int(10 - n_ticks / fact)]), 1])
+
+            ax_x, ax_y = ax, ax
+            x_rotation = "vertical"
+            if secondary:
+                ax_x = ax.secondary_xaxis("top")
+                ax_y = ax.secondary_yaxis("right")
+                ax_x.tick_params(axis="x", top=False, pad=0.2)
+                ax_y.tick_params(axis="y", right=False, pad=0.2)
+                x_rotation = None
+
+            ax_x.set_xticks(
+                ticks + 1, [label_dict[i] for i in ticks], rotation=x_rotation, 
+                fontsize=fontsize, 
+                )
+            
+            ax_y.set_yticks(
+                ticks + 1, [label_dict[i] for i in ticks], fontsize=fontsize, 
+                )
+
+    def plot_mat(self, path=None, incl_class_names=True, annotate=False, 
+                 **cbar_kwargs):
+
         fig, ax = plt.subplots()
         im = ax.imshow(self.mat,
             cmap=plt.cm.jet,
@@ -114,40 +183,76 @@ class ConfusionMeter(object):
                 0.5
                 )
             )
-        height, width = self.mat.shape
+        
         if annotate:
-            for x in range(width):
-                for y in range(height):
-                    ax.annotate(
-                        str(int(self.mat[x][y])), xy=(y+1, x+1),
-                        horizontalalignment="center", 
-                        verticalalignment="center", fontsize=8
-                        )
+            self.annotate(ax)
 
-        if dictionary is None:
-            xtick_diff = min(np.diff(ax.get_xticks()))
-            if xtick_diff < 1:
-                ax.set_xticks(np.arange(width) + 1)
-            ytick_diff = min(np.diff(ax.get_yticks()))
-            if ytick_diff < 1:
-                ax.set_yticks(np.arange(height) + 1)
-        else:
-            ax.set_xticks(
-                np.arange(width) + 1, [dictionary[i] for i in range(width)],
-                rotation="vertical"
-                )
-            ax.set_yticks(
-                np.arange(height) + 1, [dictionary[i] for i in range(height)]
-                )
+        label_dict = None
+        warn_slow = False
+        if incl_class_names:
+            if self.class_names is None:
+                raise ValueError(
+                    "Cannot include class names, as self.class_names is "
+                    "not set."
+                    )
+            label_dict = {i: cl for i, cl in enumerate(self.class_names)}
+            n_labels = len(label_dict)
+            if n_labels > 60:
+                warn_slow = True
+
+        self.add_labels(ax, label_dict=label_dict)
 
         ax.set_xlabel("Ground Truth")
         ax.set_ylabel("Prediction")
         
-        cm = fig.colorbar(im)
+        cm = fig.colorbar(im, **cbar_kwargs)
         cm.set_label("Counts", rotation=270, labelpad=18)
         
-        fig.savefig(path, format="svg", bbox_inches="tight", dpi=600)
-        plt.close(fig)
+        if path is None:
+            return fig
+        else:
+            if warn_slow:
+                logger.warning(
+                    "Saving confusion matrix to svg with class labels may be "
+                    f"slow, as this corresponds to {n_labels} labels per axis."
+                    )
+            Path(path).parent.mkdir(exist_ok=True, parents=True)
+            fig.savefig(path, format="svg", bbox_inches="tight", dpi=600)
+            plt.close(fig)
+    
+    def get_storage_dict(self):
+        """
+        self.get_storage_dict(storage_dict)
+        """
+
+        storage_dict = dict()
+        storage_dict["num_classes"] = self.num_classes
+        storage_dict["class_names"] = self.class_names
+        storage_dict["precision"] = self.precision
+        storage_dict["recall"] = self.recall
+
+        idx = np.where(self.mat != 0)
+        vals = self.mat[idx].astype(int).tolist()
+        idx = tuple([ax_idx.tolist() for ax_idx in idx])
+        storage_dict["mat_sparse"] = [idx, vals]
+
+        return storage_dict
+
+    def load_from_storage_dict(self, storage_dict):
+        """
+        self.load_from_storage_dict(storage_dict)
+        """
+
+        self.reinitialize_values(
+            storage_dict["class_names"], 
+            num_classes=storage_dict["num_classes"]
+            )
+        self.precision = storage_dict["precision"]
+        self.recall = storage_dict["recall"]
+
+        idx, vals = storage_dict["mat_sparse"]
+        idx = tuple([np.asarray(ax_idx) for ax_idx in idx])
+        self.mat[idx] = np.asarray(vals)
 
 
 #############################################
@@ -277,10 +382,13 @@ def get_dim_per_GPU(output, main_shape):
 
 
 #############################################
-def calc_chance(output, main_shape, acc_avg_HW=False):
+def calc_chance(output, main_shape, spatial_avg=False):
+    """
+    calc_chance(output, main_shape)
+    """
 
     dims_per_GPU = get_dim_per_GPU(output, main_shape)
-    if acc_avg_HW:
+    if spatial_avg:
         dims_per_GPU = dims_per_GPU[:1] # remove HW dim
     chance = 1 / np.product(dims_per_GPU)
 
@@ -288,18 +396,19 @@ def calc_chance(output, main_shape, acc_avg_HW=False):
 
 
 #############################################
-def calc_avg_acr_HW(values, main_shape):
+def calc_spatial_avg(values, main_shape):
     """
-    calc_avg_acr_HW(values, main_shape)
+    calc_spatial_avg(values, main_shape)
     """
     
+    B, PS, HW = main_shape
+
     if len(values.shape) == 2: # output
-        B, PS, HW = main_shape
         B_per, _, _ = get_dim_per_GPU(values, main_shape)
         reshape_tuple = (B, PS, HW, B_per, PS, HW)
 
-        values = values.reshape(reshape_tuple)
-        values = values.float().mean(axis=(2, 5)) # mean across HW dimension
+        # take spatial mean (across HW dimension)
+        values = values.reshape(reshape_tuple).mean(axis=(2, 5))
         values = values.reshape(B * PS, B_per * PS)
 
     elif len(values.shape) == 1: # target
@@ -318,16 +427,18 @@ def calc_avg_acr_HW(values, main_shape):
 
 
 #############################################
-def get_predictions(output, keep_topk=1, acc_avg_HW=False, main_shape=None):
+def get_predictions(output, keep_topk=1, spatial_avg=False, main_shape=None):
     """
     get_predictions(output)
     """
 
-    if acc_avg_HW:
+    if spatial_avg:
         if main_shape is None:
-            raise ValueError("If 'acc_avg_HW' is True, must pass 'main_shape'.")
+            raise ValueError(
+                "If 'spatial_avg' is True, must pass 'main_shape'."
+                )
 
-        output = calc_avg_acr_HW(output, main_shape)
+        output = calc_spatial_avg(output, main_shape)
 
     _, pred = output.topk(keep_topk, 1, True, True)
     pred = pred.t()
@@ -336,7 +447,7 @@ def get_predictions(output, keep_topk=1, acc_avg_HW=False, main_shape=None):
 
 
 #############################################
-def calc_topk_accuracy(output, target, topk=(1,), acc_avg_HW=False, 
+def calc_topk_accuracy(output, target, topk=(1,), spatial_avg=False, 
                        main_shape=None):
     """
     calc_topk_accuracy(output, target)
@@ -350,12 +461,12 @@ def calc_topk_accuracy(output, target, topk=(1,), acc_avg_HW=False,
     """
 
     pred = get_predictions(
-        output, keep_topk=max(topk), acc_avg_HW=acc_avg_HW, 
+        output, keep_topk=max(topk), spatial_avg=spatial_avg, 
         main_shape=main_shape
         )
 
-    if acc_avg_HW:
-        target = calc_avg_acr_HW(target, main_shape)
+    if spatial_avg:
+        target = calc_spatial_avg(target, main_shape)
 
     batch_size = target.size(0)
 
@@ -370,7 +481,7 @@ def calc_topk_accuracy(output, target, topk=(1,), acc_avg_HW=False,
 
 #############################################
 def update_topk_meters(topk_meters, output, target, ks=[1, 3, 5], 
-                       acc_avg_HW=False, main_shape=None):
+                       spatial_avg=False, main_shape=None):
     """
     update_topk_meters(topk_meters, output, target)
     """
@@ -381,7 +492,7 @@ def update_topk_meters(topk_meters, output, target, ks=[1, 3, 5],
             )
 
     top_vals = calc_topk_accuracy(
-        output, target, ks, acc_avg_HW=acc_avg_HW, main_shape=main_shape
+        output, target, ks, spatial_avg=spatial_avg, main_shape=main_shape
         )
 
     for t, top_val in enumerate(top_vals):
@@ -448,13 +559,11 @@ def init_loss_dict(direc=".", ks=[1, 3, 5], val=True, supervised=False,
     topk_keys = [f"top{k}" for k in ks]
     shared_keys = ["epoch_n", "loss", "acc"] + topk_keys
 
-    if not supervised:
-        shared_keys.append("sup_target_by_batch")
-
     batch_keys = []
     if save_by_batch:
         batch_keys = [
-            "batch_epoch_n", "loss_by_batch", "loss_by_item", 
+            "batch_epoch_n", "avg_loss_by_batch", "loss_by_item", 
+            "sup_target_by_batch"
             ]
         if not light:
             batch_keys.extend(["output_by_batch", "target_by_batch"])
@@ -463,6 +572,8 @@ def init_loss_dict(direc=".", ks=[1, 3, 5], val=True, supervised=False,
         if main_key not in loss_dict.keys():
             loss_dict[main_key] = dict()
         sub_keys = shared_keys + batch_keys
+        if main_key == "val" and supervised:
+            sub_keys = sub_keys + ["confusion_matrix"]
         for key in sub_keys:
             if key not in loss_dict[main_key].keys():
                 loss_dict[main_key][key] = list()
@@ -470,6 +581,39 @@ def init_loss_dict(direc=".", ks=[1, 3, 5], val=True, supervised=False,
     return loss_dict
 
 
+#############################################
+def populate_loss_dict(src_dict, target_dict, append_confusion_matrices=True, 
+                       is_best=False):
+    """
+    populate_loss_dict(src_dict, target_dict)
+    """
+
+    conf_matrix_key = "confusion_matrix"
+
+    for key, value in src_dict.items():
+        if key not in target_dict.keys():
+            continue
+        if key == conf_matrix_key and not append_confusion_matrices:
+            continue
+         # append the full dictionary, only if it's the confusion matrix
+        if key == conf_matrix_key or not isinstance(value, dict):
+            target_dict[key].append(src_dict[key])  
+        elif isinstance(value, dict):
+            if not isinstance(target_dict[key], dict):
+                raise ValueError(
+                    "'src_dict' and 'target_dict' structures "
+                    "do not match."
+                    )
+            populate_loss_dict(value, target_dict[key])
+
+    # if not appending, check if it should be replaced
+    if conf_matrix_key in src_dict:
+        if not append_confusion_matrices:
+            target_dict[conf_matrix_key] = src_dict[conf_matrix_key]
+        if is_best:
+            target_dict["confusion_matrix_best"] = src_dict[conf_matrix_key]
+
+                            
 #############################################
 def plot_acc(sub_ax, data_dict, epoch_ns, chance=None, color="k", ls=None, 
              data_label="train"):
@@ -480,7 +624,7 @@ def plot_acc(sub_ax, data_dict, epoch_ns, chance=None, color="k", ls=None,
     if len(data_label) and data_label[-1] != " ":
         data_label = f"{data_label} "
 
-    acc_keys = sorted([key for key in data_dict.keys() if "top" in key])
+    acc_keys = sorted([key for key in data_dict.keys() if "top" in str(key)])
     if chance is not None:
         sub_ax.axhline(100 * chance, color="k", ls="dashed", alpha=0.8)
     for a, acc_key in enumerate(acc_keys):
@@ -502,25 +646,23 @@ def plot_batches(batch_ax, data_dict, epoch_ns, U_ax=None, data_label="train",
     plot_batches(batch_ax, loss_dict, epoch_ns)
     """
     
-    loss_by_batch = np.asarray(data_dict["loss_by_batch"]).T
-    n_batches = len(loss_by_batch)
+    avg_loss_by_batch = np.asarray(data_dict["avg_loss_by_batch"]).T
+    num_batches = len(avg_loss_by_batch)
     batch_cmap = mpl.cm.get_cmap(colors)
-    cmap_samples = np.linspace(1.0, 0.3, n_batches)
+    cmap_samples = np.linspace(1.0, 0.3, num_batches)
 
     if U_ax is not None:
-        target_key = "target_by_batch"
-        if "sup_target_by_batch" in data_dict.keys():
-            target_key = "sup_target_by_batch"
+        target_key = "sup_target_by_batch"
  
         freqs = []
-        for gfr in ["U", "D"]:
-            # retrieve only the Gabor frame (not orientations)
+        for image_type in ["U", "D"]:
+            # num_epochs x num_batches x B x N x SL x (image type, ori)
             freqs.append((
-                np.asarray(data_dict[target_key])[:, :, 0] == gfr
+                np.asarray(data_dict[target_key])[:, :, ..., 0] == image_type
                 ).astype(float).mean(axis=(2, 3, 4)).T)
         U_freqs_over_DU = freqs[0] / (freqs[0] + freqs[1]) * 100
 
-    for b, batch_losses in enumerate(loss_by_batch):
+    for b, batch_losses in enumerate(avg_loss_by_batch):
         batch_color = batch_cmap(cmap_samples[b])
         label = data_label if b == 0 and len(data_label) else None
         batch_ax.plot(
@@ -534,7 +676,7 @@ def plot_batches(batch_ax, data_dict, epoch_ns, U_ax=None, data_label="train",
             )
     
     batch_ax.plot(
-        epoch_ns, loss_by_batch.mean(axis=0), color="k", alpha=0.6, lw=2.5, 
+        epoch_ns, avg_loss_by_batch.mean(axis=0), color="k", alpha=0.6, lw=2.5, 
         )
     if U_ax is not None:
         U_ax.plot(
@@ -560,7 +702,8 @@ def plot_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
 
     chance = None if num_classes is None else 1 / num_classes
 
-    plot_seq = by_batch and "gabors" in dataset.lower()
+    dataset = misc_utils.normalize_dataset_name(dataset)
+    plot_seq = by_batch and (dataset == "Gabors")
     nrows = 1 + int(plot_seq) if by_batch else 2
     ncols = len(datatypes) if by_batch else 1
     fig, ax = plt.subplots(
@@ -613,7 +756,7 @@ def plot_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
             sub_ax.legend(fontsize="small")
         sub_ax.spines["right"].set_visible(False)
         sub_ax.spines["top"].set_visible(False)
-        if "gabors" in dataset.lower() and unexp_epoch < max(epoch_ns):
+        if dataset == "Gabors" and unexp_epoch < max(epoch_ns):
             sub_ax.axvspan(
                 unexp_epoch, max(epoch_ns), color="k", alpha=0.1, lw=0
                 )
@@ -631,46 +774,241 @@ def plot_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
 
 
 #############################################
+def save_loss_dict_plot(loss_dict, output_dir=".", seed=None, dataset="UCF101", 
+                        unexp_epoch=10, num_classes=None):
+    """
+    save_loss_dict_plot(loss_dict)
+    """
+
+    dataset = misc_utils.normalize_dataset_name(dataset)
+
+    savename = "loss_data"
+
+    seed_str_pr = "" if seed is None else f" (seed {seed})"
+    unexp_str_pr = ""
+    if dataset == "Gabors":
+        unexp_str_pr = f" (unexp. epoch: {unexp_epoch})"
+
+    by_batches = [False]
+    if "avg_loss_by_batch" in loss_dict["train"].keys():
+        by_batches.append(True)
+
+    for by_batch in by_batches:
+        if by_batch:
+            batch_str = "_by_batch"
+            batch_str_pr = " (average by batch)"
+        else:
+            batch_str, batch_str_pr = "", ""
+
+        fig = plot_loss_dict(
+            loss_dict, num_classes=num_classes, dataset=dataset, 
+            unexp_epoch=unexp_epoch, by_batch=by_batch
+            )
+        title = (f"{dataset[0].capitalize()}{dataset[1:]} dataset"
+            f"{unexp_str_pr}{seed_str_pr}{batch_str_pr}")
+        fig.suptitle(title)
+
+        full_path = Path(output_dir, f"{savename}{batch_str}.svg")
+        fig.savefig(full_path, bbox_inches="tight")
+
+
+#############################################
 def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101", 
-                   unexp_epoch=10, plot=True, num_classes=None):
+                   unexp_epoch=10, num_classes=None, plot=True):
     """
     save_loss_dict(loss_dict)
     """
-
-    seed_str_pr = ""
-    if seed is not None:
-        seed_str_pr = f" (seed {seed})"
-
-    unexp_str_pr = ""
-    if "gabors" in dataset.lower():
-        unexp_str_pr = f" (unexp. epoch: {unexp_epoch})"
-
-    savename = "loss_data"
+    
     full_path = Path(output_dir, f"loss_data.json")
         
     with open(full_path, "w") as f:
         json.dump(loss_dict, f)
 
     if plot:
-        by_batches = [False]
-        if "loss_by_batch" in loss_dict["train"].keys():
-            by_batches.append(True)
+        save_loss_dict_plot(
+            loss_dict,
+            output_dir=output_dir,
+            seed=seed,
+            dataset=dataset,
+            unexp_epoch=unexp_epoch,
+            num_classes=num_classes
+        )
 
-        for by_batch in by_batches:
-            if by_batch:
-                batch_str = "_by_batch"
-                batch_str_pr = " (by batch)"
-            else:
-                batch_str, batch_str_pr = "", ""
 
-            fig = plot_loss_dict(
-                loss_dict, num_classes=num_classes, dataset=dataset, 
-                unexp_epoch=unexp_epoch, by_batch=by_batch
+#############################################
+def get_loss_plot_kwargs(hp_dict, num_classes=None):
+    """
+    get_loss_plot_kwargs(hp_dict)
+    """
+    
+    loss_dict_kwargs = dict()
+    dataset = hp_dict["dataset"]["dataset"]
+    dataset = misc_utils.normalize_dataset_name(dataset)
+    loss_dict_kwargs["dataset"] = dataset
+
+    if num_classes is None and hp_dict["model"]["supervised"]:
+        if dataset == "Gabors":
+            from utils.gabor_utils import NUM_MEAN_ORIS, get_num_classes
+            num_classes = get_num_classes(
+                num_mean_oris=NUM_MEAN_ORIS,
+                gray=hp_dict["dataset"]["gray"],
+                U_prob=hp_dict["dataset"]["U_prob"],
+                diff_U_possizes=hp_dict["dataset"]["diff_U_possizes"]
+            )
+            logger.warning(
+                f"Inferred number of Gabor classes: {num_classes}."
                 )
-            title = (f"{dataset[0].capitalize()}{dataset[1:]} dataset"
-                f"{unexp_str_pr}{seed_str_pr}{batch_str_pr}")
-            fig.suptitle(title)
+        else:
+            num_classes = misc_utils.get_num_classes(
+                dataset_name=dataset
+                )
 
-            full_path = Path(output_dir, f"{savename}{batch_str}.svg")
-            fig.savefig(full_path, bbox_inches="tight")
+    elif num_classes is not None:
+        num_classes = int(num_classes)
+    
+    loss_dict_kwargs["num_classes"] = num_classes
+    if "unexp_epoch" in hp_dict["dataset"].keys():
+        loss_dict_kwargs["unexp_epoch"] = hp_dict["dataset"]["unexp_epoch"]
 
+    return loss_dict_kwargs
+
+
+#############################################
+def plot_conf_mat(conf_mat, mode="val", suffix="", output_dir=".", 
+                  **plot_mat_kwargs):
+    """
+    plot_conf_mat(conf_mat)
+    """
+
+    suffix_str = f"_{suffix}" if len(suffix) else ""
+    save_name = f"{mode}_confusion_matrix{suffix_str}.svg"
+    conf_mat_path = Path(output_dir, save_name)
+    
+    conf_mat.plot_mat(conf_mat_path, **plot_mat_kwargs)
+
+
+#############################################
+def load_replot_conf_mat(conf_mat_dict, mode="val", suffix="", 
+                         omit_class_names=False, output_dir="."):
+    """
+    load_replot_conf_mat(conf_mat_dict)
+    """
+
+    if not isinstance(conf_mat_dict, dict):
+        raise RuntimeError(f"Expected {conf_mat_dict} to be a dictionary.")
+    
+    plot_mat_kwargs = dict()
+    if "mean_oris" in conf_mat_dict.keys():
+        from utils.gabor_utils import GaborsConfusionMeter
+        conf_mat = GaborsConfusionMeter(conf_mat_dict["class_names"])
+    else:
+        conf_mat = ConfusionMeter(conf_mat_dict["class_names"])
+        plot_mat_kwargs["incl_class_names"] = not(omit_class_names)
+
+    conf_mat.load_from_storage_dict(conf_mat_dict)
+
+    plot_conf_mat(
+        conf_mat, mode=mode, suffix=suffix, output_dir=output_dir, 
+        **plot_mat_kwargs
+        )
+
+
+#############################################
+def plot_conf_mats(loss_dict, epoch_n=-1, omit_class_names=False, 
+                   output_dir="."):
+    """
+    plot_conf_mats(loss_dict)
+    """
+    
+    for mode, mode_dict in loss_dict.items():
+        if "confusion_matrix" in mode_dict.keys():
+            conf_mat_dict = mode_dict["confusion_matrix"]
+            if isinstance(conf_mat_dict, list):
+                if epoch_n == -1:
+                    conf_mat_dict = conf_mat_dict[-1]
+                    suffix = ""
+                elif epoch_n in mode_dict["epoch_n"]:
+                    idx = mode_dict["epoch_n"].index(epoch_n)
+                    conf_mat_dict = conf_mat_dict[idx]
+                    suffix = f"ep_{epoch_n}"
+                else:
+                    raise ValueError(
+                        f"No confusion matrix found for epoch {epoch_n} "
+                        f"(mode {mode})."
+                        )
+            load_replot_conf_mat(
+                conf_mat_dict, mode=mode, suffix=suffix, 
+                omit_class_names=omit_class_names, output_dir=output_dir
+                )
+
+
+        if "confusion_matrix_best" in mode_dict.keys():
+            load_replot_conf_mat(
+                mode_dict["confusion_matrix_best"], 
+                mode=mode, 
+                suffix="best", 
+                omit_class_names=omit_class_names,
+                output_dir=args.output_dir
+                )
+
+
+#############################################
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+
+    # replot from loss dictionary
+    parser.add_argument("--model_direc", default=None,
+        help=("directory in which loss dictionary and hyperparameters are "
+            "stored, for replotting loss"))
+    parser.add_argument("--file_suffix", default="",
+        help="suffix, if any, of the loss dictionary and hyperparameter files.")
+    parser.add_argument("--num_classes", default=None,
+        help=("number of classes to use for plotting chance. If None, it is "
+            "inferred from the dataset name information, for supervised "
+            "settings."))
+
+    # replot confusion matrix
+    parser.add_argument("--conf_mat_epoch_n", default=-1, type=int,
+        help="epoch for which to plot confusion matrix, if applicable.")
+    parser.add_argument("--omit_class_names", action="store_true", 
+        help=("if True, class names are omitted (greatly reduces svg save "
+            "time, if there are many classes)."))
+
+
+    parser.add_argument("--output_dir", default=None, 
+        help=("directory in which to save files. If None, it is inferred from "
+        "another path argument)"))
+    parser.add_argument('--log_level', default='info', 
+                        help='logging level, e.g., debug, info, error')
+    args = parser.parse_args()
+
+    misc_utils.get_logger_with_basic_format(level=args.log_level)
+
+    if args.model_direc is not None:
+        loss_dict, hp_dict = misc_utils.load_loss_hyperparameters(
+            args.model_direc, suffix=args.file_suffix
+            )
+
+        loss_plot_kwargs = get_loss_plot_kwargs(
+            hp_dict, num_classes=args.num_classes
+            )
+
+        if args.output_dir is None:
+            args.output_dir = args.model_direc
+
+        # plot and save loss
+        save_loss_dict_plot(
+            loss_dict, output_dir=args.output_dir, **loss_plot_kwargs
+            )
+
+        # plot and save confusion matrix
+        plot_conf_mats(
+            loss_dict, 
+            epoch_n=args.conf_mat_epoch_n, 
+            omit_class_names=args.omit_class_names, 
+            output_dir=args.output_dir
+            )
+
+    else:
+        breakpoint()

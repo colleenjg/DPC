@@ -7,6 +7,7 @@ from torch.utils import data
 from torchvision import transforms
 
 from dataset import augmentations, dataset_3d, gabor_stimuli
+from utils import misc_utils
 
 
 logger = logging.getLogger(__name__)
@@ -24,26 +25,27 @@ def worker_init_fn(worker_id):
 
 
 #############################################
-def get_transform(dataset, img_dim=256, mode="train", no_transforms=False):
+def get_transform(dataset, img_dim=256, mode="train", no_transforms=False, 
+                  allow_flip=True):
     """
     get_transform(dataset)
     """
 
     if dataset is not None:
-        dataset = dataset_3d.normalize_dataset_name(dataset)
+        dataset = misc_utils.normalize_dataset_name(dataset)
 
     if no_transforms:
-        transform = transforms.Compose([
+        transform_list = [
             augmentations.Scale(size=(img_dim, img_dim)),
             augmentations.ToTensor(),
             augmentations.Normalize(),
-        ])
+        ]
 
     elif dataset in ["UCF101", "HMDB51", "MouseSim", "Gabors"]: 
         # designed for ucf101 and hmdb51: 
         # short size is 256 for ucf101, and 240 for hmdb51 
         # -> rand crop to 224 x 224 -> scale to img_dim x img_dim 
-        transform = transforms.Compose([
+        transform_list = [
             augmentations.RandomHorizontalFlip(consistent=True),
             augmentations.RandomCrop(size=224, consistent=True),
             augmentations.Scale(size=(img_dim, img_dim)),
@@ -53,12 +55,15 @@ def get_transform(dataset, img_dim=256, mode="train", no_transforms=False):
                 ),
             augmentations.ToTensor(),
             augmentations.Normalize(),
-        ])
+        ]
+
+        if dataset == "Gabors":
+            allow_flip = False
 
     elif dataset == "Kinetics400": 
         # designed for kinetics400:
         # short size=150 -> rand crop to img_dim x img_dim
-        transform = transforms.Compose([
+        transform_list = [
             augmentations.RandomSizedCrop(size=img_dim, consistent=True, p=1.0),
             augmentations.RandomHorizontalFlip(consistent=True),
             augmentations.RandomGray(consistent=False, p=0.5),
@@ -67,7 +72,21 @@ def get_transform(dataset, img_dim=256, mode="train", no_transforms=False):
                 ),
             augmentations.ToTensor(),
             augmentations.Normalize(),
-        ])
+        ]
+    
+    elif dataset == "Gabors":
+        # no flip (to maintain orientations)
+        # -> rand crop to 224 x 224 -> scale to img_dim x img_dim 
+        transform_list = [
+            augmentations.RandomCrop(size=224, consistent=True),
+            augmentations.Scale(size=(img_dim, img_dim)),
+            augmentations.RandomGray(consistent=False, p=0.5),
+            augmentations.ColorJitter(
+                brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0
+                ),
+            augmentations.ToTensor(),
+            augmentations.Normalize(),
+        ]    
 
     elif dataset is None: # e.g., used for supervised learning
         if mode in ["train", "val"]:
@@ -75,7 +94,7 @@ def get_transform(dataset, img_dim=256, mode="train", no_transforms=False):
             bright_cont_sat = 0.5 if mode == "train" else 0.2
             hue = 0.25 if mode == "train" else 0.1
 
-            transform = transforms.Compose([
+            transform_list = [
                 augmentations.RandomSizedCrop(
                     consistent=True, size=224, p=crop_p
                     ),
@@ -91,22 +110,30 @@ def get_transform(dataset, img_dim=256, mode="train", no_transforms=False):
                     ),
                 augmentations.ToTensor(),
                 augmentations.Normalize(),
-            ])
+            ]
 
         elif mode == "test":
             # -> rand crop to 224 x 224 -> scale to img_dim x img_dim
-            transform = transforms.Compose([
+            transform_list = [
                 augmentations.RandomSizedCrop(consistent=True, size=224, p=0.0),
                 augmentations.Scale(size=(img_dim, img_dim)),
                 augmentations.ToTensor(),
                 augmentations.Normalize(),
-            ])
+            ]
         
         else:
             raise ValueError("mode must be 'train', 'val' or 'test'.")
     
     else:
         raise ValueError(f"{dataset} dataset is not recognized.")
+    
+    if not allow_flip: # remove any flips
+        transform_list = [
+            transform for transform in transform_list 
+            if not isinstance(transform, augmentations.RandomHorizontalFlip)
+        ]
+
+    transform = transforms.Compose(transform_list)
 
     return transform
     
@@ -124,12 +151,18 @@ def get_dataloader(data_path_dir="process_data", transform=None,
     
     logger.info(f"Loading {mode} data...", extra={"spacing": "\n"})
 
-    dataset = dataset_3d.normalize_dataset_name(dataset)
+    dataset = misc_utils.normalize_dataset_name(dataset)
+
+    if mode == "test" and not supervised:
+        raise ValueError(
+            "'test' mode can only be used in a supervised context."
+            )
 
     drop_last = True
     if transform == "default":
         transform = get_transform(
-            dataset, img_dim, mode=mode, no_transforms=no_transforms
+            dataset, img_dim, mode=mode, no_transforms=no_transforms,
+            allow_flip=(dataset != "Gabors")
             )
 
     if dataset == "Kinetics400":
@@ -187,9 +220,18 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             ) 
 
     elif dataset == "Gabors":
+        use_mode = mode
+        if mode == "test":
+            logger.warning(
+                "Gabors dataset will be set to 'val' mode for testing, as the "
+                "'test' mode has not been implemented with single supervised "
+                "targets per full length test sequence."
+                )
+            use_mode = "val"
+
         dataset = gabor_stimuli.GaborSequenceGenerator(
             unexp=False,
-            mode=mode,
+            mode=use_mode,
             transform=transform,
             seq_len=seq_len,
             num_seq=num_seq,

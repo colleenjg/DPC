@@ -17,10 +17,8 @@ sys.path.extend([
     "..", 
     str(Path("..", "..")), 
     str(Path("..", "..", "utils")), 
-    str(Path("..", "..", "dataset"))
     ])
 from utils import misc_utils, training_utils
-from dataset import dataset_3d
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +210,7 @@ def extract_videos_opencv(v_root, f_root, dim=None, video_ext="avi",
     """
     extract_videos_opencv(v_root, f_root)
 
-    Extracts frames from a dataset's videos, for one action class at a time.
+    Extracts frames from a dataset's videos, for one class at a time.
 
     Required args:
         - v_root (Path):
@@ -233,14 +231,14 @@ def extract_videos_opencv(v_root, f_root, dim=None, video_ext="avi",
             ("left" or "right")
             default: False
         - parallel (bool):
-            if True, frames for different videos for an action class are 
-            extracted in parallel
+            if True, frames for different videos for a class are extracted in 
+            parallel
             default: True
     
     Returns:
         - all_success_code (list):
-            nested list of success codes for videos from each action 
-            directories (action class x video), where values of 
+            nested list of success codes for videos from each class 
+            directory (class x video), where values of 
             1.0 indicate a fully successful extraction, 
             0.5 indicate a partial extraction and 
             0.0 indicate a failed extraction
@@ -265,13 +263,13 @@ def extract_videos_opencv(v_root, f_root, dim=None, video_ext="avi",
         v_paths = glob.glob(str(Path(j, f"*.{video_ext}")))
         v_paths = sorted(v_paths)
 
-        v_class = Path(j).name # action class
+        v_class = Path(j).name # class name
         out_dir = Path(f_root, v_class)
         # if resuming, be sure to delete the last video folder, 
         # if the extraction was incomplete
         if out_dir.is_dir(): 
             logger.info(
-                f"{out_dir} already exists. Skipping {v_class} action class."
+                f"{out_dir} already exists. Skipping {v_class} class."
                 )
             continue
 
@@ -312,8 +310,8 @@ def main_UCF101(v_root, f_root=None, parallel=True):
             a default location is identified, based on v_root.
             default: None
         - parallel (bool):
-            if True, frames for different videos for an action class are 
-            extracted in parallel
+            if True, frames for different videos for a class are extracted in 
+            parallel
             default: True
     """
     
@@ -342,8 +340,8 @@ def main_HMDB51(v_root, f_root=None, parallel=True):
             a default location is identified, based on v_root.
             default: None
         - parallel (bool):
-            if True, frames for different videos for an action class are 
-            extracted in parallel
+            if True, frames for different videos for a class are extracted in 
+            parallel
             default: True
     """
     
@@ -376,8 +374,8 @@ def main_Kinetics400(v_root, f_root=None, dim=None, parallel=True):
             a default value of 150 is used.
             default: None
         - parallel (bool):
-            if True, frames for different videos for an action class are 
-            extracted in parallel
+            if True, frames for different videos for a class are extracted in 
+            parallel
             default: True
     """
     
@@ -418,8 +416,8 @@ def main_MouseSim(v_root, f_root=None, parallel=True):
             a default location is identified, based on v_root.
             default: None
         - parallel (bool):
-            if True, frames for different videos for an action class are 
-            extracted in parallel
+            if True, frames for different videos for a class are extracted in 
+            parallel
             default: True
     """
     
@@ -465,7 +463,7 @@ if __name__ == "__main__":
     misc_utils.get_logger_with_basic_format(level=args.log_level)
     parallel = not(args.not_parallel)
 
-    dataset = dataset_3d.normalize_dataset_name(args.dataset)
+    dataset = misc_utils.normalize_dataset_name(args.dataset)
 
     dim, dim_str = None, ""
     if dataset == "Kinetics400" and args.k400_big:

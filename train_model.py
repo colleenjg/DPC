@@ -10,9 +10,8 @@ import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
 
-from dataset import dataset_3d
 from model import model_3d, run_manager
-from utils import data_utils, misc_utils, training_utils
+from utils import data_utils, gabor_utils, misc_utils, training_utils
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +26,7 @@ def check_adjust_args(args):
     args = copy.deepcopy(args)
 
     # normalize the dataset name
-    args.dataset = dataset_3d.normalize_dataset_name(args.dataset, short=False)
+    args.dataset = misc_utils.normalize_dataset_name(args.dataset, short=False)
 
     # adjust Gabor arguments
     args.same_possizes = not(args.diff_possizes)
@@ -109,7 +108,7 @@ def set_path(args):
                 ).stem
             pretrained_str = f"_pt-{pretrained_str}"
         
-        dataset_str = dataset_3d.normalize_dataset_name(
+        dataset_str = misc_utils.normalize_dataset_name(
             args.dataset, short=True, eye=args.eye
             )
         
@@ -154,15 +153,17 @@ def get_dataloaders(args):
     get_dataloaders(args)
     """
 
-    dataset = dataset_3d.normalize_dataset_name(args.dataset)
+    dataset = misc_utils.normalize_dataset_name(args.dataset)
 
     data_kwargs = dict()
     add_keys = ["batch_size", "img_dim", "num_workers", "supervised"]
     dataset_keys = ["data_path_dir", "dataset", "seq_len", "num_seq"]
     data_kwargs["transform"] = "default"
     data_kwargs["no_transforms"] = args.no_transforms
-        
+    
+    allow_flip = True
     if dataset == "Gabors":
+        allow_flip = False
         gabor_keys = [
             "num_gabors", "gab_img_len", "same_possizes", "gray", "roll", 
             "U_prob", "diff_U_possizes", "train_len"
@@ -180,7 +181,8 @@ def get_dataloaders(args):
     mode = "test" if args.test else "train"
     if args.supervised:
         data_kwargs["transform"] = data_utils.get_transform(
-            None, args.img_dim, mode=mode, no_transforms=args.no_transforms
+            None, args.img_dim, mode=mode, no_transforms=args.no_transforms, 
+            allow_flip=allow_flip
             )
 
     # get the main dataloader
@@ -192,7 +194,8 @@ def get_dataloaders(args):
         mode = "val"
         if args.supervised and not args.no_transforms:
             data_kwargs["transform"] = data_utils.get_transform(
-                None, args.img_dim, mode=mode, no_transforms=args.no_transforms
+                None, args.img_dim, mode=mode, 
+                no_transforms=args.no_transforms, allow_flip=allow_flip
                 )
         val_loader = data_utils.get_dataloader(mode=mode, **data_kwargs)
 
@@ -206,7 +209,7 @@ def get_model(args, dataset=None):
     """
 
     if args.supervised:
-        num_classes = dataset_3d.get_num_classes(
+        num_classes = misc_utils.get_num_classes(
             dataset, dataset_name=args.dataset
             )
 
@@ -315,6 +318,7 @@ def run_training(args):
 
     main_loader, val_loader = get_dataloaders(args)
 
+    # get model
     model = get_model(args, dataset=main_loader.dataset)
 
     allow_data_parallel = training_utils.allow_data_parallel(
@@ -334,7 +338,7 @@ def run_training(args):
     )
 
     # get whether to save by batch
-    args.dataset = dataset_3d.normalize_dataset_name(args.dataset)
+    args.dataset = misc_utils.normalize_dataset_name(args.dataset)
     args.save_by_batch = (args.dataset == "Gabors")
 
     # save hyperparameters
