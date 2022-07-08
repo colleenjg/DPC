@@ -44,17 +44,20 @@ def check_direc_load_rarfile(d_root, dataset="UCF101"):
     Checks whether the dataset folder already exists, and loads the rarfile 
     module, checking that its requirements are installed.
 
-    Required args:
-        - d_root (Path):
-            dataset folder to create (should not already exist)
+    Required args
+    -------------
+    - d_root : path
+        Dataset folder to create (should not already exist)
     
-    Optional args:
-        - dataset (str):
-            current dataset
-            default: "UCF101"
+    Optional args
+    -------------
+    - dataset : str (default="UCF101")
+        Current dataset
     
-    Returns:
-        - rarfile (module): module for extracting files from a RAR file.
+    Returns
+    -------
+    - rarfile : module 
+        Module for extracting files from a RAR file.
     """
 
     if Path(d_root).exists():
@@ -84,14 +87,15 @@ def check_num_classes(v_root, num_classes=10):
 
     Checks whether the number of video folders matches the number of classes.
 
-    Required args:
-        - v_root (Path):
-            video folder, containing folders for each class
+    Required args
+    -------------
+    - v_root : path
+        Video folder, containing folders for each class
     
-    Optional args:
-        - num_classes (int):
-            expected number of classes
-            default: 10
+    Optional args
+    -------------
+    - num_classes : int (default=10)
+        Expected number of classes
     """
 
     contents = list(Path(v_root).iterdir())
@@ -115,9 +119,10 @@ def main_UCF101(d_root):
 
     Downloads data for the UCF101 dataset.
 
-    Required args:
-        - d_root (Path):
-            main folder in which to save dataset
+    Required args
+    -------------
+    - d_root (Path):
+        Main folder in which to save dataset
     """
 
     rarfile = check_direc_load_rarfile(d_root, dataset="UCF101")
@@ -172,9 +177,10 @@ def main_HMDB51(d_root):
 
     Downloads data for the HMDB51 dataset.
 
-    Required args:
-        - d_root (Path):
-            main folder in which to save dataset
+    Required args
+    -------------
+    - d_root (Path):
+        Main folder in which to save dataset
     """
 
     # run checks and retrieves rarfile module
@@ -369,18 +375,18 @@ def main_Kinetics400(d_root, minimal=False, parallel=True):
 
     Downloads data for the Kinetics400 dataset.
 
-    Required args:
-        - d_root (Path):
-            main folder in which to save dataset
+    Required args
+    -------------
+    - d_root (Path):
+        Main folder in which to save dataset
     
-    Optional args:
-        - minimal (bool): 
-            if True, a minimal subset of the Kinetics400 dataset is downloaded, 
-            covering all classes.
-            default: False
-        - parallel (bool):
-            if True, data is downloaded in parallel, instead of sequentially
-            default: True
+    Optional args
+    -------------
+    - minimal : bool (default=False)
+        If True, a minimal subset of the Kinetics400 dataset is downloaded, 
+        covering all classes.
+    - parallel : bool (default=True)
+        If True, data is downloaded in parallel, instead of sequentially
     """
 
     logger.info("Downloading and organizing data for Kinetics400... ")
@@ -420,18 +426,16 @@ if __name__ == "__main__":
 
     parser.add_argument("--d_root", type=Path,
         help=("root directory in which to save datasets "
-            "{args.d_root}/{args.dataset}/videos/{split names}.")
-        )
+            "{args.d_root}/{args.dataset}/videos/{split names}."))
     parser.add_argument("--minimal", action="store_true",
         help=("if True, only a minimal amount of the data is downloaded "
-              "for Kinetics400, e.g. for testing"))
+            "for Kinetics400, e.g. for testing"))
 
     parser.add_argument("--dataset", default="UCF101", help="dataset name")
     parser.add_argument('--log_level', default='info', 
-                        help='logging level, e.g., debug, info, error')
+        help='logging level, e.g., debug, info, error')
     parser.add_argument("--not_parallel", action="store_true", 
-                        help=("download data sequentially, instead of in "
-                        "parallel (Kinetics400)"))
+        help="download data sequentially, instead of in parallel (Kinetics400)")
 
     args = parser.parse_args()
 

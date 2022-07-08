@@ -14,7 +14,7 @@ from dataset import augmentations
 
 logger = logging.getLogger(__name__)
 
-MAX_LEN = 250 # longest allowable test sequence
+MAX_LEN = 500 # longest allowable test sequence
 
 TAB = "    "
 
@@ -23,6 +23,18 @@ TAB = "    "
 def pil_loader(path_name):
     """
     pil_loader(path_name)
+
+    Loads an image from file and converts to an RGB PIL Image.
+
+    Required args
+    -------------
+    - path_name : str or path
+        Path to image.
+
+    Returns
+    -------
+    - RGB PIL Image
+        RGB PIL image.
     """
 
     with open(path_name, "rb") as f:

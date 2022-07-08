@@ -13,8 +13,26 @@ from utils import misc_utils
 
 #############################################
 class ConvGRUCell(nn.Module):
-    """ Initialize ConvGRU cell. """
+    """
+    Convolution GRU cell.
+    """
+    
     def __init__(self, input_size, hidden_size, kernel_size):
+        """
+        ConvGRUCell(input_size, hidden_size, kernel_size)
+
+        Initializes a convolution GRU cell.
+
+        Required args
+        -------------
+        - input_size : int
+            Input layer size
+        - hidden_size : int
+            Hidden layer size
+        - kernel_size : int  
+            Convolution kernel size 
+        """
+        
         super(ConvGRUCell, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -48,6 +66,25 @@ class ConvGRUCell(nn.Module):
         nn.init.constant_(self.out_gate.bias, 0.)
 
     def forward(self, input_tensor, hidden_state):
+        """
+        self.forward(input_tensor, hidden_state)
+
+        Passes input through the cell, and returns a new state.
+
+        Required args
+        -------------
+        - input_tensor : 4D Tensor
+            Input tensor with dimensions: B x hidden_size x H x W
+        - hidden_state : 4D Tensor
+            Hidden state tensor with dimensions: B x hidden_size x H x W
+            Set to 0s if None.
+
+        Returns
+        -------
+        - new_state : 4D Tensor
+            New hidden state tensor with dimensions: B x hidden_size x H x W
+        """
+        
         if hidden_state is None:
             B, C, *spatial_dim = input_tensor.size()
             hidden_state = torch.zeros(
@@ -66,9 +103,34 @@ class ConvGRUCell(nn.Module):
 
 #############################################
 class ConvGRU(nn.Module):
-    """ Initialize a multi-layer Conv GRU. """
+    """
+    Convolution GRU neural network module.
+    """
+    
     def __init__(self, input_size, hidden_size, kernel_size, num_layers, 
                  dropout=0.1):
+        """
+        ConvGRU(input_size, hidden_size, kernel_size, num_layers)
+
+        Initializes a multi-layer convolution GRU network.
+
+        Required args
+        -------------
+        - input_size : int
+            Input layer size
+        - hidden_size : int
+            Hidden layer size
+        - kernel_size : int  
+            Convolution kernel size 
+        - num_layers : int
+            Number of layers
+        
+        Optional args
+        -------------
+        - dropout : float
+            Dropout rate for dropout layer
+        """
+
         super(ConvGRU, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -96,11 +158,38 @@ class ConvGRU(nn.Module):
 
 
     def forward(self, x, hidden_state=None):
+        """
+        self.forward(x)
+
+        Passes input through the GRU neural network.
+
+        Required args
+        -------------
+        - x : 5D Tensor
+            Input tensor with dimensions: B x SL x input_size x H x W
+            
+        Optional args
+        -------------
+        - hidden_state : list of 4D Tensors (default=None)
+            Hidden state tensors for each layer, each with dimensions: 
+            B x hidden_size x H x W
+            Set to None for each, if None.
+
+        Returns
+        -------
+        - layer_output :
+            Final layer output with dimensions B x output_size x H x W
+        - last_state_list : list of 4D Tensors
+            Updated hidden state tensors for each layer, each with dimensions: 
+            B x num_layers x H x W
+        """
+        
         [B, seq_len, *_] = x.size()
 
         if hidden_state is None:
             hidden_state = [None] * self.num_layers
-        # input: image sequences [B, T, C, H, W]
+        
+        # input: image sequences [B, SL, C, H, W]
         current_layer_input = x 
         del x
 

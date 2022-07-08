@@ -41,12 +41,14 @@ if [[ $NUM_EPOCHS == "" ]]; then
     NUM_EPOCHS=100
 fi
 
+IMG_DIM=128
 BATCH_SIZE=64
+NUM_SEQ=8
 if [[ $DATASET == "MouseSim" ]]; then
     NUM_EPOCHS=1000
     BATCH_SIZE=10
     LR_ARG="--lr 0.0001"
-    NUM_SEQ_ARG="--num_seq 25"
+    NUM_SEQ=25
 fi
 
 
@@ -68,23 +70,35 @@ set -x # echo commands to console
 
 python train_model.py \
     --output_dir $SCRATCH/dpc/models \
-    --net resnet18 \
-    --img_dim 128 \
-    --num_workers 8 \
-    --batch_size $BATCH_SIZE \
-    --dataset $DATASET \
     --model $MODEL \
+    --dataset $DATASET \
+    --img_dim $IMG_DIM \
+    --batch_size $BATCH_SIZE \
+    --num_seq $NUM_SEQ \
     --num_epochs $NUM_EPOCHS \
     --train_what $TRAIN_WHAT \
     $LR_ARG \
-    $NUM_SEQ_ARG \
     --seed $SEED \
     $PRETRAINED_ARG \
+    --num_workers 8 \
 
 code="$?"
 if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
 
 set +x # stop echoing commands to console
+
+
+# 5. Print instructions for testing model
+if [[ $MODEL == "lc-rnn" ]]; then
+    echo -e "To test the model, run:\n"\
+    "python train_model.py "\
+    "--model $MODEL "\
+    "--dataset $DATASET "\
+    "--img_dim $IMG_DIM "\
+    "--num_seq $NUM_SEQ "\
+    "--seed $SEED "\
+    "--test $SCRATCH/dpc/models/..."\
+fi
   
 
 if [ "$EXIT" -ne 0 ]; then exit "$EXIT"; fi # exit with highest exit code

@@ -32,20 +32,21 @@ def get_split_width(width=224, half_wid="left"):
     
     Returns new width and slice for splitting image in half width-wise.
 
-    Optional args:
-        - width (int):
-            original width
-            default: 224
-        - half_wid (str or bool):
-            if not False, "left" or "right", depending on which side of the 
-            image should be retained
-            default: "left"
+    Optional args
+    -------------
+    - width : int
+        Original width
+        (default=224
+    - half_wid : str or bool (default="left")
+        If not False, "left" or "right", depending on which side of the 
+        image should be retained
     
-    Returns:
-        - width (int):
-            resliced width
-        - wid_slice (tuple):
-            slice for slicing image width
+    Returns
+    -------
+    - width : int
+        Resliced width
+    - wid_slice (tuple):
+        Slice for slicing image width
     """
 
     wid_slice = slice(None)
@@ -71,17 +72,19 @@ def resize_dim(width, height, target):
     
     Resizes, such that the smaller side is target, to keep the aspect ratio.
 
-    Required args:
-        - width (int):
-            width
-        - height (int)
-            height
-        - target (int)
-            target length of the short side
+    Required args
+    -------------
+    - width : int
+        Width
+    - height : int
+        Height
+    - target : int
+        Target length of the short side
     
-    ReturnsL
-        - (tuple):
-            target width and height (w, h)
+    Returns
+    -------
+    - tuple
+        Target width and height (w, h)
     """
 
     if width == 0 or height == 0:
@@ -100,28 +103,29 @@ def extract_video_opencv(v_path, f_root, dim=None, half_wid=False):
 
     Extracts frames from a dataset video.
 
-    Required args:
-        - v_path (Path):
-            path to the video from which to extract frames
-        - f_root (Path): 
-            main folder in which to save frames for the dataset
+    Required args
+    -------------
+    - v_path : path
+        Path to the video from which to extract frames
+    - f_root : path 
+        Main folder in which to save frames for the dataset
     
-    Optional args:
-        - dim (int):
-            dimension to use in resizing images (shortest side). If None, 
-            a default value is used (see extract_video_opencv()).
-            default: None
-        - half_wid (bool):
-            if True, only one half of the frame width is retained 
-            ("left" or "right")
-            default: False    
+    Optional args
+    -------------
+    - dim : int (default=None)
+        Dimension to use in resizing images (shortest side). If None, 
+        a default value is used (see extract_video_opencv()).
+    - half_wid : bool (default=False)
+        If True, only one half of the frame width is retained 
+        ("left" or "right")
 
-    Returns:
-        - success_code (float):
-            success code, where a value of 
-            1.0 indicates a fully successful extraction, 
-            0.5 indicates a partial extraction and 
-            0.0 indicates a failed extraction
+    Returns
+    -------
+    - success_code : float
+        Success code, where a value of 
+        1.0 indicates a fully successful extraction, 
+        0.5 indicates a partial extraction and 
+        0.0 indicates a failed extraction
     """
     
     if dim is None:
@@ -212,36 +216,35 @@ def extract_videos_opencv(v_root, f_root, dim=None, video_ext="avi",
 
     Extracts frames from a dataset's videos, for one class at a time.
 
-    Required args:
-        - v_root (Path):
-            main folder containing videos for the dataset
-        - f_root (Path): 
-            main folder in which to save frames for the dataset
+    Required args
+    -------------
+    - v_root : path
+        Main folder containing videos for the dataset
+    - f_root : path 
+        Main folder in which to save frames for the dataset
     
-    Optional args:
-        - dim (int):
-            dimension to use in resizing images (shortest side). If None, 
-            a default value is used (see extract_video_opencv()).
-            default: None
-        - video_ext (str):
-            video extension to use to identify videos for frame extraction
-            default: "avi"
-        - half_wid (bool):
-            if True, only one half of the frame width is retained 
-            ("left" or "right")
-            default: False
-        - parallel (bool):
-            if True, frames for different videos for a class are extracted in 
-            parallel
-            default: True
+    Optional args
+    -------------
+    - dim : int (default=None)
+        Dimension to use in resizing images (shortest side). If None, 
+        a default value is used (see extract_video_opencv()).
+    - video_ext : str (default="avi")
+        Video extension to use to identify videos for frame extraction
+    - half_wid : bool (default=False)
+        If True, only one half of the frame width is retained 
+        ("left" or "right")
+    - parallel : bool (default=True)
+        If True, frames for different videos for a class are extracted in 
+        parallel
     
-    Returns:
-        - all_success_code (list):
-            nested list of success codes for videos from each class 
-            directory (class x video), where values of 
-            1.0 indicate a fully successful extraction, 
-            0.5 indicate a partial extraction and 
-            0.0 indicate a failed extraction
+    Returns
+    -------
+    - all_success_code : list
+        Nested list of success codes for videos from each class 
+        directory (class x video), where values of 
+        1.0 indicate a fully successful extraction, 
+        0.5 indicate a partial extraction and 
+        0.0 indicate a failed extraction
     """
 
     if not Path(v_root).is_dir():
@@ -300,19 +303,19 @@ def main_UCF101(v_root, f_root=None, parallel=True):
 
     Extracts frames from UCF101 dataset videos.
 
-    Required args:
-        - v_root (Path):
-            main folder containing videos for the dataset
+    Required args
+    -------------
+    - v_root : path
+        Main folder containing videos for the dataset
     
-    Optional args:
-        - f_root (Path): 
-            main folder in which to save frames for the dataset. If None, 
-            a default location is identified, based on v_root.
-            default: None
-        - parallel (bool):
-            if True, frames for different videos for a class are extracted in 
-            parallel
-            default: True
+    Optional args
+    -------------
+    - f_root : path (default=None)
+        Main folder in which to save frames for the dataset. If None, 
+        a default location is identified, based on v_root.
+    - parallel : bool (default=True)
+        If True, frames for different videos for a class are extracted in 
+        parallel
     """
     
     logger.info("Extracting frames for UCF101... ")
@@ -330,19 +333,19 @@ def main_HMDB51(v_root, f_root=None, parallel=True):
 
     Extracts frames from HMDB51 dataset videos.
 
-    Required args:
-        - v_root (Path):
-            main folder containing videos for the dataset
+    Required args
+    -------------
+    - v_root : path
+        Main folder containing videos for the dataset
     
-    Optional args:
-        - f_root (Path): 
-            main folder in which to save frames for the dataset. If None, 
-            a default location is identified, based on v_root.
-            default: None
-        - parallel (bool):
-            if True, frames for different videos for a class are extracted in 
-            parallel
-            default: True
+    Optional args
+    -------------
+    - f_root : path (default=None)
+        Main folder in which to save frames for the dataset. If None, 
+        a default location is identified, based on v_root.
+    - parallel : bool (default=True)
+        If True, frames for different videos for a class are extracted in 
+        parallel
     """
     
     logger.info("Extracting frames for HMDB51... ")
@@ -360,23 +363,22 @@ def main_Kinetics400(v_root, f_root=None, dim=None, parallel=True):
 
     Extracts frames from Kinetics400 dataset videos.
 
-    Required args:
-        - v_root (Path):
-            main folder containing videos for the dataset
+    Required args
+    -------------
+    - v_root : path
+        Main folder containing videos for the dataset
     
-    Optional args:
-        - f_root (Path): 
-            main folder in which to save frames for the dataset. If None, 
-            a default location is identified, based on v_root.
-            default: None
-        - dim (int):
-            dimension to use in resizing images (shortest side). If None, 
-            a default value of 150 is used.
-            default: None
-        - parallel (bool):
-            if True, frames for different videos for a class are extracted in 
-            parallel
-            default: True
+    Optional args
+    -------------
+    - f_root : path (default=None)
+        Main folder in which to save frames for the dataset. If None, 
+        a default location is identified, based on v_root.
+    - dim : int (default=None)
+        Dimension to use in resizing images (shortest side). If None, 
+        a default value of 150 is used.
+    - parallel : bool (default=True)
+        If True, frames for different videos for a class are extracted in 
+        parallel
     """
     
     logger.info("Extracting frames for Kinetics400... ")
@@ -406,19 +408,19 @@ def main_MouseSim(v_root, f_root=None, parallel=True):
 
     Extracts frames from MouseSim dataset videos.
 
-    Required args:
-        - v_root (Path):
-            main folder containing videos for the dataset
+    Required args
+    -------------
+    - v_root : path
+        Main folder containing videos for the dataset
     
-    Optional args:
-        - f_root (Path): 
-            main folder in which to save frames for the dataset. If None, 
-            a default location is identified, based on v_root.
-            default: None
-        - parallel (bool):
-            if True, frames for different videos for a class are extracted in 
-            parallel
-            default: True
+    Optional args
+    -------------
+    - f_root : path (default=None)
+        Main folder in which to save frames for the dataset. If None, 
+        a default location is identified, based on v_root.
+    - parallel : bool (default=True)
+        If True, frames for different videos for a class are extracted in 
+        parallel.
     """
     
     f_root_orig = f_root
@@ -445,18 +447,17 @@ if __name__ == "__main__":
 
     parser.add_argument("--d_root", type=Path,
         help=("root directory for the datasets, which should have the "
-            "structure {args.d_root}/{args.dataset}/videos.")
-        )
+            "structure {args.d_root}/{args.dataset}/videos."))
     parser.add_argument("--dataset", default="UCF101", help="dataset name")
     parser.add_argument("--k400_big", action="store_true", 
-                        help=("if True, and dataset is k400, the larger "
-                        "version frames are stored (256 instead of 150)."))
+        help=("if True, and dataset is k400, the larger version frames "
+            "are stored (256 instead of 150)."))
 
     parser.add_argument("--log_level", default="info", 
-                        help="logging level, e.g., debug, info, error")
+        help="logging level, e.g., debug, info, error")
     parser.add_argument("--not_parallel", action="store_true", 
-                        help=("extract frames from videos sequentially, "
-                        "instead of in parallel (much slower)"))
+        help=("extract frames from videos sequentially, instead of "
+            "in parallel (much slower)"))
 
     args = parser.parse_args()
 

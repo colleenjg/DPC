@@ -3,7 +3,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:rtx8000:2
 #SBATCH --mem=48GB
-#SBATCH --array=0-11
+#SBATCH --array=0-23
 #SBATCH --time=5:00:00
 #SBATCH --job-name=dpc_gab
 #SBATCH --output=/home/mila/g/gillonco/scratch/dpc_gabors_%A_%a.txt
@@ -18,7 +18,6 @@ conda activate ssl
 
 # 2. Fixed hyperparameters
 FIXED_DATASET=Gabors
-FIXED_MODEL="dpc-rnn"
 FIXED_NET=resnet18
 FIXED_TRAIN_WHAT=all
 FIXED_IMG_DIM=128
@@ -31,7 +30,6 @@ FIXED_NUM_WORKERS=8
 
 echo -e "\nFIXED HYPERPARAMETERS\n"\
 "dataset: $FIXED_DATASET\n"\
-"model: $FIXED_MODEL\n"\
 "net: $FIXED_NET\n"\
 "train what: $FIXED_TRAIN_WHAT\n"\
 "image dimensions: $FIXED_IMG_DIM\n"\
@@ -62,22 +60,29 @@ SIMPLES=( no semi full ) # 3
 U_POSSIZE_ARGS=( "" "--diff_U_possizes" ) # 2
 SUFFIX_ARGS=( "" "--suffix diff_U_possizes" )
 
+MODELS=( "dpc-rnn" "lc-rnn" ) # 2
+
 # set values for task ID
 # inner loop
 PRETRAINEDS_LEN=${#PRETRAINEDS[@]}
 PRETRAINEDS_IDX=$(( $SLURM_ARRAY_TASK_ID % $PRETRAINEDS_LEN ))
 PRETRAINED=${PRETRAINEDS[$PRETRAINEDS_IDX]}
 
-# middle loop
+# middle-inner loop
 SIMPLES_LEN=${#SIMPLES[@]}
 SIMPLES_IDX=$(( $SLURM_ARRAY_TASK_ID / $PRETRAINEDS_LEN % $SIMPLES_LEN ))
 SIMPLE=${SIMPLES[$SIMPLES_IDX]}
 
-# middle loop
+# middle-outer loop
 U_POSSIZE_ARGS_LEN=${#U_POSSIZE_ARGS[@]}
 U_POSSIZE_ARGS_IDX=$(( $SLURM_ARRAY_TASK_ID / ( $PRETRAINEDS_LEN * $SIMPLES_LEN ) % $U_POSSIZE_ARGS_LEN ))
 U_POSSIZE_ARG=${U_POSSIZE_ARGS[$U_POSSIZE_ARGS_IDX]}
 SUFFIX_ARG=${SUFFIX_ARGS[$U_POSSIZE_ARGS_IDX]}
+
+# outer loop
+MODELS_LEN=${#MODELS[@]}
+MODELS_IDX=$(( $SLURM_ARRAY_TASK_ID / ( $PRETRAINEDS_LEN * $SIMPLES_LEN * $U_POSSIZE_ARGS_LEN ) % $MODELS_LEN ))
+MODEL=${MODELS[$MODELS_IDX]}
 
 
 # Set the pretrain path, if applicable
@@ -120,6 +125,7 @@ fi
 
 
 echo -e "\nARRAY ID HYPERPARAMETERS\n"\
+"model: $MODEL\n"\
 "U position/size argument: $U_POSSIZE_ARG\n"\
 "unexpected epoch: $UNEXP_EPOCH\n"\
 "sequence length: $SEQ_LEN\n"\
@@ -139,7 +145,6 @@ set -x # echo commands to console
 python train_model.py \
     --output_dir $SCRATCH/dpc/models \
     --dataset $FIXED_DATASET \
-    --model $FIXED_MODEL \
     --net $FIXED_NET \
     --train_what $FIXED_TRAIN_WHAT \
     --img_dim $FIXED_IMG_DIM \
@@ -150,6 +155,7 @@ python train_model.py \
     --U_prob $FIXED_U_PROB \
     --num_workers $FIXED_NUM_WORKERS \
     $SEED_ARG \
+    --model $MODEL \
     $U_POSSIZE_ARG \
     --unexp_epoch $UNEXP_EPOCH \
     --seq_len $SEQ_LEN \
@@ -164,6 +170,26 @@ code="$?"
 if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
 
 set +x # stop echoing commands to console
+
+
+# 5. Print instructions for testing model
+if [[ $MODEL == "lc-rnn" ]]; then
+    echo -e "To test the model, run:\n"\
+    "python train_model.py "\
+    "--model $MODEL "\
+    "--dataset $FIXED_DATASET "\
+    "--img_dim $FIXED_IMG_DIM "\
+    "--train_len $FIXED_TRAIN_LEN "\
+    "--gab_img_len $FIXED_GAB_IMG_LEN "\
+    "--U_prob $FIXED_U_PROB "\
+    "$SEED_ARG "\
+    "$U_POSSIZE_ARG "\
+    "--seq_len $SEQ_LEN "\
+    "--num_seq $NUM_SEQ "\
+    "$ROLL_ARG "\
+    "--unexp_epoch 0 "\
+    "--test $SCRATCH/dpc/models/gabors..."\
+fi
   
 
 if [ "$EXIT" -ne 0 ]; then exit "$EXIT"; fi # exit with highest exit code

@@ -29,16 +29,17 @@ def write_list(data_list, target_path, delimiter=","):
 
     Writes data to a CSV.
 
-    Required args:
-        - data_list (list): 
-            list of data to write for each row 
-        - target_path (Path):
-            path to csv file to which to write data_list
+    Required args
+    -------------
+    - data_list : list
+        List of data to write for each row 
+    - target_path : path
+        Path to csv file to which to write data_list
     
-    Optional args:
-        - delimiter (str):
-            column delimiter
-            default: ","
+    Optional args
+    -------------
+    - delimiter : str (default=",")
+        Column delimiter
     """
     
     with open(target_path, "w") as f:
@@ -56,17 +57,17 @@ def write_class_index_file(class_names, csv_root, expected_n=None):
 
     Write class indices to a txt file.
 
-    Required args:
-        - class_names (list): 
-            list of class names
-        - csv_root (Path): 
-            directory under which to save class indices file. 
+    Required args
+    -------------
+    - class_names : list
+        List of class names
+    - csv_root : path
+        Directory under which to save class indices file. 
 
-    Optional args:
-        - expected_n (int): 
-            if not None, expected number of unique class names
-            default: None
-
+    Optional args
+    -------------
+    - expected_n : int (default=None)
+        If not None, expected number of unique class names
     """
 
     class_names = sorted(list(set(class_names)))
@@ -97,19 +98,19 @@ def main_UCF101(f_root, splits_root=None, csv_root=None):
     Creates a CSV for each split, listing the frames directory name, and number 
     of extracted frames for each included video.  
 
-    Required args:
-        - f_root (Path): 
-            main folder in which frames for the dataset are stored.
+    Required args
+    -------------
+    - f_root : path
+        Main folder in which frames for the dataset are stored.
 
-    Optional args:
-        - splits_root (Path): 
-            path to folder specifying video splits. If None, it is inferred 
-            from f_root.
-            default: None
-        - csv_root (Path): 
-            path in which to store CSVs for each split. If None, the parent 
-            directory of f_root is used.
-            default: None
+    Optional args
+    -------------
+    - splits_root : path (default=None)
+        Path to folder specifying video splits. If None, it is inferred 
+        from f_root.
+    - csv_root : path (default=None)
+        Path in which to store CSVs for each split. If None, the parent 
+        directory of f_root is used.
     """
 
     if splits_root is None:
@@ -171,19 +172,19 @@ def main_HMDB51(f_root, splits_root=None, csv_root=None):
     Creates a CSV for each split, listing the frames directory name, and number 
     of extracted frames for each included video.  
 
-    Required args:
-        - f_root (Path): 
-            main folder in which frames for the dataset are stored.
+    Required args
+    -------------
+    - f_root : path
+        Main folder in which frames for the dataset are stored.
 
-    Optional args:
-        - splits_root (Path): 
-            path to folder specifying video splits. If None, it is inferred 
-            from f_root.
-            default: None
-        - csv_root (Path): 
-            path in which to store CSVs for each split. If None, the parent 
-            directory of f_root is used.
-            default: None
+    Optional args
+    -------------
+    - splits_root : path (default=None)
+        Path to folder specifying video splits. If None, it is inferred 
+        from f_root.
+    - csv_root : path (default=None)
+        Path in which to store CSVs for each split. If None, the parent 
+        directory of f_root is used.
     """
 
     if splits_root is None:
@@ -246,16 +247,18 @@ def check_exists(split_row, split_root):
     Checks whether a Kinetics400 video frames directory exists, and if so, 
     returns the directory name and the number of frames it contains.
 
-    Required args:
-        - split_row (list):
-            data for reconstructing the video directory name
-        - split_root (Path):
-            root directory for the split
+    Required args
+    -------------
+    - split_row : list
+        Data for reconstructing the video directory name
+    - split_root : path
+        Root directory for the split
 
-    Returns:
-        - (list): 
-            path to the frames directory and number of frames for the video, 
-            or None if directory doesn't exist 
+    Returns
+    -------
+    - list
+        Path to the frames directory and number of frames for the video, 
+        or None if directory doesn't exist. 
     """
     
     dirname = "_".join(
@@ -279,21 +282,23 @@ def get_split(split_root, split_path, mode="train"):
     Returns list of video directory names and number of frames for each 
     Kinetics400 video.
 
-    Required args:
-        - split_root (Path):
-            root directory for the split
-        - split_path (Path):
-            Kinetics400 file specifying the split content
+    Required args
+    -------------
+    - split_root : path
+        Root directory for the split
+    - split_path : path
+        Kinetics400 file specifying the split content
 
-    Optional args:
-        - mode (str):
-            data mode ("train" or "val")
-            default: "train"
+    Optional args
+    -------------
+    - mode : str (default="train")
+        Data mode ("train" or "val")
 
     Returns 
-        - split_list (list): 
-            list of frames directory name and number of frames for each video 
-            [full_dirname, n_frames], with None for missing videos  
+    -------
+    - split_list : list
+        List of frames directory name and number of frames for each video 
+        [full_dirname, n_frames], with None for missing videos.
     """
     
     for pathname in [split_root, split_path]:
@@ -322,19 +327,19 @@ def main_Kinetics400(f_root, splits_root=None, modes=["train", "val", "test"],
     Creates a CSV for each split, listing the frames directory name, and number 
     of extracted frames for each included video.  
 
-    Required args:
-        - f_root (Path): 
-            main folder in which frames for the dataset are stored.
+    Required args
+    -------------
+    - f_root : path
+        Main folder in which frames for the dataset are stored.
 
-    Optional args:
-        - splits_root (Path): 
-            path to folder specifying video splits. If None, it is inferred 
-            from f_root.
-            default: None
-        - csv_root (Path): 
-            path in which to store CSVs for each split. If None, the parent 
-            directory of f_root is used.
-            default: None
+    Optional args
+    -------------
+    - splits_root : path (default=None)
+        Path to folder specifying video splits. If None, it is inferred 
+        from f_root.
+    - csv_root : path (default=None)
+        Path in which to store CSVs for each split. If None, the parent 
+        directory of f_root is used.
     """
 
     if splits_root is None:
@@ -387,21 +392,20 @@ def main_MouseSim(f_root, csv_root=None, splits_seed=100, prop_test=0.2):
     Creates a CSV for each split, listing the frames directory name, and number 
     of extracted frames for each included video.  
 
-    Required args:
-        - f_root (Path): 
-            main folder in which frames for the dataset are stored.
+    Required args
+    -------------
+    - f_root : path
+        Main folder in which frames for the dataset are stored.
 
-    Optional args:
-        - splits_seed (int): 
-            random seed to use to split the videos into splits
-            default: 100
-        - csv_root (Path): 
-            path in which to store CSVs for each split. If None, the parent 
-            directory of f_root is used.
-            default: None
-        - prop_test (float):
-            proportion of videos per class to put into test split
-            default: 0.2
+    Optional args
+    -------------
+    - splits_seed : int (default=100)
+        Random seed to use to split the videos into splits
+    - csv_root : path (default=None)
+        Path in which to store CSVs for each split. If None, the parent 
+        directory of f_root is used.
+    - prop_test : float (default=0.2)
+        Proportion of videos per class to put into test split
     """
 
     splits_rng = np.random.RandomState(splits_seed)
@@ -477,18 +481,17 @@ if __name__ == "__main__":
 
     parser.add_argument("--d_root", type=Path,
         help=("root directory for the datasets, which should have the "
-              "structure {args.d_root}/{args.dataset}/splits.")
-        )
+              "structure {args.d_root}/{args.dataset}/splits."))
     parser.add_argument("--csv_root", type=Path, default=Path("..", "data"),
-        help="root directory in which to save the csv with the list of paths."
-        )
+        help="root directory in which to save the csv with the list of paths.")
+
     parser.add_argument("--dataset", default="UCF101", help="dataset name")
     parser.add_argument("--k400_big", action="store_true", 
-                        help=("if True, and dataset is k400, the larger "
-                        "version frames are compiled (256 instead of 150)."))
+        help=("if True, and dataset is k400, the larger "
+          "version frames are compiled (256 instead of 150)."))
 
     parser.add_argument("--log_level", default="info", 
-                        help="logging level, e.g., debug, info, error")
+        help="logging level, e.g., debug, info, error")
 
     args = parser.parse_args()
 
