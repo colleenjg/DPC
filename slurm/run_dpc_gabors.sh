@@ -87,7 +87,7 @@ MODEL=${MODELS[$MODELS_IDX]}
 
 # Set the pretrain path, if applicable
 if [[ $PRETRAINED == yes ]]; then
-    PRETRAINED_ARG="--pretrained "$SCRATCH"/dpc/pretrained/mousesim_left-128_r18_dpc-rnn/model/model_best_epoch975.pth.tar"
+    PRETRAINED_ARG="--pretrained "$SCRATCH"/dpc/pretrained/mousesim_left-128_r18_dpc-rnn/model/model_best_epoch715.pth.tar"
     UNEXP_EPOCH=20
 else
     PRETRAINED_ARG=""
@@ -188,7 +188,7 @@ if [[ $MODEL == "lc-rnn" ]]; then
     "--num_seq $NUM_SEQ "\
     "$ROLL_ARG "\
     "--unexp_epoch 0 "\
-    "--test $SCRATCH/dpc/models/gabors..."\
+    "--test $SCRATCH/dpc/models/gabors..."
 fi
   
 

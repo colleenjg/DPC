@@ -48,6 +48,19 @@ def renest(flat_list, target_shape):
 
 
 #############################################
+def get_new_seed(seed=None, seed_none=False):
+    """
+    get_new_seed()
+    """
+
+    if seed_none or seed is not None:
+        temp_rng = np.random.RandomState(seed)
+        seed = temp_rng.randint(2**32)
+
+    return seed
+
+
+#############################################
 def seed_all(seed=None, deterministic_algorithms=True):
     """
     seed_all()
@@ -63,6 +76,20 @@ def seed_all(seed=None, deterministic_algorithms=True):
         if deterministic_algorithms:
             torch.use_deterministic_algorithms(True)
         os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8' # for cuda > 10.2
+
+
+#############################################
+def get_torch_generator(seed, gen_none=False):
+    """
+    get_torch_generator(seed)
+    """
+
+    rng = None
+    if gen_none or seed is not None:
+        rng = torch.Generator()
+        rng.manual_seed(seed)
+
+    return rng
 
 
 #############################################

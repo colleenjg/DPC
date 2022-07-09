@@ -686,7 +686,7 @@ def update_records(dataset, loss_dict, acc_dict, output, sup_target,
 
         # retrieve a prediction for each batch example / prediction step
         pred = loss_utils.get_predictions(
-            torch.from_numpy(output), keep_topk=1, acc_avg_HW=True, 
+            torch.from_numpy(output), keep_topk=1, spatial_avg=True, 
             main_shape=main_shape
             )[0].reshape(-1)
 

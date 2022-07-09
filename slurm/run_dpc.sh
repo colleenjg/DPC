@@ -4,10 +4,12 @@
 #SBATCH --gres=gpu:rtx8000:2
 #SBATCH --mem=48GB
 #SBATCH --array=0-7
-#SBATCH --time=8:00:00
+#SBATCH --time=6:00:00
 #SBATCH --job-name=dpc
 #SBATCH --output=/home/mila/g/gillonco/scratch/dpc_%A_%a.out
 
+
+# Current longest: 4h30
 
 # 1. Load modules
 module load anaconda/3
@@ -97,7 +99,7 @@ if [[ $MODEL == "lc-rnn" ]]; then
     "--img_dim $IMG_DIM "\
     "--num_seq $NUM_SEQ "\
     "--seed $SEED "\
-    "--test $SCRATCH/dpc/models/..."\
+    "--test $SCRATCH/dpc/models/..."
 fi
   
 

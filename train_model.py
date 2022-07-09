@@ -73,6 +73,7 @@ def check_adjust_args(args):
     if args.test:
         if args.supervised:
             logger.warning("Setting batch_size to 1.", extra={"spacing": TAB})
+            args.num_epochs = 0
             args.batch_size = 1
             args.save_best = False
         else:
@@ -186,7 +187,9 @@ def get_dataloaders(args):
             )
 
     # get the main dataloader
-    main_loader = data_utils.get_dataloader(mode=mode, **data_kwargs)
+    main_loader = data_utils.get_dataloader(
+        mode=mode, seed=args.seed, **data_kwargs
+        )
     
     # get the validation dataloader, if applicable
     val_loader = None
@@ -197,7 +200,10 @@ def get_dataloaders(args):
                 None, args.img_dim, mode=mode, 
                 no_transforms=args.no_transforms, allow_flip=allow_flip
                 )
-        val_loader = data_utils.get_dataloader(mode=mode, **data_kwargs)
+        val_seed = misc_utils.get_new_seed(args.seed)
+        val_loader = data_utils.get_dataloader(
+            mode=mode, seed=val_seed, **data_kwargs
+            )
 
     return main_loader, val_loader
 

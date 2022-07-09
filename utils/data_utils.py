@@ -14,14 +14,16 @@ logger = logging.getLogger(__name__)
 
 
 #############################################
-def worker_init_fn(worker_id):
+def seed_workers(worker_id):
     """
-    worker_init_fn(worker_id)
+    seed_workers(worker_id)
+
+    See: https://pytorch.org/docs/stable/notes/randomness.html#dataloader
     """
 
-    seed = torch.initial_seed() % 2**32
-    np.random.seed(seed)
-    random.seed(seed) # used for augmentations
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed) # used for augmentations
 
 
 #############################################
@@ -144,7 +146,8 @@ def get_dataloader(data_path_dir="process_data", transform=None,
                    dataset="UCF101", mode="train", eye="both",
                    batch_size=4, img_dim=128, seq_len=5, num_seq=8, 
                    ucf_hmdb_ms_ds=3, split_n=1, supervised=False, 
-                   num_workers=4, no_transforms=False, **gabor_kwargs):
+                   num_workers=4, no_transforms=False, seed=None, 
+                   **gabor_kwargs):
     """
     get_dataloader()
     """
@@ -206,7 +209,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             )
 
     elif dataset == "MouseSim":
-        drop_last = False # False is not compatible with DataParallel
+        drop_last = False # Note: False is not compatible with DataParallel
         dataset = dataset_3d.MouseSim_3d(
             data_path_dir=data_path_dir,
             eye=eye,
@@ -223,9 +226,9 @@ def get_dataloader(data_path_dir="process_data", transform=None,
         use_mode = mode
         if mode == "test":
             logger.warning(
-                "Gabors dataset will be set to 'val' mode for testing, as the "
-                "'test' mode has not been implemented with single supervised "
-                "targets per full length test sequence."
+                "Gabors dataset will be set to 'val' mode for testing, as "
+                "shared supervised targets for the extended sequences "
+                "generated in the 'test' mode have not been implemented."
                 )
             use_mode = "val"
 
@@ -247,6 +250,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             )
 
     sampler = data.RandomSampler(dataset)
+    generator = misc_utils.get_torch_generator(seed)
 
     data_loader = data.DataLoader(
         dataset,
@@ -254,7 +258,8 @@ def get_dataloader(data_path_dir="process_data", transform=None,
         sampler=sampler,
         shuffle=False,
         num_workers=num_workers,
-        worker_init_fn=worker_init_fn,
+        generator=generator,
+        worker_init_fn=seed_workers,
         pin_memory=True,
         drop_last=drop_last
         )
