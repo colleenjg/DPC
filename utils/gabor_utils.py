@@ -7,10 +7,12 @@ import logging
 import sys
 import warnings
 
+from joblib import delayed, Parallel
 import json
 from matplotlib import pyplot as plt
 import numpy as np
 import torch
+from tqdm import tqdm
 
 sys.path.extend(["..", str(Path("..", "utils"))])
 from utils import loss_utils, misc_utils
@@ -24,6 +26,262 @@ GABOR_CONF_MAT_DIREC = "gabor_confusion_matrices"
 
 
 logger = logging.getLogger(__name__)
+
+
+#############################################
+class GaborsConfusionMeter(loss_utils.ConfusionMeter):
+    """Compute and show confusion matrix"""
+
+    def __init__(self, class_names):
+        self._set_properties = []
+        self.reinitialize_values_gabors(class_names)
+        super().__init__(class_names)
+
+
+    def reset_properties(self):
+        """
+        self.reset_properties()
+        """
+        
+        for attr_name in self._set_properties:
+            delattr(self, attr_name)
+        self._set_properties = []
+
+
+    def reinitialize_values_gabors(self, class_names):
+        """
+        self.reinitialize_values_gabors(class_names)
+        """
+        
+        self.reset_properties()
+        class_names = [tuple(class_name) for class_name in class_names]
+        super().reinitialize_values(class_names=class_names)
+
+        image_types, mean_oris = list(zip(*class_names))
+
+        self.image_types = sorted(set(image_types))
+        if "N/A" in mean_oris:
+            mean_oris = sorted(set([ori for ori in mean_oris if ori != "N/A"]))
+            mean_oris.append("N/A")
+        else:
+            mean_oris = sorted(set(mean_oris))
+        self.mean_oris = mean_oris
+
+
+    @property
+    def nest_idx(self):
+        """
+        self.nest_idx
+        """
+        if not hasattr(self, "_nest_idx"):
+            nest_idx = []
+            for mean_ori in self.mean_oris:
+                for image_type in self.image_types:
+                    label = (image_type, mean_ori)
+                    if label in self.class_names:
+                        idx = self.class_names.index((image_type, mean_ori))
+                        nest_idx.append(idx)
+            nest_idx = np.asarray(nest_idx)
+            if len(nest_idx) != len(self.class_names):
+                raise RuntimeError(
+                    "'nest_idx' and 'self.class_names' lengths do not match."
+                    )
+            if len(np.unique(nest_idx)) != len(self.class_names):
+                raise RuntimeError("Duplicate class names or indices found.")
+
+            self._nest_idx = nest_idx
+            self._set_properties.append("_nest_idx")
+        
+        return self._nest_idx
+
+
+    @property
+    def unnest_idx(self):
+        """
+        self.unnest_idx
+        """
+        if not hasattr(self, "_unnest_idx"):
+            self._unnest_idx = np.argsort(self.nest_idx)
+            self._set_properties.append("_unnest_idx")
+        
+        return self._unnest_idx
+
+
+    def get_labels(self, nest_frames=False):
+        """
+        self.get_labels()
+        """
+
+        if nest_frames:
+            labels = [self.class_names[i] for i in self.nest_idx]
+        else:
+            labels = [cl_name for cl_name in self.class_names]
+
+        return labels
+
+
+    def get_main_edges(self, nest_frames=False):
+        """
+        self.get_main_edges()
+        """
+
+        labels = self.get_labels(nest_frames)
+        idx = 1 if nest_frames else 0
+
+        main_edges = [0]
+        curr_val = labels[0][idx]
+        for l, label in enumerate(labels):
+            if label[idx] != curr_val:
+                main_edges.append(l)
+                curr_val = label[idx]
+        main_edges.append(len(labels))
+
+        return main_edges
+
+
+    def get_ori_str(self, ori):
+        """
+        self.get_ori_str(ori)
+        """
+
+        if ori != "N/A":
+            ori = float(ori)
+            if int(ori) == ori:
+                ori = int(ori)
+            ori = u"{}{}".format(ori, DEG)
+        return ori
+
+
+    def get_main_label_dict(self, nest_frames=False):
+        """
+        self.get_main_label_dict()
+        """
+        
+        labels = self.get_labels(nest_frames)
+        main_edges = self.get_main_edges(nest_frames)
+        main_idx = 1 if nest_frames else 0
+
+        outer_label_dict = dict()
+        for e, edge in enumerate(main_edges[:-1]):
+            mid_e = np.mean([edge, main_edges[e + 1]]) - 0.5
+            label = labels[edge][main_idx]
+            if nest_frames:
+                label = self.get_ori_str(label)
+            outer_label_dict[mid_e] = label
+        
+        return outer_label_dict
+
+
+    def get_nested_label_dict(self, nest_frames=False):
+        """
+        self.get_nested_label_dict()
+        """
+        
+        labels = self.get_labels(nest_frames)
+        nested_idx = 0 if nest_frames else 1
+
+        nested_label_dict = dict()
+        for i, label in enumerate(labels):
+            label = label[nested_idx]
+            if not nest_frames:
+                label = self.get_ori_str(label)
+            nested_label_dict[i] = label
+
+        return nested_label_dict
+
+
+    def plot_mat(self, path=None, nest_frames=False, title=None):
+        """
+        self.plot_mat()
+        """
+
+        # accomodate longer main labels on right
+        cbar_kwargs = {
+            "pad"   : 0.1,
+            "aspect": 18,
+            }
+
+        if self.mat.max() >= 100:
+            cbar_kwargs["aspect"] = 32 # to keep the width of the plot constant
+
+        try:
+            if nest_frames: # nest self.mat, if needed
+                self.mat = self.mat[self.nest_idx][:, self.nest_idx]
+            fig = super().plot_mat(**cbar_kwargs)
+
+        finally:
+            if nest_frames: # unnest self.mat, if applicable
+                self.mat = self.mat[self.unnest_idx][:, self.unnest_idx]
+
+        ax = fig.axes[0]
+
+        if title is not None:
+            ax.set_title(title, y=1.1)
+
+        # add nested labels
+        nested_dict = self.get_nested_label_dict(nest_frames)
+        super().add_labels(ax, label_dict=nested_dict)
+
+        # add main labels
+        main_dict = self.get_main_label_dict(nest_frames)
+        super().add_labels(ax, label_dict=main_dict, secondary=True)
+
+        main_edges = self.get_main_edges(nest_frames)
+        if len(main_edges) > 2:
+            for edge in main_edges[1:-1]:
+                ax.axhline(edge + 0.5, lw=1, color="k")
+                ax.axvline(edge + 0.5, lw=1, color="k")
+
+        if path is None:
+            return fig
+        else:
+            Path(path).parent.mkdir(exist_ok=True, parents=True)
+            fig.savefig(path, format="svg", bbox_inches="tight", dpi=600)
+            plt.close(fig)
+
+
+    def get_storage_dict(self):
+        """
+        self.get_storage_dict(storage_dict)
+        """
+
+        storage_dict = super().get_storage_dict()
+
+        all_keys = ["image_types", "mean_oris"]
+        all_data = [self.image_types, self.mean_oris]
+        for key, data in zip(all_keys, all_data):
+            if isinstance(data, np.ndarray):
+                data = data.tolist()
+            storage_dict[key] = data
+
+        return storage_dict
+
+    
+    def load_from_storage_dict(self, storage_dict):
+        """
+        self.load_from_storage_dict(storage_dict)
+        """
+
+        self.reinitialize_values_gabors(storage_dict["class_names"])
+
+        super().load_from_storage_dict(storage_dict)
+        self.class_names = [
+            tuple(class_name) for class_name in self.class_names
+            ]
+
+        stored_class_names = storage_dict["class_names"]
+        if len(self.class_names) != len(stored_class_names):
+            raise RuntimeError(
+                "'self.class_names' does not have the same number of "
+                "labels as the stored 'class_names'."
+                )
+
+        for new, stored in zip(self.class_names, stored_class_names):                
+            if list(new) != list(stored):
+                raise RuntimeError(
+                    "'self.class_names' does not exactly match stored "
+                    "'class_names'."
+                    )
 
 
 #############################################
@@ -78,7 +336,7 @@ def get_gabor_classes(num_mean_oris=NUM_MEAN_ORIS, gray=True, U_prob=0.1,
         else:
             use_mean_oris = mean_oris
 
-        for mean_ori in use_mean_oris:
+        for mean_ori in np.sort(use_mean_oris):
             classes.append((frame, mean_ori))
     
     if gray:
@@ -278,479 +536,6 @@ def image_label_to_class(image_label_and_class_dict, seq_labels,
 
 
 #############################################
-class GaborsConfusionMeter(loss_utils.ConfusionMeter):
-    """Compute and show confusion matrix"""
-
-    def __init__(self, class_names):
-        self._set_properties = []
-        self.reinitialize_values_gabors(class_names)
-        super().__init__(class_names)
-
-
-    def reset_properties(self):
-        """
-        self.reset_properties()
-        """
-        
-        for attr_name in self._set_properties:
-            delattr(self, attr_name)
-        self._set_properties = []
-
-
-    def reinitialize_values_gabors(self, class_names):
-        """
-        self.reinitialize_values_gabors(class_names)
-        """
-        
-        self.reset_properties()
-        class_names = [tuple(class_name) for class_name in class_names]
-        super().reinitialize_values(class_names=class_names)
-
-        image_types, mean_oris = list(zip(*class_names))
-
-        self.image_types = sorted(set(image_types))
-        if "N/A" in mean_oris:
-            mean_oris = sorted(set([ori for ori in mean_oris if ori != "N/A"]))
-            mean_oris.append("N/A")
-        else:
-            mean_oris = sorted(set(mean_oris))
-        self.mean_oris = mean_oris
-
-
-    @property
-    def nest_idx(self):
-        """
-        self.nest_idx
-        """
-        if not hasattr(self, "_nest_idx"):
-            nest_idx = []
-            for mean_ori in self.mean_oris:
-                for image_type in self.image_types:
-                    label = (image_type, mean_ori)
-                    if label in self.class_names:
-                        idx = self.class_names.index((image_type, mean_ori))
-                        nest_idx.append(idx)
-            nest_idx = np.asarray(nest_idx)
-            if len(nest_idx) != len(self.class_names):
-                raise RuntimeError(
-                    "'nest_idx' and 'self.class_names' lengths do not match."
-                    )
-            if len(np.unique(nest_idx)) != len(self.class_names):
-                raise RuntimeError("Duplicate class names or indices found.")
-
-            self._nest_idx = nest_idx
-            self._set_properties.append("_nest_idx")
-        
-        return self._nest_idx
-
-
-    @property
-    def unnest_idx(self):
-        """
-        self.unnest_idx
-        """
-        if not hasattr(self, "_unnest_idx"):
-            self._unnest_idx = np.argsort(self.nest_idx)
-            self._set_properties.append("_unnest_idx")
-        
-        return self._unnest_idx
-
-
-    def get_labels(self, nest_frames=False):
-        """
-        self.get_labels()
-        """
-
-        if nest_frames:
-            labels = [self.class_names[i] for i in self.nest_idx]
-        else:
-            labels = [cl_name for cl_name in self.class_names]
-
-        return labels
-
-
-    def get_main_edges(self, nest_frames=False):
-        """
-        self.get_main_edges()
-        """
-
-        labels = self.get_labels(nest_frames)
-        idx = 1 if nest_frames else 0
-
-        main_edges = [0]
-        curr_val = labels[0][idx]
-        for l, label in enumerate(labels):
-            if label[idx] != curr_val:
-                main_edges.append(l)
-                curr_val = label[idx]
-        main_edges.append(len(labels))
-
-        return main_edges
-
-
-    def get_ori_str(self, ori):
-        """
-        self.get_ori_str(ori)
-        """
-
-        if ori != "N/A":
-            ori = float(ori)
-            if int(ori) == ori:
-                ori = int(ori)
-            ori = u"{}{}".format(ori, DEG)
-        return ori
-
-
-    def get_main_label_dict(self, nest_frames=False):
-        """
-        self.get_main_label_dict()
-        """
-        
-        labels = self.get_labels(nest_frames)
-        main_edges = self.get_main_edges(nest_frames)
-        main_idx = 1 if nest_frames else 0
-
-        outer_label_dict = dict()
-        for e, edge in enumerate(main_edges[:-1]):
-            mid_e = np.mean([edge, main_edges[e + 1]]) - 0.5
-            label = labels[edge][main_idx]
-            if nest_frames:
-                label = self.get_ori_str(label)
-            outer_label_dict[mid_e] = label
-        
-        return outer_label_dict
-
-
-    def get_nested_label_dict(self, nest_frames=False):
-        """
-        self.get_nested_label_dict()
-        """
-        
-        labels = self.get_labels(nest_frames)
-        nested_idx = 0 if nest_frames else 1
-
-        nested_label_dict = dict()
-        for i, label in enumerate(labels):
-            label = label[nested_idx]
-            if not nest_frames:
-                label = self.get_ori_str(label)
-            nested_label_dict[i] = label
-
-        return nested_label_dict
-
-
-    def plot_mat(self, path=None, nest_frames=False):
-        """
-        self.plot_mat()
-        """
-
-        # accomodate longer main labels on right
-        cbar_kwargs = dict({"pad": 0.1})
-
-        try:
-            if nest_frames: # nest self.mat, if needed
-                self.mat = self.mat[self.nest_idx][:, self.nest_idx]
-            fig = super().plot_mat(**cbar_kwargs)
-
-        finally:
-            if nest_frames: # unnest self.mat, if applicable
-                self.mat = self.mat[self.unnest_idx][:, self.unnest_idx]
-
-        ax = fig.axes[0]
-
-        # add nested labels
-        nested_dict = self.get_nested_label_dict(nest_frames)
-        super().add_labels(ax, label_dict=nested_dict)
-
-        # add main labels
-        main_dict = self.get_main_label_dict(nest_frames)
-        super().add_labels(ax, label_dict=main_dict, secondary=True)
-
-        main_edges = self.get_main_edges(nest_frames)
-        if len(main_edges) > 2:
-            for edge in main_edges[1:-1]:
-                ax.axhline(edge + 0.5, lw=1, color="k")
-                ax.axvline(edge + 0.5, lw=1, color="k")
-
-        if path is None:
-            return fig
-        else:
-            Path(path).parent.mkdir(exist_ok=True, parents=True)
-            fig.savefig(path, format="svg", bbox_inches="tight", dpi=600)
-            plt.close(fig)
-
-
-    def get_storage_dict(self):
-        """
-        self.get_storage_dict(storage_dict)
-        """
-
-        storage_dict = super().get_storage_dict()
-
-        all_keys = ["image_types", "mean_oris"]
-        all_data = [self.image_types, self.mean_oris]
-        for key, data in zip(all_keys, all_data):
-            if isinstance(data, np.ndarray):
-                data = data.tolist()
-            storage_dict[key] = data
-
-        return storage_dict
-
-    
-    def load_from_storage_dict(self, storage_dict):
-        """
-        self.load_from_storage_dict(storage_dict)
-        """
-
-        self.reinitialize_values_gabors(storage_dict["class_names"])
-
-        super().load_from_storage_dict(storage_dict)
-        self.class_names = [
-            tuple(class_name) for class_name in self.class_names
-            ]
-
-        stored_class_names = storage_dict["class_names"]
-        if len(self.class_names) != len(stored_class_names):
-            raise RuntimeError(
-                "'self.class_names' does not have the same number of "
-                "labels as the stored 'class_names'."
-                )
-
-        for new, stored in zip(self.class_names, stored_class_names):                
-            if list(new) != list(stored):
-                raise RuntimeError(
-                    "'self.class_names' does not exactly match stored "
-                    "'class_names'."
-                    )
-
-
-#############################################
-def plot_save_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0, 
-                             output_dir="."):
-    """
-    plot_save_gabor_conf_mat(gabor_conf_mat)
-    """
-
-    gabor_conf_mat_path = Path(
-        output_dir, GABOR_CONF_MAT_DIREC, f"{mode}_{epoch_n:03}.svg"
-        )
-    
-    gabor_conf_mat.plot_mat(gabor_conf_mat_path)
-
-    gabor_conf_mat_dict_path = Path(
-        output_dir, GABOR_CONF_MAT_DIREC, "gabor_confusion_mat_data.json"
-    )
-
-    gabor_conf_mat_dict = dict()
-    if gabor_conf_mat_dict_path.is_file():
-        with open(gabor_conf_mat_dict_path, "r") as f:
-            gabor_conf_mat_dict = json.load(f)
-
-    if mode not in gabor_conf_mat_dict.keys():
-        gabor_conf_mat_dict[mode] = dict()
-
-    if epoch_n in gabor_conf_mat_dict[mode]:
-        raise RuntimeError(
-            f"{epoch_n} epoch key for {mode} mode already exists."
-            )
-    
-    gabor_conf_mat_dict[mode][f"epoch_{epoch_n}"] = \
-        gabor_conf_mat.get_storage_dict()
-
-    with open(gabor_conf_mat_dict_path, "w") as f:
-        json.dump(gabor_conf_mat_dict, f)
-
-
-#############################################
-def load_replot_gabor_conf_mat(gabor_conf_mat_dict_path, nest_frames=False, 
-                               output_dir=None):
-    """
-    load_replot_gabor_conf_mat(gabor_conf_mat_dict_path)
-    """
-
-    gabor_conf_mat_dict_path = Path(gabor_conf_mat_dict_path)
-    if not gabor_conf_mat_dict_path.is_file():
-        raise OSError(f"{gabor_conf_mat_dict_path} is not a file.")
-    
-    with open(gabor_conf_mat_dict_path, "r") as f:
-        gabor_conf_mat_dict = json.load(f)
-
-    if output_dir is None:
-        save_dir = gabor_conf_mat_dict_path.parent
-    else:
-        save_dir = Path(output_dir, GABOR_CONF_MAT_DIREC)
-
-    if not isinstance(gabor_conf_mat_dict, dict):
-        raise RuntimeError(
-            f"Expected {gabor_conf_mat_dict_path} to be storing a dictionary."
-            )
-
-    for mode_key, mode_dict in gabor_conf_mat_dict.items():
-        if not isinstance(mode_dict, dict):
-            raise RuntimeError(
-                f"Expected {gabor_conf_mat_dict_path} to be storing "
-                "nested dictionaries."
-                )
-        num_epochs = len(mode_dict)
-        logger.info(
-            f"Loading and plotting Gabor confusion matrices for {num_epochs} "
-            f"epochs ({mode_key} mode).", extra={"spacing": "\n"}
-            )
-        for epoch_key, conf_mat_dict in mode_dict.items():
-            if "class_names" not in conf_mat_dict.keys():
-                raise RuntimeError(
-                    "Expected GaborsConfusionMeter storage dictionaries two "
-                    "levels in."
-                    )
-            if not epoch_key.startswith("epoch_"):
-                raise KeyError(
-                    "Expected to find a key of the form 'epoch_x', but "
-                    f"found {epoch_key}"
-                    )
-            
-            # load confusion matrix
-            gabor_conf_mat = GaborsConfusionMeter(conf_mat_dict["class_names"])
-            gabor_conf_mat.load_from_storage_dict(conf_mat_dict)
-
-            epoch_n = int(epoch_key.replace("epoch_", ""))
-            nest_frame_str = "_nest_fr" if nest_frames else ""
-            save_name = f"{mode_key}{nest_frame_str}_{epoch_n:03}.svg"
-            plot_path = Path(save_dir, save_name)
-            gabor_conf_mat.plot_mat(plot_path, nest_frames=nest_frames)
-
-
-#############################################
-def init_gabor_conf_mat(dataset):
-    """
-    init_gabor_conf_mat(dataset)
-    """
-    
-    gabor_classes = list(dataset.class_dict_encode.keys())
-    confusion_mat = GaborsConfusionMeter(gabor_classes)
-
-    return confusion_mat
-
-
-#############################################
-def init_gabor_records(dataset, init_conf_mat=True):
-    """
-    init_gabor_records(dataset)
-    """
-    
-    gabor_classes = list(dataset.class_dict_encode.keys())
-    if init_conf_mat:
-        confusion_mat = init_gabor_conf_mat(dataset)
-    else:
-        confusion_mat = None
-
-    # initialize loss/accuracy dictionaries
-    loss_dict = dict()
-    acc_dict = dict()
-
-    for gabor_image, gabor_ori in gabor_classes:
-        if gabor_image not in loss_dict.keys():
-            loss_dict[gabor_image] = list()
-            acc_dict[gabor_image] = list()
-        if gabor_ori not in loss_dict.keys():
-            loss_dict[gabor_ori] = list()
-            acc_dict[gabor_ori] = list()
-    
-    for key in ["image_types_overall", "mean_oris_overall", "overall"]:
-        acc_dict[key] = list()
-
-    return loss_dict, acc_dict, confusion_mat
-
-
-#############################################
-def update_records(dataset, loss_dict, acc_dict, output, sup_target, 
-                   batch_loss, supervised=False, confusion_mat=None):
-    """
-    update_records(dataset, loss_dict, acc_dict, output, sup_target, 
-                   batch_loss)
-    """
-
-    if supervised:
-        target_labels = get_gabor_sup_label(sup_target).reshape(-1)
-        pred_labels = np.argmax(output, axis=1).reshape(-1)
-
-    else:
-        B, PS = batch_loss.shape
-        HW = output.shape[0] / np.product(B * PS)
-        if int(HW) != HW:
-            raise RuntimeError(
-                "Failed to calculate HW from 'output' and 'batch_loss' shapes."
-                )
-        HW = int(HW)
-
-        main_shape = (B, PS, HW)
-
-        # retrieve a prediction for each batch example / prediction step
-        pred = loss_utils.get_predictions(
-            torch.from_numpy(output), keep_topk=1, spatial_avg=True, 
-            main_shape=main_shape
-            )[0].reshape(-1)
-
-        # retrieve target for first frame of each predicted sequences
-        target_labels, _ = sup_target[:, -PS:, 0].reshape(B * PS, -1).T
-        pred_labels = target_labels[pred]
-
-    # update confusion matrix
-    if confusion_mat is not None:
-        confusion_mat.update(pred_labels, target_labels)
-
-    # find proportion of correct supervised predictions
-    label_decode_dict = dataset.class_dict_decode
-
-    target_classes = image_label_to_class(label_decode_dict, target_labels)
-    pred_classes = image_label_to_class(label_decode_dict, pred_labels)
-
-    target_im_types, target_mean_oris = [
-        np.asarray(val) for val in zip(*target_classes)
-        ]
-    target_mean_oris = target_mean_oris.astype(str)
-
-    pred_im_types, pred_mean_oris = [
-        np.asarray(val) for val in zip(*pred_classes)
-        ]
-    pred_mean_oris = pred_mean_oris.astype(str)
-    
-    correct_image_types = (target_im_types == pred_im_types)
-    correct_mean_oris = (target_mean_oris == pred_mean_oris)
-    correct_both = np.asarray(target_labels == pred_labels)
-    if (correct_both != (correct_image_types * correct_mean_oris)).any():
-        raise RuntimeError(
-            "'correct_both' should match value inferred from "
-            "'correct_image_types' and 'correct_mean_oris', but does not, "
-            "suggesting a label interpretation error."
-            )
-
-    # add to meters
-    batch_loss = batch_loss.reshape(-1)
-    for key in loss_dict.keys():
-        str_key = str(key)
-        if str_key == "N/A" or "." in str_key or str_key.isdigit(): # oris
-            idx = (target_mean_oris == str_key)
-            n_correct = correct_mean_oris[idx].sum()
-        else: # frames
-            idx = (target_im_types == key)
-            n_correct = correct_image_types[idx].sum()
-
-        n_vals = sum(idx).item()
-        if n_vals == 0:
-            loss_dict[key].append(np.nan)
-            acc_dict[key].append(np.nan)
-        else:
-            loss_dict[key].append(batch_loss[idx].mean().item())
-            acc_dict[key].append(n_correct.item() / n_vals)
-
-    keys = ["image_types_overall", "mean_oris_overall", "overall"]
-    all_data = [correct_image_types, correct_mean_oris, correct_both]
-    for key, data in zip(keys, all_data):
-        n_total = len(data)
-        acc_dict[key].append(data.sum().item() / n_total)
-
-
-#############################################
 def update_dataset_possizes(main_loader, val_loader=None, seed=None, incr=0):
     """
     update_dataset_possizes(main_loader)
@@ -848,7 +633,7 @@ def get_gabor_sup_label(sup_target, warn=False):
             "The supervised task for the Gabors dataset is currently "
             "implemented to predict the label (image type/mean orientation) "
             "of the final frame of the final sequence "
-            f"(frame {SL} of {N} sequences)."
+            f"(frame {SL} of sequence {N})."
             )
 
     sup_target = sup_target[:, pred_idx, pred_idx, 0].reshape(B, 1)
@@ -879,11 +664,299 @@ def warn_supervised(dataset):
             "Single supervised targets have not been set for Gabors "
             "dataset in 'test' mode. Use 'val' mode instead."
             )
+    
+    B = 1
+    N = dataset.num_seq
     SL = dataset.seq_len
-    B, N = 1, 1
     dummy_arr = np.empty([B, N, SL, 2])
 
     get_gabor_sup_label(dummy_arr, warn=True)
+
+
+#############################################
+def plot_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0, 
+                        unexp=False, U_prob=0.1, nest_frames=False, 
+                        output_dir="."):
+    """
+    plot_gabor_conf_mat(gabor_conf_mat)
+    """
+
+    if isinstance(gabor_conf_mat, dict):
+        conf_mat_dict = gabor_conf_mat
+        if "class_names" not in conf_mat_dict.keys():
+            raise RuntimeError(
+                "Expected to only find GaborsConfusionMeter storage "
+                "dictionaries two levels in."
+                )
+        gabor_conf_mat = GaborsConfusionMeter(conf_mat_dict["class_names"])
+        gabor_conf_mat.load_from_storage_dict(conf_mat_dict)
+
+    U_prob_str = ""
+    if unexp:
+        U_perc = U_prob * 100
+        U_perc = int(U_perc) if int(U_perc) == U_perc else U_perc
+        U_prob_str = f", U freq: {U_perc}%"
+
+    title = f"Epoch {epoch_n} ({mode}{U_prob_str})"
+
+    nest_frame_str = "_nest_fr" if nest_frames else ""
+    savename = f"{mode}{nest_frame_str}_{epoch_n:03}.svg"
+
+    gabor_conf_mat_path = Path(output_dir, savename)
+
+    gabor_conf_mat.plot_mat(
+        gabor_conf_mat_path, nest_frames=nest_frames, title=title
+        )
+
+
+#############################################
+def plot_save_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0, 
+                             unexp=False, U_prob=0.1, nest_frames=False, 
+                             output_dir="."):
+    """
+    plot_save_gabor_conf_mat(gabor_conf_mat)
+    """
+
+    output_dir = Path(output_dir, GABOR_CONF_MAT_DIREC)
+    
+    plot_gabor_conf_mat(
+        gabor_conf_mat, mode=mode, epoch_n=epoch_n, unexp=unexp, U_prob=U_prob, 
+        nest_frames=nest_frames, output_dir=output_dir
+        )
+
+    gabor_conf_mat_dict_path = Path(output_dir, "gabor_confusion_mat_data.json")
+
+    gabor_conf_mat_dict = dict()
+    if gabor_conf_mat_dict_path.is_file():
+        with open(gabor_conf_mat_dict_path, "r") as f:
+            gabor_conf_mat_dict = json.load(f)
+
+    if mode not in gabor_conf_mat_dict.keys():
+        gabor_conf_mat_dict[mode] = dict()
+
+    # only overwrite for test mode
+    epoch_key = f"epoch_{epoch_n}"
+    if mode != "test" and epoch_key in gabor_conf_mat_dict[mode]:
+        raise RuntimeError(
+            f"{epoch_n} epoch key for {mode} mode already exists."
+            )
+    
+    gabor_conf_mat_dict[mode][epoch_key] = \
+        gabor_conf_mat.get_storage_dict()
+
+    with open(gabor_conf_mat_dict_path, "w") as f:
+        json.dump(gabor_conf_mat_dict, f)
+
+
+#############################################
+def load_replot_gabor_conf_mat(gabor_conf_mat_dict_path, nest_frames=False, 
+                               unexp_epoch=None, U_prob=0.1, output_dir=None, 
+                               parallel=False):
+    """
+    load_replot_gabor_conf_mat(gabor_conf_mat_dict_path)
+    """
+
+    gabor_conf_mat_dict_path = Path(gabor_conf_mat_dict_path)
+    if not gabor_conf_mat_dict_path.is_file():
+        raise OSError(f"{gabor_conf_mat_dict_path} is not a file.")
+    
+    with open(gabor_conf_mat_dict_path, "r") as f:
+        gabor_conf_mat_dict = json.load(f)
+
+    plot_kwargs = {
+        "U_prob"     : U_prob,
+        "nest_frames": nest_frames 
+    }
+
+    if output_dir is None:
+        plot_kwargs["output_dir"] = gabor_conf_mat_dict_path.parent
+    else:
+        plot_kwargs["output_dir"] = Path(output_dir, GABOR_CONF_MAT_DIREC)
+
+    if not isinstance(gabor_conf_mat_dict, dict):
+        raise RuntimeError(
+            f"Expected {gabor_conf_mat_dict_path} to be storing a dictionary."
+            )
+        
+    unexp_epoch = np.inf if unexp_epoch is None else int(unexp_epoch)
+
+    for mode_key, mode_dict in gabor_conf_mat_dict.items():
+        if not isinstance(mode_dict, dict):
+            raise RuntimeError(
+                f"Expected {gabor_conf_mat_dict_path} to be storing "
+                "nested dictionaries."
+                )        
+        
+        plot_kwargs["mode"] = mode_key
+
+        # collect epoch numbers and unexp values
+        epoch_ns, unexps = [], []
+        epoch_prefix = "epoch_"
+        for epoch_key, conf_mat_dict in mode_dict.items():
+            if not epoch_key.startswith(epoch_prefix):
+                raise KeyError(
+                    "Expected to find only keys of the form 'epoch_x', but "
+                    f"found {epoch_key}"
+                    )
+            epoch_n = int(epoch_key.replace(epoch_prefix, ""))
+            epoch_ns.append(epoch_n)
+            unexps.append((epoch_n >= unexp_epoch))
+
+        num_epochs = len(mode_dict)
+        logger.info(
+            f"Loading and plotting Gabor confusion matrices for {num_epochs} "
+            f"epochs ({mode_key} mode).", extra={"spacing": "\n"}
+            )
+
+        if parallel:
+            n_jobs = misc_utils.get_num_jobs(len(conf_mat_dict.keys()))
+
+            Parallel(n_jobs=n_jobs)(
+                delayed(plot_gabor_conf_mat)(
+                    mode_dict[f"{epoch_prefix}{epoch_n}"], epoch_n=epoch_n, 
+                    unexp=unexp, **plot_kwargs
+                    ) for epoch_n, unexp 
+                in tqdm(zip(epoch_ns, unexps), total=num_epochs)
+            )
+        
+        else:
+            for epoch_n, unexp in tqdm(zip(epoch_ns, unexps), total=num_epochs):
+                plot_gabor_conf_mat(
+                    mode_dict[f"{epoch_prefix}{epoch_n}"], 
+                    epoch_n=epoch_n, unexp=unexp, **plot_kwargs
+                    )
+
+
+#############################################
+def init_gabor_conf_mat(dataset):
+    """
+    init_gabor_conf_mat(dataset)
+    """
+    
+    gabor_classes = list(dataset.class_dict_encode.keys())
+    confusion_mat = GaborsConfusionMeter(gabor_classes)
+
+    return confusion_mat
+
+
+#############################################
+def init_gabor_records(dataset, init_conf_mat=True):
+    """
+    init_gabor_records(dataset)
+    """
+    
+    gabor_classes = list(dataset.class_dict_encode.keys())
+    if init_conf_mat:
+        confusion_mat = init_gabor_conf_mat(dataset)
+    else:
+        confusion_mat = None
+
+    # initialize loss/accuracy dictionaries
+    loss_dict = dict()
+    acc_dict = dict()
+
+    for gabor_image, gabor_ori in gabor_classes:
+        if gabor_image not in loss_dict.keys():
+            loss_dict[gabor_image] = list()
+            acc_dict[gabor_image] = list()
+        if gabor_ori not in loss_dict.keys():
+            loss_dict[gabor_ori] = list()
+            acc_dict[gabor_ori] = list()
+    
+    for key in ["image_types_overall", "mean_oris_overall", "overall"]:
+        acc_dict[key] = list()
+
+    return loss_dict, acc_dict, confusion_mat
+
+
+#############################################
+def update_records(dataset, loss_dict, acc_dict, output, sup_target, 
+                   batch_loss, supervised=False, confusion_mat=None):
+    """
+    update_records(dataset, loss_dict, acc_dict, output, sup_target, 
+                   batch_loss)
+    """
+
+    if supervised:
+        target_labels = get_gabor_sup_label(sup_target).reshape(-1)
+        pred_labels = np.argmax(output, axis=1).reshape(-1)
+
+    else:
+        B, PS = batch_loss.shape
+        HW = output.shape[0] / np.product(B * PS)
+        if int(HW) != HW:
+            raise RuntimeError(
+                "Failed to calculate spatial dimension (HW) from 'output' and "
+                "'batch_loss' shapes."
+                )
+        HW = int(HW)
+
+        main_shape = (B, PS, HW)
+
+        # retrieve a prediction for each batch example / prediction step
+        pred = loss_utils.get_predictions(
+            torch.from_numpy(output), keep_topk=1, spatial_avg=True, 
+            main_shape=main_shape
+            )[0].reshape(-1)
+
+        # retrieve target for first frame of each predicted sequences
+        target_labels, _ = sup_target[:, -PS:, 0].reshape(B * PS, -1).T
+        pred_labels = target_labels[pred]
+
+    # update confusion matrix
+    if confusion_mat is not None:
+        confusion_mat.update(pred_labels, target_labels)
+
+    # find proportion of correct supervised predictions
+    label_decode_dict = dataset.class_dict_decode
+
+    target_classes = image_label_to_class(label_decode_dict, target_labels)
+    pred_classes = image_label_to_class(label_decode_dict, pred_labels)
+
+    target_im_types, target_mean_oris = [
+        np.asarray(val) for val in zip(*target_classes)
+        ]
+    target_mean_oris = target_mean_oris.astype(str)
+
+    pred_im_types, pred_mean_oris = [
+        np.asarray(val) for val in zip(*pred_classes)
+        ]
+    pred_mean_oris = pred_mean_oris.astype(str)
+    
+    correct_image_types = (target_im_types == pred_im_types)
+    correct_mean_oris = (target_mean_oris == pred_mean_oris)
+    correct_both = np.asarray(target_labels == pred_labels)
+    if (correct_both != (correct_image_types * correct_mean_oris)).any():
+        raise RuntimeError(
+            "'correct_both' should match value inferred from "
+            "'correct_image_types' and 'correct_mean_oris', but does not, "
+            "suggesting a label interpretation error."
+            )
+
+    # add to meters
+    batch_loss = batch_loss.reshape(-1)
+    for key in loss_dict.keys():
+        str_key = str(key)
+        if str_key == "N/A" or "." in str_key or str_key.isdigit(): # oris
+            idx = (target_mean_oris == str_key)
+            n_correct = correct_mean_oris[idx].sum()
+        else: # frames
+            idx = (target_im_types == key)
+            n_correct = correct_image_types[idx].sum()
+
+        n_vals = sum(idx).item()
+        if n_vals == 0:
+            loss_dict[key].append(np.nan)
+            acc_dict[key].append(np.nan)
+        else:
+            loss_dict[key].append(batch_loss[idx].mean().item())
+            acc_dict[key].append(n_correct.item() / n_vals)
+
+    keys = ["image_types_overall", "mean_oris_overall", "overall"]
+    all_data = [correct_image_types, correct_mean_oris, correct_both]
+    for key, data in zip(keys, all_data):
+        n_total = len(data)
+        acc_dict[key].append(data.sum().item() / n_total)
 
 
 #############################################
@@ -894,12 +967,19 @@ if __name__ == "__main__":
         help="path of Gabor confusion matrix data to replot")
     parser.add_argument("--nest_frames", action="store_true",
         help="If True, Gabor frames are nested instead of orientations")
+    parser.add_argument("--unexp_epoch", default=None,
+        help="epoch as of which unexpected sequences are included.")
+    parser.add_argument("--U_prob", type=float, default=0.1,
+        help="probability of unexpected U frames, if included.")
 
     parser.add_argument("--output_dir", default=None, 
         help=("directory in which to save files. If None, it is inferred from "
         "another path argument)"))
     parser.add_argument('--log_level', default='info', 
-                        help='logging level, e.g., debug, info, error')
+        help='logging level, e.g., debug, info, error')
+    parser.add_argument("--parallel", action="store_true", 
+        help="replot Gabor confusion matrices in parallel")
+
     args = parser.parse_args()
 
     misc_utils.get_logger_with_basic_format(level=args.log_level)
@@ -911,5 +991,8 @@ if __name__ == "__main__":
         load_replot_gabor_conf_mat(
             args.gabor_conf_mat_dict_path, 
             nest_frames=args.nest_frames, 
-            output_dir=args.output_dir
+            unexp_epoch=args.unexp_epoch,
+            U_prob=args.U_prob,
+            output_dir=args.output_dir,
+            parallel=args.parallel,
             )

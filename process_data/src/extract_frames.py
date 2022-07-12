@@ -18,7 +18,7 @@ sys.path.extend([
     str(Path("..", "..")), 
     str(Path("..", "..", "utils")), 
     ])
-from utils import misc_utils, training_utils
+from utils import misc_utils
 
 logger = logging.getLogger(__name__)
 
@@ -278,7 +278,7 @@ def extract_videos_opencv(v_root, f_root, dim=None, video_ext="avi",
 
         logger.info(f"Extracting frames from {len(v_paths)} {v_class} videos.")
         if parallel:
-            n_jobs = training_utils.get_num_jobs(len(v_paths))
+            n_jobs = misc_utils.get_num_jobs(len(v_paths))
             success_codes = Parallel(n_jobs=n_jobs)(
                 delayed(extract_video_opencv)(
                     p, f_root, dim=dim, half_wid=half_wid

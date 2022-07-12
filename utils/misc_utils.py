@@ -2,12 +2,12 @@ import copy
 import logging
 import os
 from pathlib import Path
+import multiprocessing
 import shutil
 import sys
 import time
 import yaml
 
-import json
 import numpy as np
 import torch
 
@@ -17,6 +17,165 @@ from torchvision import utils as vutils
 logger = logging.getLogger(__name__)
 
 TAB = "    "
+
+
+#############################################
+class BasicLogFormatter(logging.Formatter):
+    """
+    BasicLogFormatter()
+
+    Basic formatting class that formats different level logs differently. 
+    Allows a spacing extra argument to add space at the beginning of the log.
+    """
+
+    dbg_fmt  = "%(spacing)s%(levelname)s: %(module)s: %(lineno)d: %(msg)s"
+    info_fmt = "%(spacing)s%(msg)s"
+    wrn_fmt  = "%(spacing)s%(levelname)s: %(msg)s"
+    err_fmt  = "%(spacing)s%(levelname)s: %(module)s: %(lineno)d: %(msg)s"
+    crt_fmt  = "%(spacing)s%(levelname)s: %(module)s: %(lineno)d: %(msg)s"
+
+    def __init__(self, fmt="%(spacing)s%(levelname)s: %(msg)s"):
+        """
+        Optional args:
+            - fmt (str): default format style.
+        """
+        super().__init__(fmt=fmt, datefmt=None, style="%") 
+
+    def format(self, record):
+
+        if not hasattr(record, "spacing"):
+            record.spacing = ""
+
+        # Original format as default
+        format_orig = self._style._fmt
+
+        # Replace default as needed
+        if record.levelno == logging.DEBUG:
+            self._style._fmt = BasicLogFormatter.dbg_fmt
+        elif record.levelno == logging.INFO:
+            self._style._fmt = BasicLogFormatter.info_fmt
+        elif record.levelno == logging.WARNING:
+            self._style._fmt = BasicLogFormatter.wrn_fmt
+        elif record.levelno == logging.ERROR:
+            self._style._fmt = BasicLogFormatter.err_fmt
+        elif record.levelno == logging.CRITICAL:
+            self._style._fmt = BasicLogFormatter.crt_fmt
+
+        # Call the original formatter class to do the grunt work
+        formatted_log = logging.Formatter.format(self, record)
+
+        # Restore default format
+        self._style._fmt = format_orig
+
+        return formatted_log
+
+
+#############################################
+def set_logger_level(logger, level="info"):
+    """
+    set_logger_level(logger)
+    """
+
+    if str(level).isdigit():
+        logger.setLevel(int(level))
+    elif isinstance(level, str) and hasattr(logging, level.upper()):
+        logger.setLevel(getattr(logging, level.upper()))
+    else:
+        raise ValueError(f'{level} logging level not recognized.')
+
+
+#############################################
+def get_logger(name=None, level="info", fmt=None, skip_exists=True):
+    """
+    get_logger()
+
+    Returns logger. 
+
+    Optional args:
+        - name (str)        : logger name. If None, the root logger is returned.
+                              default: None
+        - level (str)       : level of the logger ("info", "error", "warning", 
+                               "debug", "critical")
+                              default: "info"
+        - fmt (Formatter)   : logging Formatter to use for the handlers
+                              default: None
+        - skip_exists (bool): if a logger with the name already has handlers, 
+                              does nothing and returns existing logger
+                              default: True
+
+    Returns:
+        - logger (Logger): logger object
+    """
+
+    # create one instance
+    logger = logging.getLogger(name)
+
+    if not skip_exists:
+        logger.handlers = []
+
+    # skip if logger already has handlers
+    add_handler = True
+    for hd in logger.handlers:
+        if isinstance(hd, logging.StreamHandler):
+            add_handler = False
+            if fmt is not None:
+                hd.setFormatter(fmt)
+
+    if add_handler:
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setFormatter(fmt)
+        logger.addHandler(sh)
+
+    set_logger_level(logger, level)
+
+    return logger
+
+
+#############################################
+def get_logger_with_basic_format(**logger_kw):
+    """
+    get_logger_with_basic_format()
+
+    Returns logger with basic formatting, defined by BasicLogFormatter class.
+
+    Keyword args:
+        - logger_kw (dict): keyword arguments for get_logger()
+        
+    Returns:
+        - logger (Logger): logger object
+    """
+
+
+    basic_formatter = BasicLogFormatter()
+
+    logger = get_logger(fmt=basic_formatter, **logger_kw)
+
+    return logger
+
+
+#############################################
+def get_num_jobs(max_n=None, min_n=1):
+    """
+    get_num_jobs()
+
+    Get number of jobs to run in parallel.
+    """
+    
+    num_jobs = multiprocessing.cpu_count()
+
+    if max_n is None:
+        max_n = num_jobs
+
+    os_max_n = os.getenv("OMP_NUM_THREADS")
+    if os_max_n is None:
+        os_max_n = num_jobs
+    else:
+        os_max_n = int(os_max_n) 
+
+    num_jobs = min(num_jobs, max_n, os_max_n)
+    num_jobs = int(max(num_jobs, min_n))
+
+    return num_jobs
 
 
 #############################################
@@ -225,140 +384,6 @@ def get_num_classes(dataset=None, dataset_name="UCF101"):
 
 
 #############################################
-class BasicLogFormatter(logging.Formatter):
-    """
-    BasicLogFormatter()
-
-    Basic formatting class that formats different level logs differently. 
-    Allows a spacing extra argument to add space at the beginning of the log.
-    """
-
-    dbg_fmt  = "%(spacing)s%(levelname)s: %(module)s: %(lineno)d: %(msg)s"
-    info_fmt = "%(spacing)s%(msg)s"
-    wrn_fmt  = "%(spacing)s%(levelname)s: %(msg)s"
-    err_fmt  = "%(spacing)s%(levelname)s: %(module)s: %(lineno)d: %(msg)s"
-    crt_fmt  = "%(spacing)s%(levelname)s: %(module)s: %(lineno)d: %(msg)s"
-
-    def __init__(self, fmt="%(spacing)s%(levelname)s: %(msg)s"):
-        """
-        Optional args:
-            - fmt (str): default format style.
-        """
-        super().__init__(fmt=fmt, datefmt=None, style="%") 
-
-    def format(self, record):
-
-        if not hasattr(record, "spacing"):
-            record.spacing = ""
-
-        # Original format as default
-        format_orig = self._style._fmt
-
-        # Replace default as needed
-        if record.levelno == logging.DEBUG:
-            self._style._fmt = BasicLogFormatter.dbg_fmt
-        elif record.levelno == logging.INFO:
-            self._style._fmt = BasicLogFormatter.info_fmt
-        elif record.levelno == logging.WARNING:
-            self._style._fmt = BasicLogFormatter.wrn_fmt
-        elif record.levelno == logging.ERROR:
-            self._style._fmt = BasicLogFormatter.err_fmt
-        elif record.levelno == logging.CRITICAL:
-            self._style._fmt = BasicLogFormatter.crt_fmt
-
-        # Call the original formatter class to do the grunt work
-        formatted_log = logging.Formatter.format(self, record)
-
-        # Restore default format
-        self._style._fmt = format_orig
-
-        return formatted_log
-
-
-#############################################
-def set_logger_level(logger, level="info"):
-    """
-    set_logger_level(logger)
-    """
-
-    if str(level).isdigit():
-        logger.setLevel(int(level))
-    elif isinstance(level, str) and hasattr(logging, level.upper()):
-        logger.setLevel(getattr(logging, level.upper()))
-    else:
-        raise ValueError(f'{level} logging level not recognized.')
-
-
-#############################################
-def get_logger(name=None, level="info", fmt=None, skip_exists=True):
-    """
-    get_logger()
-
-    Returns logger. 
-
-    Optional args:
-        - name (str)        : logger name. If None, the root logger is returned.
-                              default: None
-        - level (str)       : level of the logger ("info", "error", "warning", 
-                               "debug", "critical")
-                              default: "info"
-        - fmt (Formatter)   : logging Formatter to use for the handlers
-                              default: None
-        - skip_exists (bool): if a logger with the name already has handlers, 
-                              does nothing and returns existing logger
-                              default: True
-
-    Returns:
-        - logger (Logger): logger object
-    """
-
-    # create one instance
-    logger = logging.getLogger(name)
-
-    if not skip_exists:
-        logger.handlers = []
-
-    # skip if logger already has handlers
-    add_handler = True
-    for hd in logger.handlers:
-        if isinstance(hd, logging.StreamHandler):
-            add_handler = False
-            if fmt is not None:
-                hd.setFormatter(fmt)
-
-    if add_handler:
-        sh = logging.StreamHandler(sys.stdout)
-        sh.setFormatter(fmt)
-        logger.addHandler(sh)
-
-    set_logger_level(logger, level)
-
-    return logger
-
-
-#############################################
-def get_logger_with_basic_format(**logger_kw):
-    """
-    get_logger_with_basic_format()
-
-    Returns logger with basic formatting, defined by BasicLogFormatter class.
-
-    Keyword args:
-        - logger_kw (dict): keyword arguments for get_logger()
-        
-    Returns:
-        - logger (Logger): logger object
-    """
-
-
-    basic_formatter = BasicLogFormatter()
-
-    logger = get_logger(fmt=basic_formatter, **logger_kw)
-
-    return logger
-
-
-#############################################
 def add_nested_dict(src_dict, target_dict, keys, nested_key, 
                     raise_missing=True):
     """
@@ -492,52 +517,32 @@ def update_tb(writer_train, train_dict, epoch_n=0, writer_val=None,
 
 
 #############################################
-def save_hyperparameters(hyperparams, direc=None):
+def get_technical_hyperparams():
     """
-    save_hyperparameters(hyperparams)
+    get_technical_hyperparams()
     """
 
-    hyperparams = copy.deepcopy(hyperparams)
-    hyperparam_dict = dict()
-
-    # check parameters
-    necessary_params = ["dataset", "overwrite", "resume", "supervised", "test"]
-    if direc is None:
-        necessary_params.append("output_dir")
-
-    for param in necessary_params:
-        if param not in hyperparams.keys():
-            raise KeyError(f"{param} missing from hyperparams dictionary.")
-    
-    dataset = hyperparams["dataset"]
-    overwrite = hyperparams["overwrite"]
-    resume = hyperparams["resume"]
-    supervised = hyperparams["supervised"]
-    test = hyperparams["test"]
-    if direc is None:
-        direc = hyperparams["output_dir"]
-
-
-    # set lists for collecting parameters
-    ignore_params = ["diff_possizes", "no_gray", "not_save_best"]
-
-
-    # set technical parameters
     technical_params = [
         "cpu_only", "data_parallel", "device_type", "num_workers", "plt_bkend", 
         "seed", "use_tb"
         ]
-    hyperparams = add_nested_dict(
-        hyperparams, hyperparam_dict, technical_params, nested_key="technical", 
-        raise_missing=False
-        )
 
+    ignore_params = []
 
-    # model parameters
+    return technical_params, ignore_params
+    
+    
+#############################################
+def get_model_hyperparams(supervised=False, resume=False, test=False):
+    """
+    get_model_hyperparams()
+    """
+
     model_params = [
         "batch_size", "model", "net", "pretrained", "resume", "supervised", 
         "test"
         ]
+    ignore_params = []
 
     training_params = ["lr", "num_epochs", "train_what", "wd"]
     if test:
@@ -555,16 +560,20 @@ def save_hyperparameters(hyperparams, direc=None):
         else:
             model_params.append("pred_step")
             ignore_params.append("dropout")
+    
+    return model_params, ignore_params
 
-    hyperparams = add_nested_dict(
-        hyperparams, hyperparam_dict, model_params, nested_key="model", 
-        raise_missing=False
-        )
 
-    # set dataset parameters
+#############################################
+def get_dataset_hyperparams(dataset="UCF101"):
+    """
+    get_dataset_hyperparams(dataset)
+    """
+
     dataset_params = [
         "dataset", "img_dim", "num_seq", "no_transforms", "seq_len"
     ]
+    ignore_params = ["diff_possizes", "no_gray"]
 
     ucf_hmdb_ms_params = ["ucf_hmdb_ms_ds"]
     if dataset in ["UCF101", "HMDB51", "MouseSim"]:
@@ -586,20 +595,23 @@ def save_hyperparameters(hyperparams, direc=None):
         dataset_params = dataset_params + gabor_params
     else:
         ignore_params = ignore_params + gabor_params
-
-    hyperparams = add_nested_dict(
-        hyperparams, hyperparam_dict, dataset_params, nested_key="dataset", 
-        raise_missing=False
-        )
+    
+    return dataset_params, ignore_params
 
 
-    # general parameters
+#############################################
+def get_general_hyperparams(resume=False, test=False):
+    """
+    get_general_hyperparams()
+    """
+    
     general_params = [
         "data_path_dir", "log_freq", "log_level", "output_dir", "save_best", 
         "save_by_batch", 
         ]
+    ignore_params = ["not_save_best"]
+
     if resume:
-        overwrite = False
         ignore_params.append("overwrite")
     else:
         general_params.append("overwrite")
@@ -609,19 +621,15 @@ def save_hyperparameters(hyperparams, direc=None):
     else:
         general_params.append("suffix")
 
-    hyperparams = add_nested_dict(
-        hyperparams, hyperparam_dict, general_params, nested_key="general", 
-        raise_missing=False
-        )
-    
-    # convert Path objects to strings
-    for nested_key in hyperparam_dict.keys():
-        for key in hyperparam_dict[nested_key].keys():
-            val = hyperparam_dict[nested_key][key]
-            if isinstance(val, Path):
-                hyperparam_dict[nested_key][key] = str(val)
+    return general_params, ignore_params
 
-    # final check
+
+#############################################
+def check_missed_hyperparams(hyperparams, ignore_params=[]):
+    """
+    check_missed_hyperparams(hyperparams)
+    """
+
     left_over = []
     for key in hyperparams.keys():
         if key not in ignore_params:
@@ -635,6 +643,94 @@ def save_hyperparameters(hyperparams, direc=None):
         logger.warning(left_over_str, extra={"spacing": "\n"})
 
 
+#############################################
+def save_hyperparameters(hyperparams, direc=None):
+    """
+    save_hyperparameters(hyperparams)
+    """
+
+    hyperparams = copy.deepcopy(hyperparams)
+    hyperparam_dict = dict()
+
+
+    # check parameters
+    necessary_params = ["dataset", "overwrite", "resume", "supervised", "test"]
+    if direc is None:
+        necessary_params.append("output_dir")
+
+    for param in necessary_params:
+        if param not in hyperparams.keys():
+            raise KeyError(f"{param} missing from hyperparams dictionary.")
+    
+    dataset = hyperparams["dataset"]
+    overwrite = hyperparams["overwrite"]
+    resume = hyperparams["resume"]
+    supervised = hyperparams["supervised"]
+    test = hyperparams["test"]
+    if direc is None:
+        direc = hyperparams["output_dir"]
+
+
+    # set lists for collecting parameters
+    ignore_params = []
+
+
+    # set technical parameters
+    technical_params, add_ignore_params = get_technical_hyperparams()
+
+    hyperparams = add_nested_dict(
+        hyperparams, hyperparam_dict, technical_params, nested_key="technical", 
+        raise_missing=False
+        )
+    ignore_params = ignore_params + add_ignore_params
+
+
+    # set model parameters
+    model_params, add_ignore_params = get_model_hyperparams(
+        supervised=supervised, resume=resume, test=test
+        )
+    ignore_params = ignore_params + add_ignore_params
+
+    hyperparams = add_nested_dict(
+        hyperparams, hyperparam_dict, model_params, nested_key="model", 
+        raise_missing=False
+        )
+
+
+    # set dataset parameters
+    dataset_params, add_ignore_params = get_dataset_hyperparams(dataset)
+    ignore_params = ignore_params + add_ignore_params
+
+    hyperparams = add_nested_dict(
+        hyperparams, hyperparam_dict, dataset_params, nested_key="dataset", 
+        raise_missing=False
+        )
+
+
+    # general parameters
+    general_params, add_ignore_params = get_general_hyperparams(
+        resume=resume, test=test
+        )
+    ignore_params = ignore_params + add_ignore_params
+
+    hyperparams = add_nested_dict(
+        hyperparams, hyperparam_dict, general_params, nested_key="general", 
+        raise_missing=False
+        )
+    
+
+    # convert Path objects to strings
+    for nested_key in hyperparam_dict.keys():
+        for key in hyperparam_dict[nested_key].keys():
+            val = hyperparam_dict[nested_key][key]
+            if isinstance(val, Path):
+                hyperparam_dict[nested_key][key] = str(val)
+
+
+    # final check
+    check_missed_hyperparams(hyperparams, ignore_params=ignore_params)
+
+
     # save hyperparameters (as yaml for legibility, as the file is light-weight)
     base_name = "hyperparameters.yaml"
     if test:
@@ -642,6 +738,7 @@ def save_hyperparameters(hyperparams, direc=None):
         overwrite = True
     if resume:
         base_name = f"resume_{base_name}"
+        overwrite = False
 
     hyperparams_path = get_unique_filename(
         Path(direc, base_name), overwrite=overwrite
@@ -653,50 +750,3 @@ def save_hyperparameters(hyperparams, direc=None):
         yaml.dump(hyperparam_dict, f)
 
 
-#############################################
-def save_confusion_mat_dict(conf_mat_dict, prefix=None, output_dir=".", 
-                            overwrite=True):
-    """
-    save_confusion_mat_dict(conf_mat_dict)
-    """
-
-    save_name = "confusion_matrix_data.json"
-    if prefix is not None and len(prefix):
-        save_name = f"{prefix}_{save_name}"
-
-    save_path = Path(output_dir, save_name)
-    save_path = get_unique_filename(
-        Path(output_dir, save_name), overwrite=overwrite
-        )
-
-    with open(save_path, "w") as f:
-        json.dump(conf_mat_dict, f)
-
-
-#############################################
-def load_loss_hyperparameters(model_direc, suffix=None): 
-    """
-    load_loss_hyperparameters(model_direc)
-    """
-
-    if not Path(model_direc).is_dir():
-        raise ValueError(f"{model_direc} is not a directory")
-
-    suffix_str = ""
-    if suffix is not None and len(suffix):
-        suffix_str = f"_{suffix}"
-
-    loss_dict_path = Path(model_direc, f"loss_data{suffix_str}.json")
-    hp_dict_path = Path(model_direc, f"hyperparameters{suffix_str}.yaml")
-
-    if not loss_dict_path.is_file():
-        raise OSError(f"{loss_dict_path} does not exist.")
-    if not hp_dict_path.is_file():
-        raise OSError(f"{hp_dict_path} does not exist.")
-    
-    with open(loss_dict_path, "r") as f:
-        loss_dict = json.load(f)
-    with open(hp_dict_path, "r") as f:
-        hp_dict = yaml.safe_load(f)
-
-    return loss_dict, hp_dict

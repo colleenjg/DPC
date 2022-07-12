@@ -91,8 +91,9 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
                 ).to("cpu").reshape(loss_reshape)
 
             if not supervised:
-                batch_loss = batch_loss.mean(axis=2) # across HW dimension
-
+                # take mean across spatial (HW) dimension
+                batch_loss = batch_loss.mean(axis=2) 
+            
             training_utils.add_batch_data(
                 train_dict, 
                 dataset=data_loader.dataset, 
@@ -155,9 +156,12 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
     if is_gabors and save_by_batch:
         train_dict["gabor_loss_dict"] = gabor_loss_dict
         train_dict["gabor_acc_dict"] = gabor_acc_dict
+
         if gabor_conf_mat is not None:
             gabor_utils.plot_save_gabor_conf_mat(
                 gabor_conf_mat, mode="train", epoch_n=epoch_n, 
+                unexp=data_loader.dataset.unexp, 
+                U_prob=data_loader.dataset.U_prob, 
                 output_dir=output_dir
             ) 
 
@@ -185,6 +189,7 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
     confusion_mat = None
     num_classes, supervised = training_utils.get_num_classes_sup(model)
 
+    mode = "test" if test else "val"
     val_dict = loss_utils.init_loss_dict(
         ks=topk, val=True, supervised=supervised, save_by_batch=save_by_batch
         )["val"]
@@ -257,7 +262,8 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
                     ).to("cpu").reshape(loss_reshape)
 
                 if not supervised:
-                    batch_loss = batch_loss.mean(axis=2) # across HW dimension
+                    # take mean across spatial (HW) dimension
+                    batch_loss = batch_loss.mean(axis=2)
 
                 training_utils.add_batch_data(
                     val_dict, 
@@ -303,10 +309,10 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
     for i, k in enumerate(topk):
         val_dict[f"top{k}"] = topk_meters[i].avg
     
-    mode_str = "test" if test else "val"
     if confusion_mat is not None:
         confusion_mat.plot_mat(
-            Path(output_dir, f"{mode_str}_confusion_matrix.svg"), 
+            Path(output_dir, f"{mode}_confusion_matrix.svg"), 
+            title=f"Epoch {epoch_n} ({mode})",
             **plot_mat_kwargs
             )
         val_dict["confusion_matrix"] = confusion_mat.get_storage_dict()
@@ -316,7 +322,9 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
         val_dict["gabor_acc_dict"] = gabor_acc_dict
         if gabor_conf_mat is not None:
             gabor_utils.plot_save_gabor_conf_mat(
-                gabor_conf_mat, mode=mode_str, epoch_n=epoch_n, 
+                gabor_conf_mat, mode=mode, epoch_n=epoch_n, 
+                unexp=data_loader.dataset.unexp, 
+                U_prob=data_loader.dataset.U_prob, 
                 output_dir=output_dir
             ) 
 
@@ -324,7 +332,7 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
         training_utils.write_log(
             content=stats_str,
             epoch_n=epoch_n,
-            filename=Path(output_dir, f"{mode_str}_log.md")
+            filename=Path(output_dir, f"{mode}_log.md")
             )
 
     return val_dict
@@ -441,7 +449,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             if test:
                 # store confusion matrix data, if applicable, then all done
                 if "confusion_matrix" in val_dict.keys():
-                    misc_utils.save_confusion_mat_dict(
+                    loss_utils.save_confusion_mat_dict(
                         val_dict["confusion_matrix"], prefix="test", 
                         output_dir=output_dir, overwrite=True
                         )
@@ -454,7 +462,8 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                     # plot best confusion matrix
                     loss_utils.load_replot_conf_mat(
                         val_dict["confusion_matrix"], mode="val", suffix="best",
-                        omit_class_names=True, output_dir=output_dir
+                        omit_class_names=True, epoch_n=epoch_n, 
+                        output_dir=output_dir
                         )
 
             loss_utils.populate_loss_dict(
@@ -512,9 +521,12 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
  
     # replot the best confusion matrix, with class names (can take a long time)
     if "confusion_matrix_best" in loss_dict["val"].keys():
+        best_idx = np.argmax(loss_dict["val"]["acc"])
+        best_epoch_n = loss_dict["val"]["epoch_n"][best_idx]
         loss_utils.load_replot_conf_mat(
             loss_dict["val"]["confusion_matrix_best"], mode="val", 
-            suffix="best", omit_class_names=False, output_dir=output_dir
+            suffix="best", omit_class_names=False, epoch_n=best_epoch_n, 
+            output_dir=output_dir
             )
 
     logger.info(

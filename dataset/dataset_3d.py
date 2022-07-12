@@ -115,8 +115,8 @@ class GeneralDataset(data.Dataset):
         self._set_class_dicts()
         """
         
-        self.class_dict_encode = {}
-        self.class_dict_decode = {}
+        self.class_dict_encode = dict()
+        self.class_dict_decode = dict()
 
         class_file = Path(self.class_file_dir, "classInd.txt")
         class_df = pd.read_csv(str(class_file), sep=" ", header=None)

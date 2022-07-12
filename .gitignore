@@ -1,6 +1,7 @@
 # ignore all subdirectories, except specified ones
 /*/
 
+!/analysis/
 !/asset/
 !/dataset/
 !/model/
@@ -8,6 +9,8 @@
 !/slurm/
 !/utils/
 
+analysis/*.sh
+utils/*.sh
 process_data/data
 .ipynb_checkpoints
 

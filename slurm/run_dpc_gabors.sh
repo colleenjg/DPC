@@ -175,19 +175,19 @@ set +x # stop echoing commands to console
 # 5. Print instructions for testing model
 if [[ $MODEL == "lc-rnn" ]]; then
     echo -e "To test the model, run:\n"\
-    "python train_model.py "\
-    "--model $MODEL "\
-    "--dataset $FIXED_DATASET "\
-    "--img_dim $FIXED_IMG_DIM "\
-    "--train_len $FIXED_TRAIN_LEN "\
-    "--gab_img_len $FIXED_GAB_IMG_LEN "\
-    "--U_prob $FIXED_U_PROB "\
-    "$SEED_ARG "\
-    "$U_POSSIZE_ARG "\
-    "--seq_len $SEQ_LEN "\
-    "--num_seq $NUM_SEQ "\
-    "$ROLL_ARG "\
-    "--unexp_epoch 0 "\
+    "python train_model.py"\
+    "--model $MODEL"\
+    "--dataset $FIXED_DATASET"\
+    "--img_dim $FIXED_IMG_DIM"\
+    "--train_len $FIXED_TRAIN_LEN"\
+    "--gab_img_len $FIXED_GAB_IMG_LEN"\
+    "--U_prob $FIXED_U_PROB"\
+    "$SEED_ARG"\
+    "$U_POSSIZE_ARG"\
+    "--seq_len $SEQ_LEN"\
+    "--num_seq $NUM_SEQ"\
+    "$ROLL_ARG"\
+    "--unexp_epoch 0"\
     "--test $SCRATCH/dpc/models/gabors..."
 fi
   

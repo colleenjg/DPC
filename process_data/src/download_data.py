@@ -20,7 +20,7 @@ sys.path.extend([
     str(Path("..", "..")), 
     str(Path("..", "..", "utils")), 
     ])
-from utils import misc_utils, training_utils
+from utils import misc_utils
 
 logger = logging.getLogger(__name__)
 
@@ -393,7 +393,7 @@ def main_Kinetics400(d_root, minimal=False, parallel=True):
 
     n_jobs = 1
     if parallel:
-        n_jobs = training_utils.get_num_jobs()
+        n_jobs = misc_utils.get_num_jobs()
 
     Path(d_root).mkdir(exist_ok=True, parents=True)
     for split in ["train", "val", "test"]:

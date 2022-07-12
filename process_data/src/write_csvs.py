@@ -17,7 +17,7 @@ sys.path.extend([
     str(Path("..", "..")), 
     str(Path("..", "..", "utils")), 
     ])
-from utils import misc_utils, training_utils
+from utils import misc_utils
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +309,7 @@ def get_split(split_root, split_path, mode="train"):
     logger.info(f"Checking {split_root}")
     split_list = []
     split_content = pd.read_csv(str(split_path)).iloc[:, 0:4]
-    n_jobs = training_utils.get_num_jobs(len(split_content))
+    n_jobs = misc_utils.get_num_jobs(len(split_content))
     split_list = Parallel(n_jobs=n_jobs)(
         delayed(check_exists)(row, split_root)
         for _, row in tqdm(split_content.iterrows(), total=len(split_content))

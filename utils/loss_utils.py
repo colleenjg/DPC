@@ -7,13 +7,14 @@ import logging
 from pathlib import Path
 import sys
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 import torch
+import yaml
 
 sys.path.extend(["..", str(Path("..", "utils"))])
-from utils import misc_utils
+from utils import misc_utils, plot_utils
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,8 @@ class AverageMeter(object):
         self.local_history = deque([])
         self.local_avg = 0
         self.history = []
-        self.dict = {} # save all data values here
-        self.save_dict = {} # save mean and std here, for summary table
+        self.dict = dict() # save all data values here
+        self.save_dict = dict() # save mean and std here, for summary table
 
     def update(self, val, n=1, history=0, step=5):
         self.val = val
@@ -65,7 +66,7 @@ class AccuracyTable(object):
     """Compute accuracy for each class"""
 
     def __init__(self):
-        self.dict = {}
+        self.dict = dict()
 
     def update(self, pred, target):
         pred = torch.squeeze(pred)
@@ -94,7 +95,6 @@ class ConfusionMeter(object):
     """Compute and show confusion matrix"""
 
     def __init__(self, class_names=None, num_classes=5):
-
         self.reinitialize_values(class_names, num_classes=num_classes)
 
     def reinitialize_values(self, class_names=None, num_classes=5):
@@ -170,9 +170,19 @@ class ConfusionMeter(object):
                 )
 
     def plot_mat(self, path=None, incl_class_names=True, annotate=False, 
-                 **cbar_kwargs):
+                 ax=None, title=None, vmax=None, **cbar_kwargs):
 
-        fig, ax = plt.subplots()
+
+        if vmax is not None and vmax < self.mat.max():
+            raise ValueError("self.mat contains values higher than 'vmax'.")
+        if self.mat.min() < 0:
+            raise ValueError("self.mat contains values below 0.")
+
+        if ax is None:
+            fig, ax = plt.subplots()
+        else:
+            fig = ax.figure
+
         im = ax.imshow(self.mat,
             cmap=plt.cm.jet,
             interpolation=None,
@@ -181,7 +191,9 @@ class ConfusionMeter(object):
                 np.shape(self.mat)[0] + 0.5, 
                 np.shape(self.mat)[1] + 0.5, 
                 0.5
-                )
+                ),
+            vmin=0,
+            vmax=vmax
             )
         
         if annotate:
@@ -204,8 +216,12 @@ class ConfusionMeter(object):
 
         ax.set_xlabel("Ground Truth")
         ax.set_ylabel("Prediction")
+
+        if title is not None:
+            ax.set_title(title, y=1.05)
         
         cm = fig.colorbar(im, **cbar_kwargs)
+        cm.ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         cm.set_label("Counts", rotation=270, labelpad=18)
         
         if path is None:
@@ -382,20 +398,6 @@ def get_dim_per_GPU(output, main_shape):
 
 
 #############################################
-def calc_chance(output, main_shape, spatial_avg=False):
-    """
-    calc_chance(output, main_shape)
-    """
-
-    dims_per_GPU = get_dim_per_GPU(output, main_shape)
-    if spatial_avg:
-        dims_per_GPU = dims_per_GPU[:1] # remove HW dim
-    chance = 1 / np.product(dims_per_GPU)
-
-    return chance
-
-
-#############################################
 def calc_spatial_avg(values, main_shape):
     """
     calc_spatial_avg(values, main_shape)
@@ -424,6 +426,20 @@ def calc_spatial_avg(values, main_shape):
         raise ValueError("Expected 'values' to have 1 or 2 dimensions.")
 
     return values
+
+
+#############################################
+def calc_chance(output, main_shape, spatial_avg=False):
+    """
+    calc_chance(output, main_shape)
+    """
+
+    dims_per_GPU = get_dim_per_GPU(output, main_shape)
+    if spatial_avg:
+        dims_per_GPU = dims_per_GPU[:1] # remove HW dim
+    chance = 1 / np.product(dims_per_GPU)
+
+    return chance
 
 
 #############################################
@@ -615,165 +631,6 @@ def populate_loss_dict(src_dict, target_dict, append_confusion_matrices=True,
 
                             
 #############################################
-def plot_acc(sub_ax, data_dict, epoch_ns, chance=None, color="k", ls=None, 
-             data_label="train"):
-    """
-    plot_acc(sub_ax, data_dict, epoch_ns)
-    """
-
-    if len(data_label) and data_label[-1] != " ":
-        data_label = f"{data_label} "
-
-    acc_keys = sorted([key for key in data_dict.keys() if "top" in str(key)])
-    if chance is not None:
-        sub_ax.axhline(100 * chance, color="k", ls="dashed", alpha=0.8)
-    for a, acc_key in enumerate(acc_keys):
-        accuracies = 100 * np.asarray(data_dict[acc_key])
-        alpha = 0.7 ** a
-        label = None
-        if a == 0:
-            label = f"{data_label}{', '.join(acc_keys)}"
-        sub_ax.plot(
-            epoch_ns, accuracies, color=color, ls=ls, alpha=alpha, 
-            label=label
-            )
-
-
-#############################################
-def plot_batches(batch_ax, data_dict, epoch_ns, U_ax=None, data_label="train", 
-                 colors="Blues"):
-    """
-    plot_batches(batch_ax, loss_dict, epoch_ns)
-    """
-    
-    avg_loss_by_batch = np.asarray(data_dict["avg_loss_by_batch"]).T
-    num_batches = len(avg_loss_by_batch)
-    batch_cmap = mpl.cm.get_cmap(colors)
-    cmap_samples = np.linspace(1.0, 0.3, num_batches)
-
-    if U_ax is not None:
-        target_key = "sup_target_by_batch"
- 
-        freqs = []
-        for image_type in ["U", "D"]:
-            # num_epochs x num_batches x B x N x SL x (image type, ori)
-            freqs.append((
-                np.asarray(data_dict[target_key])[:, :, ..., 0] == image_type
-                ).astype(float).mean(axis=(2, 3, 4)).T)
-        U_freqs_over_DU = freqs[0] / (freqs[0] + freqs[1]) * 100
-
-    for b, batch_losses in enumerate(avg_loss_by_batch):
-        batch_color = batch_cmap(cmap_samples[b])
-        label = data_label if b == 0 and len(data_label) else None
-        batch_ax.plot(
-            epoch_ns, batch_losses, color=batch_color, alpha=0.8, label=label
-            )
-        if U_ax is not None:
-            label = data_label if b == 0 and len(data_label) else None
-            U_ax.plot(
-                epoch_ns, U_freqs_over_DU[b], color=batch_color, 
-                alpha=0.8, label=label, marker="."
-            )
-    
-    batch_ax.plot(
-        epoch_ns, avg_loss_by_batch.mean(axis=0), color="k", alpha=0.6, lw=2.5, 
-        )
-    if U_ax is not None:
-        U_ax.plot(
-            epoch_ns, U_freqs_over_DU.mean(axis=0), color="k", alpha=0.6, 
-            lw=2.5,
-            )
-
-
-#############################################
-def plot_loss_dict(loss_dict, num_classes=None, dataset="UCF101", 
-                   unexp_epoch=10, by_batch=False):
-    """
-    plot_loss_dict(loss_dict)
-    """
-
-    datatypes = ["train"]
-    colors = ["blue"]
-    ls = ["dashed"]
-    if "val" in loss_dict.keys():
-        datatypes.append("val")
-        colors.append("orange")
-        ls.append(None)
-
-    chance = None if num_classes is None else 1 / num_classes
-
-    dataset = misc_utils.normalize_dataset_name(dataset)
-    plot_seq = by_batch and (dataset == "Gabors")
-    nrows = 1 + int(plot_seq) if by_batch else 2
-    ncols = len(datatypes) if by_batch else 1
-    fig, ax = plt.subplots(
-        nrows, ncols, figsize=[8.5 * ncols, 3.25 * nrows], sharex=True, 
-        squeeze=False
-        )
-    ax = ax.reshape(nrows, ncols)
-
-    for d, datatype in enumerate(datatypes):
-        epoch_ns = loss_dict[datatype]["epoch_n"]  
-
-        data_label = f"{datatype} "
-        if ncols == len(datatypes):
-            ax[0, d].set_title(datatype.capitalize())
-            data_label = ""
-
-        if by_batch:
-            U_ax = ax[1, d] if plot_seq else None
-            plot_batches(
-                ax[0, d], loss_dict[datatype], epoch_ns, U_ax=U_ax, 
-                data_label="", colors=f"{colors[d].capitalize()}s"
-                )
-        else:
-            ax[0, 0].plot(
-                epoch_ns, loss_dict[datatype]["loss"], color=colors[d], 
-                ls=ls[d], label=f"{data_label}loss"
-                )
-
-            plot_acc(
-                ax[1, 0], loss_dict[datatype], epoch_ns, chance=chance, 
-                color=colors[d], ls=ls[d], data_label=data_label
-                )
-
-        if datatype == "val":
-            best_idx = np.argmax(loss_dict[datatype]["acc"])
-            best_epoch_n = epoch_ns[best_idx]
-            for s, sub_ax in enumerate(ax.reshape(-1)):
-                label = None
-                if s == 1:
-                    best_acc = 100 * loss_dict[datatype]["acc"][best_idx]
-                    label = f"ep {best_epoch_n}: {best_acc:.2f}%"
-                sub_ax.axvline(
-                    best_epoch_n, color="k", ls="dashed", alpha=0.8, 
-                    label=label
-                    )
-
-    min_x, max_x = ax[0, 0].get_xlim()
-    for sub_ax in ax.reshape(-1):
-        if not by_batch:
-            sub_ax.legend(fontsize="small")
-        sub_ax.spines["right"].set_visible(False)
-        sub_ax.spines["top"].set_visible(False)
-        if dataset == "Gabors" and unexp_epoch < max(epoch_ns):
-            sub_ax.axvspan(
-                unexp_epoch, max(epoch_ns), color="k", alpha=0.1, lw=0
-                )
-        sub_ax.set_xlim(min_x, max_x)
-
-    ax[0, 0].set_ylabel("Loss")
-    for c in range(ncols):
-        ax[-1, c].set_xlabel("Epoch")
-    if by_batch and nrows == 2:
-        ax[1, 0].set_ylabel("U/(D+U) frequency (%)")        
-    else:
-        ax[1, 0].set_ylabel("Accuracy (%)")
-
-    return fig
-
-
-#############################################
 def save_loss_dict_plot(loss_dict, output_dir=".", seed=None, dataset="UCF101", 
                         unexp_epoch=10, num_classes=None):
     """
@@ -800,7 +657,7 @@ def save_loss_dict_plot(loss_dict, output_dir=".", seed=None, dataset="UCF101",
         else:
             batch_str, batch_str_pr = "", ""
 
-        fig = plot_loss_dict(
+        fig = plot_utils.plot_loss_dict(
             loss_dict, num_classes=num_classes, dataset=dataset, 
             unexp_epoch=unexp_epoch, by_batch=by_batch
             )
@@ -874,7 +731,7 @@ def get_loss_plot_kwargs(hp_dict, num_classes=None):
 
 
 #############################################
-def plot_conf_mat(conf_mat, mode="val", suffix="", output_dir=".", 
+def plot_conf_mat(conf_mat, mode="val", suffix="", epoch_n=None, output_dir=".", 
                   **plot_mat_kwargs):
     """
     plot_conf_mat(conf_mat)
@@ -883,13 +740,22 @@ def plot_conf_mat(conf_mat, mode="val", suffix="", output_dir=".",
     suffix_str = f"_{suffix}" if len(suffix) else ""
     save_name = f"{mode}_confusion_matrix{suffix_str}.svg"
     conf_mat_path = Path(output_dir, save_name)
+
+    if suffix == "best":
+        sub_str = f"{mode}, epoch {epoch_n}" if epoch_n is not None else mode
+        title=f"Best model ({sub_str})"
+    else:
+        if epoch_n is None:
+            title = mode.capitalize()
+        else:
+            title = f"Epoch {epoch_n} ({mode})" 
     
-    conf_mat.plot_mat(conf_mat_path, **plot_mat_kwargs)
+    conf_mat.plot_mat(conf_mat_path, title=title, **plot_mat_kwargs)
 
 
 #############################################
 def load_replot_conf_mat(conf_mat_dict, mode="val", suffix="", 
-                         omit_class_names=False, output_dir="."):
+                         omit_class_names=False, epoch_n=None, output_dir="."):
     """
     load_replot_conf_mat(conf_mat_dict)
     """
@@ -908,8 +774,8 @@ def load_replot_conf_mat(conf_mat_dict, mode="val", suffix="",
     conf_mat.load_from_storage_dict(conf_mat_dict)
 
     plot_conf_mat(
-        conf_mat, mode=mode, suffix=suffix, output_dir=output_dir, 
-        **plot_mat_kwargs
+        conf_mat, mode=mode, suffix=suffix, epoch_n=epoch_n, 
+        output_dir=output_dir, **plot_mat_kwargs
         )
 
 
@@ -925,6 +791,7 @@ def plot_conf_mats(loss_dict, epoch_n=-1, omit_class_names=False,
             conf_mat_dict = mode_dict["confusion_matrix"]
             if isinstance(conf_mat_dict, list):
                 if epoch_n == -1:
+                    epoch_n = len(conf_mat_dict) - 1
                     conf_mat_dict = conf_mat_dict[-1]
                     suffix = ""
                 elif epoch_n in mode_dict["epoch_n"]:
@@ -937,19 +804,95 @@ def plot_conf_mats(loss_dict, epoch_n=-1, omit_class_names=False,
                         f"(mode {mode})."
                         )
             load_replot_conf_mat(
-                conf_mat_dict, mode=mode, suffix=suffix, 
+                conf_mat_dict, mode=mode, suffix=suffix, epoch_n=epoch_n,
                 omit_class_names=omit_class_names, output_dir=output_dir
                 )
 
-
         if "confusion_matrix_best" in mode_dict.keys():
+            best_idx = np.argmax(mode_dict["acc"])
+            best_epoch_n = mode_dict["epoch_n"][best_idx]
+
             load_replot_conf_mat(
                 mode_dict["confusion_matrix_best"], 
                 mode=mode, 
                 suffix="best", 
                 omit_class_names=omit_class_names,
+                epoch_n=best_epoch_n,
                 output_dir=args.output_dir
                 )
+
+
+#############################################
+def save_confusion_mat_dict(conf_mat_dict, prefix=None, output_dir=".", 
+                            overwrite=True):
+    """
+    save_confusion_mat_dict(conf_mat_dict)
+    """
+
+    save_name = "confusion_matrix_data.json"
+    if prefix is not None and len(prefix):
+        save_name = f"{prefix}_{save_name}"
+
+    save_path = Path(output_dir, save_name)
+    save_path = misc_utils.get_unique_filename(
+        Path(output_dir, save_name), overwrite=overwrite
+        )
+
+    with open(save_path, "w") as f:
+        json.dump(conf_mat_dict, f)
+
+
+#############################################
+def load_confusion_mat_dict(prefix=None, suffix="", output_dir="."):
+    """
+    load_confusion_mat_dict(conf_mat_dict)
+    """
+
+    save_name = "confusion_matrix_data.json"
+
+    if prefix is not None and len(prefix):
+        save_name = f"{prefix}_{save_name}"
+
+    if suffix is not None and len(suffix):
+        save_name = f"{prefix}_{save_name}_{suffix}"
+
+    save_path = Path(output_dir, save_name)
+    if save_path.is_file():
+        with open(save_path, "r") as f:
+            conf_mat_dict = json.load(f)
+    else:
+        raise OSError(f"{save_path} is not a file.")
+
+    return conf_mat_dict
+
+
+#############################################
+def load_loss_hyperparameters(model_direc, suffix=None): 
+    """
+    load_loss_hyperparameters(model_direc)
+    """
+
+    if not Path(model_direc).is_dir():
+        raise ValueError(f"{model_direc} is not a directory")
+
+    suffix_str = ""
+    if suffix is not None and len(suffix):
+        suffix_str = f"_{suffix}"
+
+    loss_dict_path = Path(model_direc, f"loss_data{suffix_str}.json")
+    hp_dict_path = Path(model_direc, f"hyperparameters{suffix_str}.yaml")
+
+    if not loss_dict_path.is_file():
+        raise OSError(f"{loss_dict_path} does not exist.")
+    if not hp_dict_path.is_file():
+        raise OSError(f"{hp_dict_path} does not exist.")
+    
+    with open(loss_dict_path, "r") as f:
+        loss_dict = json.load(f)
+    with open(hp_dict_path, "r") as f:
+        hp_dict = yaml.safe_load(f)
+
+    return loss_dict, hp_dict
 
 
 #############################################
@@ -974,8 +917,10 @@ if __name__ == "__main__":
     parser.add_argument("--omit_class_names", action="store_true", 
         help=("if True, class names are omitted (greatly reduces svg save "
             "time, if there are many classes)."))
+    parser.add_argument("--test", action="store_true", 
+        help="plot confusion matrix for test results")
 
-
+    # general arguments
     parser.add_argument("--output_dir", default=None, 
         help=("directory in which to save files. If None, it is inferred from "
         "another path argument)"))
@@ -986,29 +931,43 @@ if __name__ == "__main__":
     misc_utils.get_logger_with_basic_format(level=args.log_level)
 
     if args.model_direc is not None:
-        loss_dict, hp_dict = misc_utils.load_loss_hyperparameters(
-            args.model_direc, suffix=args.file_suffix
-            )
-
-        loss_plot_kwargs = get_loss_plot_kwargs(
-            hp_dict, num_classes=args.num_classes
-            )
-
         if args.output_dir is None:
             args.output_dir = args.model_direc
 
-        # plot and save loss
-        save_loss_dict_plot(
-            loss_dict, output_dir=args.output_dir, **loss_plot_kwargs
-            )
+        if args.test:
+            conf_mat_dict = load_confusion_mat_dict(
+                prefix="test", output_dir=args.model_direc
+                )
 
-        # plot and save confusion matrix
-        plot_conf_mats(
-            loss_dict, 
-            epoch_n=args.conf_mat_epoch_n, 
-            omit_class_names=args.omit_class_names, 
-            output_dir=args.output_dir
-            )
+            load_replot_conf_mat(
+                conf_mat_dict,
+                mode="test",
+                epoch_n=0,
+                omit_class_names=args.omit_class_names, 
+                output_dir=args.output_dir
+                )
+
+        else:
+            loss_dict, hp_dict = load_loss_hyperparameters(
+                args.model_direc, suffix=args.file_suffix
+                )
+
+            loss_plot_kwargs = get_loss_plot_kwargs(
+                hp_dict, num_classes=args.num_classes
+                )
+
+            # plot and save loss
+            save_loss_dict_plot(
+                loss_dict, output_dir=args.output_dir, **loss_plot_kwargs
+                )
+
+            # plot and save confusion matrix
+            plot_conf_mats(
+                loss_dict, 
+                epoch_n=args.conf_mat_epoch_n, 
+                omit_class_names=args.omit_class_names, 
+                output_dir=args.output_dir
+                )
 
     else:
         breakpoint()
