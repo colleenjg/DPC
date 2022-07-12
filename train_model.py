@@ -160,7 +160,7 @@ def get_dataloaders(args):
     add_keys = ["batch_size", "img_dim", "num_workers", "supervised"]
     dataset_keys = ["data_path_dir", "dataset", "seq_len", "num_seq"]
     data_kwargs["transform"] = "default"
-    data_kwargs["no_transforms"] = args.no_transforms
+    data_kwargs["no_augm"] = args.no_augm
     
     allow_flip = True
     if dataset == "Gabors":
@@ -182,7 +182,7 @@ def get_dataloaders(args):
     mode = "test" if args.test else "train"
     if args.supervised:
         data_kwargs["transform"] = data_utils.get_transform(
-            None, args.img_dim, mode=mode, no_transforms=args.no_transforms, 
+            None, args.img_dim, mode=mode, no_augm=args.no_augm, 
             allow_flip=allow_flip
             )
 
@@ -195,10 +195,10 @@ def get_dataloaders(args):
     val_loader = None
     if args.save_best:
         mode = "val"
-        if args.supervised and not args.no_transforms:
+        if args.supervised and not args.no_augm:
             data_kwargs["transform"] = data_utils.get_transform(
                 None, args.img_dim, mode=mode, 
-                no_transforms=args.no_transforms, allow_flip=allow_flip
+                no_augm=args.no_augm, allow_flip=allow_flip
                 )
         val_seed = misc_utils.get_new_seed(args.seed)
         val_loader = data_utils.get_dataloader(
@@ -435,7 +435,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_epochs", default=10, type=int, 
         help=("total number of epochs to run (in addition to epoch 0 which "
             "computes a pre-training baseline)"))
-    parser.add_argument("--no_transforms", action="store_true", 
+    parser.add_argument("--no_augm", action="store_true", 
         help="if True, no augmentation transforms are used")
     
     # pretrained/resuming parameters

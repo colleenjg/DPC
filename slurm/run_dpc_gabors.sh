@@ -21,7 +21,7 @@ FIXED_DATASET=Gabors
 FIXED_NET=resnet18
 FIXED_TRAIN_WHAT=all
 FIXED_IMG_DIM=128
-FIXED_TRANSF_ARG="--no_transforms"
+FIXED_AUGM_ARG="--no_augm"
 FIXED_BATCH_SIZE=32
 FIXED_TRAIN_LEN=500
 FIXED_GAB_IMG_LEN=3
@@ -33,7 +33,7 @@ echo -e "\nFIXED HYPERPARAMETERS\n"\
 "net: $FIXED_NET\n"\
 "train what: $FIXED_TRAIN_WHAT\n"\
 "image dimensions: $FIXED_IMG_DIM\n"\
-"transform argument: $FIXED_TRANSF_ARG\n"\
+"augmentation argument: $FIXED_AUGM_ARG\n"\
 "batch size: $FIXED_BATCH_SIZE\n"\
 "training dataset length: $FIXED_TRAIN_LEN\n"\
 "Gabor image length: $FIXED_GAB_IMG_LEN\n"\
@@ -148,7 +148,7 @@ python train_model.py \
     --net $FIXED_NET \
     --train_what $FIXED_TRAIN_WHAT \
     --img_dim $FIXED_IMG_DIM \
-    $FIXED_TRANSF_ARG \
+    $FIXED_AUGM_ARG \
     --batch_size $FIXED_BATCH_SIZE \
     --train_len $FIXED_TRAIN_LEN \
     --gab_img_len $FIXED_GAB_IMG_LEN \

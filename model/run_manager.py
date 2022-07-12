@@ -18,16 +18,16 @@ logger = logging.getLogger(__name__)
 TAB = "    "
 
 #############################################
-def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50, 
+def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50, 
                 log_idx=0, topk=TOPK, loss_weight=None, device="cpu", 
                 log_freq=5, writer=None, train_off=False, output_dir=None, 
                 save_by_batch=False):
     """
-    train_epoch(data_loader, model, optimizer)
+    train_epoch(dataloader, model, optimizer)
     """
     
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
-    is_gabors = gabor_stimuli.check_if_is_gabors(data_loader.dataset)
+    is_gabors = gabor_stimuli.check_if_is_gabors(dataloader.dataset)
         
     model = model.to(device)
 
@@ -44,7 +44,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
     if is_gabors and save_by_batch:
         gabor_loss_dict, gabor_acc_dict, gabor_conf_mat = \
             gabor_utils.init_gabor_records(
-                data_loader.dataset, init_conf_mat=(output_dir is not None)
+                dataloader.dataset, init_conf_mat=(output_dir is not None)
                 )
         
     criterion, criterion_no_reduction = loss_utils.get_criteria(
@@ -52,7 +52,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         )
 
     batch_times = []
-    for idx, (input_seq, sup_target) in enumerate(data_loader):
+    for idx, (input_seq, sup_target) in enumerate(dataloader):
         start_time = time.perf_counter()
         input_seq = input_seq.to(device)
         input_seq_shape = input_seq.size()
@@ -88,7 +88,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         if save_by_batch:
             batch_loss = criterion_no_reduction(
                 output_flattened, target_flattened
-                ).to("cpu").reshape(loss_reshape)
+                ).detach().cpu().reshape(loss_reshape)
 
             if not supervised:
                 # take mean across spatial (HW) dimension
@@ -96,18 +96,18 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
             
             training_utils.add_batch_data(
                 train_dict, 
-                dataset=data_loader.dataset, 
+                dataset=dataloader.dataset, 
                 batch_loss=losses.val, 
-                batch_loss_by_item=batch_loss.to("cpu").tolist(), 
+                batch_loss_by_item=batch_loss.detach().cpu().tolist(), 
                 sup_target=sup_target, 
-                output=output_.to("cpu").tolist(), 
-                target=target.to("cpu").tolist(), 
+                output=output_.detach().cpu().tolist(), 
+                target=target.detach().cpu().tolist(), 
                 epoch_n=epoch_n
                 )
 
             if is_gabors:
                 gabor_utils.update_records(
-                    data_loader.dataset,
+                    dataloader.dataset,
                     gabor_loss_dict, 
                     gabor_acc_dict,
                     output=output_flattened.detach().cpu().numpy(),
@@ -125,7 +125,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         batch_times.append(batch_time)
 
         # log results
-        if idx % log_freq == 0 or idx == len(data_loader) - 1:
+        if idx % log_freq == 0 or idx == len(dataloader) - 1:
             loss_avg, acc_avg, loss_val, acc_val, stats_str = \
                 loss_utils.get_stats(
                     losses, topk_meters, ks=topk, local=True, last=True
@@ -134,7 +134,7 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
             training_utils.log_epoch(
                 stats_str, duration=np.mean(batch_times), epoch_n=epoch_n, 
                 num_epochs=num_epochs, batch_idx=idx, 
-                n_batches=len(data_loader), spacing=spacing
+                n_batches=len(dataloader), spacing=spacing
                 )
             batch_times = []
             spacing = "" # for all but first log of the epoch
@@ -160,8 +160,8 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
         if gabor_conf_mat is not None:
             gabor_utils.plot_save_gabor_conf_mat(
                 gabor_conf_mat, mode="train", epoch_n=epoch_n, 
-                unexp=data_loader.dataset.unexp, 
-                U_prob=data_loader.dataset.U_prob, 
+                unexp=dataloader.dataset.unexp, 
+                U_prob=dataloader.dataset.U_prob, 
                 output_dir=output_dir
             ) 
 
@@ -169,15 +169,15 @@ def train_epoch(data_loader, model, optimizer, epoch_n=0, num_epochs=50,
 
 
 #############################################
-def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10, 
+def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=10, 
                       topk=TOPK, loss_weight=None, device="cpu", test=False, 
                       output_dir=None, save_by_batch=False):
     """
-    val_or_test_epoch(data_loader, model)
+    val_or_test_epoch(dataloader, model)
     """
 
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
-    is_gabors = gabor_stimuli.check_if_is_gabors(data_loader.dataset)
+    is_gabors = gabor_stimuli.check_if_is_gabors(dataloader.dataset)
 
     model = model.to(device)
     model.eval()
@@ -198,15 +198,15 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
     if is_gabors and save_by_batch:
         gabor_loss_dict, gabor_acc_dict, gabor_conf_mat = \
             gabor_utils.init_gabor_records(
-                data_loader.dataset, init_conf_mat=(output_dir is not None)
+                dataloader.dataset, init_conf_mat=(output_dir is not None)
                 )
 
     if supervised and output_dir is not None:
         if is_gabors:
-            confusion_mat = gabor_utils.init_gabor_conf_mat(data_loader.dataset)
+            confusion_mat = gabor_utils.init_gabor_conf_mat(dataloader.dataset)
             plot_mat_kwargs = dict()
         else:
-            class_names = list(data_loader.dataset.class_dict_encode.keys())
+            class_names = list(dataloader.dataset.class_dict_encode.keys())
             confusion_mat = loss_utils.ConfusionMeter(class_names)
             # only include class names for final epoch 
             # (if there are many class labels, saving to svg is very slow)
@@ -219,7 +219,7 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
     shared_pred, SUB_B = False, None
     start_time = time.perf_counter()
     with torch.no_grad():
-        for idx, (input_seq, sup_target) in enumerate(data_loader):
+        for idx, (input_seq, sup_target) in enumerate(dataloader):
             if supervised and len(input_seq.size()) == 7:
                 shared_pred = True # applies to all batches
                 input_seq, SUB_B = training_utils.resize_input_seq(input_seq)
@@ -259,7 +259,7 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
             if save_by_batch:
                 batch_loss = criterion_no_reduction(
                     output_flattened, target_flattened
-                    ).to("cpu").reshape(loss_reshape)
+                    ).detach().cpu().reshape(loss_reshape)
 
                 if not supervised:
                     # take mean across spatial (HW) dimension
@@ -267,23 +267,23 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
 
                 training_utils.add_batch_data(
                     val_dict, 
-                    dataset=data_loader.dataset, 
+                    dataset=dataloader.dataset, 
                     batch_loss=losses.val, 
-                    batch_loss_by_item=batch_loss.to("cpu").tolist(),
+                    batch_loss_by_item=batch_loss.detach().cpu().tolist(),
                     sup_target=sup_target, 
-                    output=output_.to("cpu").tolist(), 
-                    target=target.to("cpu").tolist(), 
+                    output=output_.detach().cpu().tolist(), 
+                    target=target.detach().cpu().tolist(), 
                     epoch_n=epoch_n
                     )
 
                 if is_gabors:
                     gabor_utils.update_records(
-                        data_loader.dataset,
+                        dataloader.dataset,
                         gabor_loss_dict, 
                         gabor_acc_dict,
                         output=output_flattened.detach().cpu().numpy(),
                         sup_target=sup_target.detach().cpu().numpy(),
-                        batch_loss=batch_loss,
+                        batch_loss=batch_loss.detach().cpu().numpy(),
                         supervised=supervised,
                         confusion_mat=gabor_conf_mat,
                         )
@@ -323,8 +323,8 @@ def val_or_test_epoch(data_loader, model, epoch_n=0, num_epochs=10,
         if gabor_conf_mat is not None:
             gabor_utils.plot_save_gabor_conf_mat(
                 gabor_conf_mat, mode=mode, epoch_n=epoch_n, 
-                unexp=data_loader.dataset.unexp, 
-                U_prob=data_loader.dataset.U_prob, 
+                unexp=dataloader.dataset.unexp, 
+                U_prob=dataloader.dataset.U_prob, 
                 output_dir=output_dir
             ) 
 

@@ -18,7 +18,15 @@ def seed_workers(worker_id):
     """
     seed_workers(worker_id)
 
+    Function for deterministically re-seeding the np.random and random modules 
+    when individual data loader workers are intialized. 
+
     See: https://pytorch.org/docs/stable/notes/randomness.html#dataloader
+
+    Required args
+    -------------
+    - worker_id : int
+        Data loader worker ID (ignored).
     """
 
     worker_seed = torch.initial_seed() % 2**32
@@ -27,16 +35,37 @@ def seed_workers(worker_id):
 
 
 #############################################
-def get_transform(dataset, img_dim=256, mode="train", no_transforms=False, 
+def get_transform(dataset=None, img_dim=256, mode="train", no_augm=False, 
                   allow_flip=True):
     """
     get_transform(dataset)
+
+    Returns a torch Transform for the given dataset type.
+
+    Optional args
+    -------------
+    - dataset : str (default=None)
+        Dataset name, or None.
+    - img_dim : int (default=256)
+        Final image dimensions.
+    - mode : str (default="train")
+        Dataset mode (i.e., "train", "val" or "test").
+    - no_augm : bool (default=False)
+        If True, no augmentations are applied (other than the basics: 
+        scaling, converting to tensor and normalizing).
+    - allow_flip : bool (default=True)
+        If True, horizontal flips are allowed among augmentations.
+
+    Returns
+    -------
+    - transform : torch Transform
+        torch Transforms for the dataset
     """
 
     if dataset is not None:
         dataset = misc_utils.normalize_dataset_name(dataset)
 
-    if no_transforms:
+    if no_augm:
         transform_list = [
             augmentations.Scale(size=(img_dim, img_dim)),
             augmentations.ToTensor(),
@@ -146,10 +175,57 @@ def get_dataloader(data_path_dir="process_data", transform=None,
                    dataset="UCF101", mode="train", eye="both",
                    batch_size=4, img_dim=128, seq_len=5, num_seq=8, 
                    ucf_hmdb_ms_ds=3, split_n=1, supervised=False, 
-                   num_workers=4, no_transforms=False, seed=None, 
+                   num_workers=4, no_augm=False, seed=None, 
                    **gabor_kwargs):
     """
     get_dataloader()
+
+    Returns a dataloader for a specific dataset. 
+
+    Optional args
+    -------------
+    - data_path_dir : str or path (default="process_data")
+        Directory where the data is stored (only needd if dataset is not Gabors)
+    - transform : torch Transform or None (default=None)
+        torch Transforms for the dataset
+    - dataset : str (default="UCF101")
+        Dataset naes
+    - mode : str (default="train")
+        Dataset mode (i.e., "train", "val" or "test").
+    - eye : str (default="both")
+        Eye(s) to which data should be cropped, if the dataset is MouseSim.
+    - batch_size : int (default=4)
+        Data loader batch size.
+    - img_dim : int (default=128)
+        Final image dimensions, used for determining which size version if the 
+        Kinetics400 dataset should be used.
+    - seq_len : int (default=5)
+        Length of individual sequences to generate for the dataset.
+    - num_seq : int (default=8)
+        Number of sequences to generate per batch item for the dataset.
+    - ucf_hmdb_ms_ds : bool (default=3)
+        Level of temporal downsampling to use.
+    - split_n : int (default=1)
+        Dataset train:val(:test) split to use.
+    - supervised : bool (default=False)
+        If True, data loader is initialized for a supervised task.
+    - num_workers : int (default=4)
+        Number of workers that data loader should spawn.
+    - no_augm : bool (default=False)
+        If True, no augmentations are applied (other than the basics: 
+        scaling, converting to tensor and normalizing).
+    - seed : int (default=None)
+        Seed for seeding the sampling generator for the dataloader.
+
+    Keyword args
+    ------------
+    **gabor_kwargs
+        Additional initialization arguments for 
+        gabor_stimuli.GaborSequenceGenerator
+
+    Returns
+    -------
+    - dataloader : torch DataLoader
     """
     
     logger.info(f"Loading {mode} data...", extra={"spacing": "\n"})
@@ -164,7 +240,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
     drop_last = True
     if transform == "default":
         transform = get_transform(
-            dataset, img_dim, mode=mode, no_transforms=no_transforms,
+            dataset, img_dim, mode=mode, no_augm=no_augm,
             allow_flip=(dataset != "Gabors")
             )
 
@@ -245,14 +321,14 @@ def get_dataloader(data_path_dir="process_data", transform=None,
 
     else:
         raise NotImplementedError(
-            "get_data_loader() only implemented for the 'Kinetics400', "
+            "get_dataloader() only implemented for the 'Kinetics400', "
             "'UCF101', 'HMDB51', 'MouseSim', and 'Gabors' datasets."
             )
 
     sampler = data.RandomSampler(dataset)
     generator = misc_utils.get_torch_generator(seed)
 
-    data_loader = data.DataLoader(
+    dataloader = data.DataLoader(
         dataset,
         batch_size=batch_size,
         sampler=sampler,
@@ -266,5 +342,5 @@ def get_dataloader(data_path_dir="process_data", transform=None,
     
     logger.info(f"{mode.capitalize()} dataset size: {len(dataset)}.")
 
-    return data_loader
+    return dataloader
 

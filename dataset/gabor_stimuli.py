@@ -26,6 +26,18 @@ TAB = "    "
 def check_if_is_gabors(dataset):
     """
     check_if_is_gabors(dataset)
+
+    Returns whether the input dataset is a GaborSequenceGenerator object.
+
+    Required args
+    -------------
+    - dataset : torch dataset object
+        Torch dataset object.
+
+    Returns
+    -------
+    - is_gabors : bool
+        Whether the input dataset is a GaborSequenceGenerator object.
     """
 
     is_gabors = isinstance(dataset, GaborSequenceGenerator)
@@ -35,6 +47,142 @@ def check_if_is_gabors(dataset):
 
 #############################################
 class GaborSequenceGenerator(data.Dataset):
+    """
+    Class for generating Gabor sequences.
+
+    Attributes
+    ----------
+    - all_mean_oris : 1D array
+        All possible mean orientations (for expected or unexpected image types)
+    - base_seq : list
+        Base image type sequence (e.g., ["A", "B", "C", "D", "G"])
+    - class_dict_decode : dict
+        Dictionary for decoding class names from class labels
+    - class_dict_encode : dict
+        Dictionary for encoding class names into class labels
+    - dataset_len : int
+        Dataset length
+    - dataset_name : str
+        Dataset name
+    - deg_per_pix : float
+        Visual degrees to pixels conversion used.
+    - diff_U_possizes : bool
+        Whether U positions and sizes are different from D positions and sizes.
+    - full_len : int
+        Length of continuous sequences to generate (before breaking down into 
+        individual sequences)
+    - gab_img_len : int
+        Number of frames to repeat for Gabor image
+    - gamma : float
+        Gabor patch spatial aspect ratio (width to height ratio)
+    - gray : bool
+        If True, grayscreen images are included in the base sequence.
+    - height : int
+        Individual Gabor image height (pixels)
+    - image_type_dict : dict
+        Dictionary for associating image types (e.g., "A", "B", etc.) to 
+        indices for the positions and sizes arrays.
+    - kappa : float 
+        Orientation dispersion parameter: 1 / (std dev in rad) ^ 2
+    - mean_oris : 1D array
+        Mean orientations to sample from for expected image types.
+    - mean_oris_U : 1D array
+        Mean orientations to sample from for unexpected image types (i.e., "U").
+    - mode : str
+        Dataset mode (i.e., "train", "val", or "test") 
+    - num_base_seq_repeats : int
+        Number of base sequence repeats (minimum) needed to generate a full 
+        continuous sequences.
+    - num_cycles_adj : float
+        Adjusted number cycles to use in drawing Gabor patches. 
+    - num_frames_total : int
+        Total number of frames per sequence
+    - num_gabors : int
+        Number of Gabor patches per image.
+    - num_mean_oris : int
+        Number of equally spaced orientations to sample from, between 0 and 360 
+        degrees. 
+    - num_seq : int
+        Number of sequences to return per sample
+    - num_sigmas_visible : float
+        Number of standard deviations to make visible on each side of a Gabor 
+        patch.
+    - positions : 3D array
+        Gabor patch positions for each image type, with 
+        dims: image type x [height, width] x number of gabors
+    - psi_rad : float
+        Gabor patch phase (in radians)
+    - return_label : bool
+        If True, when sequences are sampled, labels for each image are returned 
+        as well.
+    - roll : bool
+        If True, the base sequence can be rolled when generating a full 
+        continuous sequence.
+    - same_possizes : bool
+        If True, positions and sizes are fixed for the dataset.
+    - seq_len : int
+        Number of frames per sequence.
+    - shift_frames : bool
+        If True and self.roll is True, rolling also allows shifting the start 
+        point of a sequence down to the level of repeated frames.
+    - size_ran : list
+        Size range for the Gabor patches (in visual degrees).
+    - sizes : 2D array
+        Gabor patch sizes for each image type (in visual degrees), with 
+        dims: image type x number of gabors
+    - sub_batch_idxs : 2D torch Tensor
+        Tensor for reindexing a sequences into overlapping sub-batches 
+        (for "test" mode), with dims: number of sub batches x num_seq 
+    - supervised : bool
+        If True, dataset is set to supervised mode.
+    - transform : torch Transform
+        Transform to apply to the Gabor sequences sampled.
+    - unexp : bool
+        If True, dataset is set to produce unexpected sequences.
+    - U_prob : float
+        Probability of replacing each individual D with a U frame, if unexp is 
+        True. 
+    - width : int
+        Individual Gabor image width (pixels).
+
+    Methods
+    -------
+    - self.create_gabor(gabor_size)
+        Creates a Gabor patch.
+    - self.generate_sequences()
+        Generates a set of sequences.
+    - self.get_all_oris(image_mean_oris)
+        Gets exact orientations per patch from mean orientations. 
+    - self.get_image_mean_oris(seq_images)
+        Gets mean orientations for a sequence of images.
+    - self.get_sequence_idxs()
+        Gets indices to index into full continuous sequence into order to obtain 
+        individual sequences.
+    - self.get_sequence_image_types()
+        Gets a sequence of image types.
+    - self.image_class_to_label(seq_image_types, seq_image_mean_oris)
+        Converts class names to labels.
+    - self.image_label_to_class(seq_labels)
+        Converts class labels to names.
+    - self.image_to_image_idx(seq_image_types)
+        Obtains indices for positions and sizes arrays for image types. 
+    - self.overlay_gabors(image_gabor_patches, positions)
+        Overlays gabor patches at specific positions.
+    - self.sample_mean_ori()
+        Samples a mean orientation value.
+    - self.set_deg_per_pix(deg_width)
+        Sets the visual degree to pixel conversion to use.
+    - self.set_num_cycles_adj(num_cycles)
+        Sets the adjusted number cycles to use in drawing Gabor patches.  
+    - self.set_possizes()
+        Sets the positions and sizes for the dataset, based on an input seed.
+    - self.set_size_ran(size_ran)
+        Sets the size range for the Gabors (in degrees).
+    - self.set_transform(transform)
+        Sets the torch Transform used for the dataset.
+    -------
+    """
+
     def __init__(
         self, 
         width=256, 
@@ -42,7 +190,7 @@ class GaborSequenceGenerator(data.Dataset):
         mode="train",
         dataset_name="Gabors",
         transform=None,
-        train_len=5000, # training dataset length
+        train_len=5000,
         seq_len=10,
         num_seq=5,
         num_gabors=NUM_GABORS, 
@@ -55,35 +203,106 @@ class GaborSequenceGenerator(data.Dataset):
         unexp=True,
         U_prob=0.1, 
         diff_U_possizes=False, 
-        size_ran=[10, 20], # degrees
-        deg_width=120, # image width, in degrees (if curved)
-        ori_std_dev=0.25, # radians
-        num_cycles=1, # number of visible cycles (approx.)
-        psi=0.25, # phase (prop of cycle)
-        gamma=1, # aspect ratio
+        size_ran=[10, 20],
+        deg_width=120,
+        ori_std_dev=0.25,
+        num_cycles=1,
+        psi=0.25,
+        gamma=1,
         return_label=False,
         supervised=False,
-        seed=None, # used only if same_possizes is True
+        seed=None,
         ):
+        """
+        GaborSequenceGenerator()
+
+        Constructs a GaborSequenceGenerator object
+
+        Optional args
+        -------------
+        - width : int (default=256)
+            Individual Gabor image width (pixels)
+        - height : int (default=256)
+            Individual Gabor image height (pixels)
+        - mode : str (default="train")
+            Dataset mode (i.e., "train", "val", or "test") 
+        - dataset_name : str (default="Gabors")
+            Dataset name
+        - transform : torch Transform (default=None)
+            Transform to apply to the Gabor sequences sampled.
+        - train_len : int (default=5000)
+            Dataset length, in train mode.
+        - seq_len : int (default=10)
+            Number of frames per sequence.
+        - num_seq : int (default=5)
+            Number of sequences to return per sample.
+        - num_gabors : int(default=NUM_GABORS)
+            Number of Gabor patches per image
+        - num_mean_oris : int(default=gabor_utils.NUM_MEAN_ORIS)
+            Number of equally spaced orientations to sampled from, 
+            between 0 and 360 
+            degrees. 
+        - gab_img_len : int(default=GAB_IMG_LEN)
+            Number of frames to repeat for Gabor image
+        - same_possizes : bool (default=True)
+            If True, positions and sizes are fixed for the dataset.
+        - gray : bool (default=True)
+            If True, grayscreen images are included in the base sequence.
+        - roll : bool (default=False)
+            If True, the base sequence can be rolled when generating the full 
+            continuous sequence.
+        - shift_frames : bool (default=False)
+            If True and roll is True, rolling also allows shifting the start 
+            point of a sequence down to the level of repeated frames.
+        - unexp : bool (default=True)
+            If True, dataset is set to produce unexpected sequences
+        - U_prob : float (default=0.1)
+            Probability of replacing each individual D with a U frame, if 
+            unexp is True. 
+        - diff_U_possizes : bool (default=False)
+            Whether U positions and sizes are different from D positions and 
+            sizes.
+        - size_ran : list (default=[10, 20])
+            Size range for the Gabor patches (in visual degrees).
+        - deg_width : float (default=120)
+            Image width in visual degrees, if it were curved (used for 
+            conversion to pixels).
+        - ori_std_dev : float (default=0.25)
+            Orientation standard deviation (in radians).
+        - num_cycles : float (default=1)
+            Approximate number Gabor cycles that should be visible for each 
+            Gabor patch (only implemented between 0.5 and 3).
+        - psi : float (default=0.25)
+            Gabor patch phase (as a proportion of a full cycle).
+        - gamma : float (default=1)
+            Gabor patch spatial aspect ratio (width to height ratio).
+        - return_label : bool (default=False)
+            If True, when sequences are sampled, labels for each image are 
+            returned as well.
+        - supervised : bool (default=False)
+            If True, dataset is set to supervised mode.
+        - seed : int (default=None)
+            Seed to use to set positions and sizes, if same_possizes is True.
+        """
         
         self.mode         = mode
         self.dataset_name = dataset_name
         self.supervised   = supervised
 
-        self.width           = int(width) # pixels
-        self.height          = int(height) # pixels
-        self.seq_len         = int(seq_len) # nbr frames per seq
-        self.num_seq         = int(num_seq) # nbr of sequences to sample
-        self.num_gabors      = int(num_gabors) # nbr of Gabor patches
-        self.num_mean_oris   = int(num_mean_oris) # nbr of mean orientations
-        self.gab_img_len     = int(gab_img_len) # nbr frames per Gabor image
+        self.width           = int(width)
+        self.height          = int(height)
+        self.seq_len         = int(seq_len)
+        self.num_seq         = int(num_seq)
+        self.num_gabors      = int(num_gabors)
+        self.num_mean_oris   = int(num_mean_oris)
+        self.gab_img_len     = int(gab_img_len)
 
         if self.mode == "train":
             self.dataset_len = int(train_len)
         else:
             self.dataset_len = int(train_len / 2)
 
-        self.full_len        = int(seq_len * num_seq) # full sequence length
+        self.full_len        = int(seq_len * num_seq)
         if self.mode == "test" and self.supervised:
             self.full_len *= 5
 
@@ -94,7 +313,6 @@ class GaborSequenceGenerator(data.Dataset):
         self.unexp           = bool(unexp)
         self.diff_U_possizes = bool(diff_U_possizes)
         
-        self.size_ran           = size_ran # base gabor patch size range
         self.kappa              = 1.0 / (ori_std_dev ** 2)
         self.psi_rad            = 2 * psi * np.pi
         self.gamma              = gamma
@@ -118,9 +336,16 @@ class GaborSequenceGenerator(data.Dataset):
         self.return_label = return_label
 
 
-    def _set_U_prob(self, U_prob=0):
+    def _set_U_prob(self, U_prob=0.1):
         """
         self._set_U_prob()
+
+        Sets the probability of replacing individual D images with U images.
+
+        Optional args
+        -------------
+        - U_prob : float (default=0.1)
+            Probability of replacing an individual D image with a U image.
         """
 
         if hasattr(self, "U_prob"):
@@ -135,6 +360,17 @@ class GaborSequenceGenerator(data.Dataset):
 
 
     def set_num_cycles_adj(self, num_cycles=1):
+        """
+        self.set_num_cycles_adj()
+
+        Sets the probability of replacing individual D images with U images.
+
+        Optional args
+        -------------
+        - num_cycles : float (default=1)
+            Approximate number Gabor cycles that should be visible for each 
+            Gabor patch (only implemented between 0.5 and 3).
+        """
 
         if num_cycles <= 0:
             raise ValueError("num_cycles must be strictly positive.")
@@ -155,6 +391,18 @@ class GaborSequenceGenerator(data.Dataset):
     def set_deg_per_pix(self, deg_width=120, curved=True):
         """
         self.set_deg_per_pix()
+
+        Sets the visual degrees to pixel conversion to use in generating Gabor 
+        patches.
+
+        Optional args
+        -------------
+        - deg_width : float (default=120)
+            Image width in visual degrees.
+        - curved : bool (default=True)
+            If True, deg_width is the image width in visual degrees, if the 
+            image were curved (equidistant in all points from the eye). 
+            Otherwise, if it were flat.
         """
         
         if curved:
@@ -167,6 +415,14 @@ class GaborSequenceGenerator(data.Dataset):
     def set_size_ran(self, size_ran=[10, 20]):
         """
         self.set_size_ran()
+
+        Sets the size range (in visual degrees) from which to sample Gabor 
+        patch sizes.
+
+        Optional args
+        -------------
+        - size_ran : list (default=[10, 20])
+            Size range in visual degrees [min, max].
         """
 
         if len(size_ran) != 2:
@@ -182,6 +438,14 @@ class GaborSequenceGenerator(data.Dataset):
     def set_transform(self, transform=None):
         """
         set_transform()
+
+        Sets the torch Tensor to use on Gabor sequences, once generated.
+
+        Optional args
+        -------------
+        - transform : torch Transform (default=None)
+            Transform to use. If None, a minimal transform is set to convert 
+            images to tensor and normalize them.
         """
 
         if transform is None:
@@ -197,6 +461,9 @@ class GaborSequenceGenerator(data.Dataset):
     def mean_oris(self):
         """
         self.mean_oris
+
+        - 1D array
+            Mean orientations to sample from for expected image types.
         """
         
         if not hasattr(self, "_mean_oris"):
@@ -208,6 +475,10 @@ class GaborSequenceGenerator(data.Dataset):
     def mean_oris_U(self):
         """
         self.mean_oris_U
+
+        - 1D array
+            Mean orientations to sample from for unexpected image types 
+            (i.e., "U").
         """
         
         if not hasattr(self, "_mean_oris_U"):
@@ -219,6 +490,10 @@ class GaborSequenceGenerator(data.Dataset):
     def all_mean_oris(self):
         """
         self.all_mean_oris
+
+        - 1D array
+            All possible mean orientations (for expected or unexpected image 
+            types).
         """
         
         if not hasattr(self, "_all_mean_oris"):
@@ -234,6 +509,9 @@ class GaborSequenceGenerator(data.Dataset):
     def base_seq(self):
         """
         self.base_seq
+
+        - list
+            Base image type sequence (e.g., ["A", "B", "C", "D", "G"]).
         """
         
         if not hasattr(self, "_base_seq"):
@@ -244,27 +522,34 @@ class GaborSequenceGenerator(data.Dataset):
 
 
     @property
-    def num_images_total(self):
+    def num_frames_total(self):
         """
-        self.num_images_total
+        self.num_frames_total
+
+        - int
+            Total number of frames per sequence.
         """
         
-        if not hasattr(self, "_num_images_total"):
-            self._num_images_total = int(
+        if not hasattr(self, "_num_frames_total"):
+            self._num_frames_total = int(
                 np.ceil(self.full_len / self.gab_img_len)
                 ) + int(self.roll) # add a buffer of 1, if rolling
-        return self._num_images_total
+        return self._num_frames_total
 
 
     @property
     def num_base_seq_repeats(self):
         """
         self.num_base_seq_repeats
+
+        - int
+            Number of base sequence repeats (minimum) needed to generate a full 
+           continuous sequences.
         """
 
         if not hasattr(self, "_num_base_seq_repeats"):
             self._num_base_seq_repeats = int(
-                np.ceil(self.num_images_total / len(self.base_seq))
+                np.ceil(self.num_frames_total / len(self.base_seq))
                 )
         return self._num_base_seq_repeats
 
@@ -273,6 +558,11 @@ class GaborSequenceGenerator(data.Dataset):
     def image_type_dict(self):
         """
         self.image_type_dict
+
+        - dict
+            Dictionary for associating image types (e.g., "A", "B", etc.) to 
+            indices for the positions and sizes arrays.
+
         """
 
         if not hasattr(self, "_image_type_dict"):
@@ -293,7 +583,8 @@ class GaborSequenceGenerator(data.Dataset):
         """
         self.class_dict_encode
 
-        from class name to label
+        - dict
+            Dictionary for decoding class names from class labels.
         """
         
         if not hasattr(self, "_class_dict_encode"):
@@ -314,7 +605,8 @@ class GaborSequenceGenerator(data.Dataset):
         """
         self.class_dict_decode
 
-        from class label to name
+        - dict
+            Dictionary for encoding class names into class labels.
         """
 
         if not hasattr(self, "_class_dict_decode"):
@@ -328,7 +620,9 @@ class GaborSequenceGenerator(data.Dataset):
     @property
     def positions(self):
         """
-        self.positions: num_pos x 2 x num_gabors
+        - 3D array
+            Gabor patch positions for each image type, with 
+            dims: image type x [height, width] x number of gabors
         """
         if not hasattr(self, "_positions"):
             num_pos = max(self.image_type_dict.values()) + 1
@@ -351,7 +645,9 @@ class GaborSequenceGenerator(data.Dataset):
     @property
     def sizes(self):
         """
-        self.sizes: num_pos x num_gabors
+        - 2D array
+            Gabor patch sizes for each image type (in visual degrees), with 
+            dims: image type x number of gabors
         """
         if not hasattr(self, "_sizes"):
             num_sizes = max(self.image_type_dict.values()) + 1
@@ -378,7 +674,20 @@ class GaborSequenceGenerator(data.Dataset):
         """
         self.get_sequence_idxs()
 
-        self.sequence_idxs: num_seq x seq_len
+        Gets indices to index into full continuous sequence into order to 
+        obtain individual sequences.
+
+        Optional args
+        -------------
+        - get_num_seq : bool (default=True)
+            If True, indices for self.num_seq consecutive sequences of length 
+            self.seq_len are returned. Otherwise, indices for all possible 
+            sequences of length self.seq_len are returned.
+
+        Returns
+        -------
+        - sequence_idxs : 2D torch Tensor
+            Sequence indices, with dims: number of sequences x seq length
         """
         
         if self.full_len < self.num_seq * self.seq_len:
@@ -402,15 +711,19 @@ class GaborSequenceGenerator(data.Dataset):
             np.arange(self.seq_len), 0
             )
         
-        self._sequence_idxs = torch.from_numpy(seq_idx)
+        sequence_idxs = torch.from_numpy(seq_idx)
 
-        return self._sequence_idxs
+        return sequence_idxs
 
 
     @property
     def sub_batch_idxs(self):
         """
         self.sub_batch_idxs
+
+        - 2D torch Tensor
+            Indices for indexing into a full continous sequence to generate 
+            overlapping sub-batches (used in "test" mode).
         """
         
         if not hasattr(self, "_sub_batch_idxs"):
@@ -428,6 +741,17 @@ class GaborSequenceGenerator(data.Dataset):
     def set_possizes(self, seed=None, reset=True):
         """
         self.set_possizes()
+
+        Sets, or optionally resets, the sizes and positions attributes, based 
+        on a seed.
+
+        Optional args
+        -------------
+        - seed : int (default=None)
+            Seed to use to initialize the random state object used to set the 
+            positions and sizes.
+        - reset : bool (default=True)
+            If True, existing sizes and positions attributes are replaced. 
         """
         
         if seed is not None:
@@ -444,32 +768,69 @@ class GaborSequenceGenerator(data.Dataset):
     def sample_mean_ori(self):
         """
         self.sample_mean_ori()
+
+        Samples a mean orientation (for expected image types).
+
+        Returns
+        -------
+        - mean_ori : float
+            Sampled mean orientation (in degrees).
         """
 
         mean_ori = np.random.choice(self.mean_oris)
+        
         return mean_ori
 
 
-    def image_to_image_idx(self, seq_images):
+    def image_to_image_idx(self, seq_image_types):
         """
-        self.image_to_image_idx(seq_images)
+        self.image_to_image_idx(seq_image_types)
+
+        Returns image type indices for indexing into the positions and sizes 
+        arrays for each image type.
+
+        Required args
+        -------------
+        - seq_image_types : 1D array-like
+            Sequence of image types.
+
+        Returns
+        -------
+        - seq_image_idxs : 1D array
+            Sequence of image type indices. 
         """
 
         seq_image_idxs = np.asarray(
-            [self.image_type_dict[i] for i in seq_images]
+            [self.image_type_dict[i] for i in seq_image_types]
             )
 
         return seq_image_idxs
 
 
-    def image_class_to_label(self, seq_images, seq_image_mean_oris):
+    def image_class_to_label(self, seq_image_types, seq_image_mean_oris):
         """
-        self.image_class_to_label(seq_images, seq_image_mean_oris)
+        self.image_class_to_label(seq_image_types, seq_image_mean_oris)
+
+        Converts class names to labels.
+        
+        Required args
+        -------------
+        - seq_image_types : array-like
+            Image types (e.g., "A", "B", etc.)
+        - seq_image_mean_oris : array-like
+            Gabor orientations (same shape as seq_image_types, and numerical 
+            only)
+
+        Returns
+        -------
+        - seq_image_labels : nd array
+            Class labels for the input image types and orientations (in degrees)
+            (same shape as seq_image_types).
         """
 
         seq_image_labels = gabor_utils.image_class_to_label(
             self.class_dict_encode, 
-            seq_images, 
+            seq_image_types, 
             seq_image_mean_oris, 
             class_to_label=True
             )
@@ -480,6 +841,27 @@ class GaborSequenceGenerator(data.Dataset):
     def image_label_to_class(self, seq_labels, seq_unexp=None):
         """
         self.image_label_to_class(seq_labels)
+
+        Converts class labels to names.
+        
+        Required args
+        -------------
+        - seq_labels : array-like
+            Image class labels
+
+        Optional args
+        -------------
+        - seq_unexp : array-like (default=None)
+            Boolean array indicating which image types are unexpected ("U")
+            (same shape as seq_labels). If not provided, any "D/U" values are 
+            retained.
+
+        Returns
+        -------
+        - seq_classes : list
+            Class names for the input class labels (same structure as 
+            seq_labels), where each class is (image_type, orientation 
+            (in degrees)).
         """
 
         seq_classes = gabor_utils.image_label_to_class(
@@ -492,65 +874,98 @@ class GaborSequenceGenerator(data.Dataset):
         return seq_classes
 
 
-    def _replace_Ds_with_Us(self, seq_images):
+    def _replace_Ds_with_Us(self, seq_image_types):
         """
-        self._replace_Ds_with_Us(seq_images)
+        self._replace_Ds_with_Us(seq_image_types)
+
+        Replaces D image types with Us probabilistically.
+        
+        Required args
+        -------------
+        - seq_image_types : 1D array-like
+            Image types (e.g., "A", "B", etc.)
+
+        Returns
+        -------
+        - seq_image_types : 1D array-like
+            Image types (e.g., "A", "B", etc.)
         """
         
-        seq_images = seq_images[:]
+        seq_image_types = seq_image_types[:]
         if not self.unexp or self.U_prob == 0:
-            return seq_images
+            return seq_image_types
         
-        num_Ds  = seq_images.count("D")
+        num_Ds  = seq_image_types.count("D")
         if num_Ds == 0:
-            return seq_images
+            return seq_image_types
 
         Us = np.random.rand(num_Ds) < self.U_prob 
         if Us.sum():
-            U_idxs = np.where(np.asarray(seq_images) == "D")[0][Us]
+            U_idxs = np.where(np.asarray(seq_image_types) == "D")[0][Us]
             for U_idx in U_idxs:
-                seq_images[U_idx] = "U"
+                seq_image_types[U_idx] = "U"
 
-        return seq_images
+        return seq_image_types
 
 
-    def get_sequence_images(self):
+    def get_sequence_image_types(self):
         """
-        self.get_sequence_images()
+        self.get_sequence_image_types()
+
+        Gets a sequence of image types, based on repetitions of the base 
+        sequence.
+
+        Returns
+        -------
+        - seq_image_types : list
+            Sequence of image types (e.g., "A", "B", etc.)
         """
         
         if self.roll:
             roll_shift = np.random.choice(len(self.base_seq))
-            seq_images = np.roll(self.base_seq, roll_shift).tolist()
+            seq_image_types = np.roll(self.base_seq, roll_shift).tolist()
         else:
-            seq_images = self.base_seq[:] # make a copy
+            seq_image_types = self.base_seq[:] # make a copy
         
-        seq_images = seq_images * self.num_base_seq_repeats
-        seq_images = seq_images[: self.num_images_total]
+        seq_image_types = seq_image_types * self.num_base_seq_repeats
+        seq_image_types = seq_image_types[: self.num_frames_total]
 
-        seq_images = self._replace_Ds_with_Us(seq_images)
+        seq_image_types = self._replace_Ds_with_Us(seq_image_types)
 
-        return seq_images
+        return seq_image_types
 
 
-    def get_image_mean_oris(self, seq_images):
+    def get_image_mean_oris(self, seq_image_types):
         """
-        self.get_image_mean_oris(seq_images)
+        self.get_image_mean_oris(seq_image_types)
+
+        Gets mean orientations based on a sequence of image types.
+        
+        Required args
+        -------------
+        - seq_image_types : 1D array-like
+            Sequence of image types (e.g., "A", "B", etc.)
+
+        Returns
+        -------
+        - image_mean_oris : 1D array
+            Mean orientations for each image 
+            (0-360 degrees, and NaNs for "G" images).        
         """
 
-        image_idxs = self.image_to_image_idx(seq_images)
+        image_idxs = self.image_to_image_idx(seq_image_types)
         min_image_idx = min(image_idxs)
         ori_reset_idxs = np.where(np.asarray(image_idxs) == min_image_idx)[0]
         
         image_mean_oris = []
         mean_ori = self.sample_mean_ori()
-        for i, seq_image in enumerate(seq_images):
+        for i, seq_image_type in enumerate(seq_image_types):
             if i in ori_reset_idxs:
                 mean_ori = self.sample_mean_ori()
             ori = mean_ori
-            if seq_image == "U":
+            if seq_image_type == "U":
                 ori = (mean_ori + gabor_utils.U_ADJ) % 360
-            elif seq_image == "G":
+            elif seq_image_type == "G":
                 ori = np.nan
             image_mean_oris.append(ori)
 
@@ -563,7 +978,19 @@ class GaborSequenceGenerator(data.Dataset):
         """
         self.get_all_oris(image_mean_oris)
 
-        all_oris: [0, 360[
+        Returns specific orientations for each Gabor patch in a sequence.
+        
+        Required args
+        -------------
+        - image_mean_oris : 1D array
+            Mean orientations for each image 
+            (0-360 degrees, and NaNs for "G" images).
+
+        Returns
+        -------
+        - all_oris : 2D array
+            Specific orientations (0-360 degrees, and NaNs for "G" images), 
+            with dims: number of images x number of Gabor patches 
         """
 
         num_images = len(image_mean_oris)
@@ -589,8 +1016,22 @@ class GaborSequenceGenerator(data.Dataset):
         """
         self.create_gabor(gabor_size)
 
-        size (pixels)
-        theta (degrees)
+        Creates a Gabor patch.
+
+        Required args
+        -------------
+        - gabor_size : int
+            Gabor size (in pixels).
+
+        Optional args
+        -------------
+        - theta : float (default=0)
+            Gabor orientation (in radians).
+
+        Returns
+        -------
+        - gabor_filter : 2D array
+            Gabor filter patch, with dims: height x width
         """
 
         ksize = int(
@@ -617,6 +1058,21 @@ class GaborSequenceGenerator(data.Dataset):
     def overlay_gabors(self, image_gabor_patches, positions):
         """
         self.overlay_gabors(image_gabor_patches, positions)
+
+        Overlays Gabor patches at the specified positions.
+
+        Required args
+        -------------
+        - image_gabor_patches : list
+            Gabor patches, each with dims [patch height, patch width].
+        - positions : 3D array
+            Gabor patch positions, with dims: [height, width] x number of gabors
+
+        Returns
+        -------
+        - image : 2D array
+            Overlayed Gabor patches, normalized to uint8, and 
+            with dims: height x width
         """
 
         image = np.zeros((self.height, self.width))
@@ -676,19 +1132,32 @@ class GaborSequenceGenerator(data.Dataset):
     def _generate_sequence(self):
         """
         self._generate_sequence()
+
+        Returns a single full continuous sequence, and extended labels.
+    
+        The extended labels include the class label for each image, and a 
+        boolean value indicating whether the image is of the unexpected U type.
+
+        Returns
+        -------
+        - gabor_seq : 4D array
+            Gabor image sequence, 
+            with dims: number of images x height x width x color channels (3)
+        - seq_ext_labels : 2D array
+            with dims: number of images x labels [class label, unexp]
         """
 
         # identify images and orientations for the full sequence        
-        seq_images = self.get_sequence_images()
-        seq_image_mean_oris = self.get_image_mean_oris(seq_images)
+        seq_image_types = self.get_sequence_image_types()
+        seq_image_mean_oris = self.get_image_mean_oris(seq_image_types)
 
         # Get orientation per image and patch
         all_seq_oris = self.get_all_oris(seq_image_mean_oris)
         all_seq_oris = np.deg2rad(all_seq_oris) # convert to radians
 
         # Get sizes
-        seq_image_idxs = self.image_to_image_idx(seq_images)
-        sizes = self.sizes[seq_image_idxs]
+        seq_image_type_idxs = self.image_to_image_idx(seq_image_types)
+        sizes = self.sizes[seq_image_type_idxs]
         num_images, num_gabors = sizes.shape
 
         # Draw Gabors sequences
@@ -702,7 +1171,7 @@ class GaborSequenceGenerator(data.Dataset):
             ]
 
         # Overlay Gabors
-        positions = self.positions[seq_image_idxs]
+        positions = self.positions[seq_image_type_idxs]
         gabor_seq = np.asarray([
             self.overlay_gabors(image_gabor_patches, image_positions)
             for image_gabor_patches, image_positions 
@@ -717,8 +1186,10 @@ class GaborSequenceGenerator(data.Dataset):
             gabor_seq = np.repeat(gabor_seq, self.gab_img_len, axis=0)
 
         # Retrieve labels
-        seq_labels = self.image_class_to_label(seq_images, seq_image_mean_oris)
-        seq_unexp_labels = gabor_utils.get_unexp(seq_images)
+        seq_labels = self.image_class_to_label(
+            seq_image_types, seq_image_mean_oris
+            )
+        seq_unexp_labels = gabor_utils.get_unexp(seq_image_types)
         seq_ext_labels = np.vstack([seq_labels, seq_unexp_labels]).T
         seq_ext_labels = np.repeat(seq_ext_labels, self.gab_img_len, axis=0)
 
@@ -734,6 +1205,21 @@ class GaborSequenceGenerator(data.Dataset):
     def generate_sequences(self):
         """
         self.generate_sequences()
+
+        Returns sequences, and their extended labels. 
+        
+        The extended labels include the class label for each image, and a 
+        boolean value indicating whether the image is of the unexpected U type.
+
+        Returns
+        -------
+        - gabor_seq : 5D array
+            Gabor image sequence, 
+            with dims: 
+                number of seq x color channels (3) x seq len x height x width
+        - seq_ext_labels : 3D array
+            with dims: 
+                number of seq x number of images x labels [class label, unexp]
         """
 
         gabor_seq, seq_ext_labels = self._generate_sequence()
@@ -777,6 +1263,31 @@ class GaborSequenceGenerator(data.Dataset):
 
 
     def __getitem__(self, ix):
+        """
+        Returns sequences, and, if self.return_label is True, their extended 
+        labels. 
+        
+        The extended labels include the class label for each image, and a 
+        boolean value indicating whether the image is of the unexpected U type.
+
+        Required args
+        -------------
+        - ix : int
+            Sampling index (ignored)
+
+        Returns
+        -------
+        - gabor_seq : 5D array
+            Gabor image sequence, 
+            with dims: 
+                number of seq x color channels (3) x seq len x height x width
+        
+        if self.return_label:
+        - seq_ext_labels : 3D array
+            with dims: 
+                number of seq x number of images x labels [class label, unexp]
+        """
+
         gabor_seq, seq_ext_labels = self.generate_sequences()
         
         if self.return_label:
@@ -786,5 +1297,9 @@ class GaborSequenceGenerator(data.Dataset):
 
     
     def __len__(self):
+        """
+        Returns a preset dataset length value.
+        """
+        
         return self.dataset_len
         

@@ -32,9 +32,9 @@ def get_device(num_workers=None, cpu_only=False):
 
 
 #############################################
-def allow_data_parallel(data_loader, device="cpu", supervised=False):
+def allow_data_parallel(dataloader, device, supervised=False):
     """
-    allow_data_parallel(data_loader, device="cpu")
+    allow_data_parallel(dataloader, device)
     """
     
     allow_parallel = False
@@ -42,11 +42,11 @@ def allow_data_parallel(data_loader, device="cpu", supervised=False):
         if supervised:
             allow_parallel = True
         else:
-            if data_loader.drop_last:
+            if dataloader.drop_last:
                 allow_parallel = True
             else:
                 warnings.warn(
-                    "Only 1 GPU will be used, as the data loader is not set "
+                    "Only 1 GPU will be used, as the dataloader is not set "
                     "to drop final batches, when they are smaller."
                     )
 

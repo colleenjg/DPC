@@ -571,7 +571,7 @@ def get_dataset_hyperparams(dataset="UCF101"):
     """
 
     dataset_params = [
-        "dataset", "img_dim", "num_seq", "no_transforms", "seq_len"
+        "dataset", "img_dim", "num_seq", "no_augm", "seq_len"
     ]
     ignore_params = ["diff_possizes", "no_gray"]
 

@@ -134,6 +134,17 @@ class ConfusionMeter(object):
                     verticalalignment="center", fontsize=8
                     )
 
+    def get_label_dict(self):
+        if self.class_names is None:
+            raise ValueError(
+                "Cannot include class names, as self.class_names is "
+                "not set."
+                )
+        label_dict = {i: cl for i, cl in enumerate(self.class_names)}
+    
+        return label_dict
+
+
     def add_labels(self, ax, label_dict=None, secondary=False):
         height, width = self.mat.shape
         if label_dict is None:
@@ -169,12 +180,60 @@ class ConfusionMeter(object):
                 ticks + 1, [label_dict[i] for i in ticks], fontsize=fontsize, 
                 )
 
-    def plot_mat(self, path=None, incl_class_names=True, annotate=False, 
-                 ax=None, title=None, vmax=None, **cbar_kwargs):
+    def add_colorbar(self, im, adj_aspect=True, **cbar_kwargs):
+        """
+        add_colorbar(im)
+        """
+        
+        aspect_ratios = {
+            "1+"    : 13,
+            "10+"   : 18,
+            "100+"  : 32,
+            "1000+" : 140,
+        }
+        
+        fig = im.figure
+        if adj_aspect:
+            # ensure that the colormap aspect ratio keeps the widths of the 
+            # main plot and overall figure constant
+            cbar_kwargs["aspect"] = aspect_ratios["1+"]
+            new_aspect = cbar_kwargs["aspect"]
+            im.autoscale() # fix the colorbar limits?
+            clims = im.get_clim()
+            im.set_clim(clims)
+
+        for _ in range(4):
+            cm = fig.colorbar(im, **cbar_kwargs)
+            cm.set_label("Counts", rotation=270, labelpad=18)
+            cm.update_ticks() # doesn't quite work
+            cm.ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+            yticks = cm.ax.get_yticks()
+
+            max_tick = max(yticks)
+            if adj_aspect:
+                for min_val in [1, 10, 100, 1000]:
+                    if min_val > max(clims): 
+                        break
+                    if max_tick >= min_val:
+                        new_aspect = aspect_ratios[f"{min_val}+"]
+
+            if adj_aspect and (new_aspect != cbar_kwargs["aspect"]):
+                cbar_kwargs["aspect"] = new_aspect
+                cm.remove()
+            else:
+                break
+
+
+    def plot_mat(self, save_path=None, incl_class_names=True, annotate=False, 
+                 ax=None, title=None, vmax=None, adj_aspect=True, 
+                 **cbar_kwargs):
 
 
         if vmax is not None and vmax < self.mat.max():
             raise ValueError("self.mat contains values higher than 'vmax'.")
+        elif self.mat.max() < 1:
+            vmax = 1
+
         if self.mat.min() < 0:
             raise ValueError("self.mat contains values below 0.")
 
@@ -184,7 +243,7 @@ class ConfusionMeter(object):
             fig = ax.figure
 
         im = ax.imshow(self.mat,
-            cmap=plt.cm.jet,
+            cmap=plt.cm.viridis,
             interpolation=None,
             extent=(
                 0.5, 
@@ -196,44 +255,30 @@ class ConfusionMeter(object):
             vmax=vmax
             )
         
-        if annotate:
-            self.annotate(ax)
-
-        label_dict = None
-        warn_slow = False
-        if incl_class_names:
-            if self.class_names is None:
-                raise ValueError(
-                    "Cannot include class names, as self.class_names is "
-                    "not set."
-                    )
-            label_dict = {i: cl for i, cl in enumerate(self.class_names)}
-            n_labels = len(label_dict)
-            if n_labels > 60:
-                warn_slow = True
-
-        self.add_labels(ax, label_dict=label_dict)
-
         ax.set_xlabel("Ground Truth")
         ax.set_ylabel("Prediction")
 
         if title is not None:
             ax.set_title(title, y=1.05)
-        
-        cm = fig.colorbar(im, **cbar_kwargs)
-        cm.ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        cm.set_label("Counts", rotation=270, labelpad=18)
-        
-        if path is None:
+
+        if annotate:
+            self.annotate(ax)
+
+        label_dict = self.get_label_dict() if incl_class_names else None            
+        self.add_labels(ax, label_dict=label_dict)
+        self.add_colorbar(im, adj_aspect=adj_aspect, **cbar_kwargs)
+
+        if save_path is None:
             return fig
         else:
-            if warn_slow:
+            if incl_class_names and (len(label_dict) > 60):
                 logger.warning(
                     "Saving confusion matrix to svg with class labels may be "
-                    f"slow, as this corresponds to {n_labels} labels per axis."
+                    f"slow, as this corresponds to {len(label_dict)} labels "
+                    "per axis."
                     )
-            Path(path).parent.mkdir(exist_ok=True, parents=True)
-            fig.savefig(path, format="svg", bbox_inches="tight", dpi=600)
+            Path(save_path).parent.mkdir(exist_ok=True, parents=True)
+            fig.savefig(save_path, format="svg", bbox_inches="tight", dpi=600)
             plt.close(fig)
     
     def get_storage_dict(self):
@@ -765,8 +810,8 @@ def load_replot_conf_mat(conf_mat_dict, mode="val", suffix="",
     
     plot_mat_kwargs = dict()
     if "mean_oris" in conf_mat_dict.keys():
-        from utils.gabor_utils import GaborsConfusionMeter
-        conf_mat = GaborsConfusionMeter(conf_mat_dict["class_names"])
+        from utils.gabor_utils import GaborConfusionMeter
+        conf_mat = GaborConfusionMeter(conf_mat_dict["class_names"])
     else:
         conf_mat = ConfusionMeter(conf_mat_dict["class_names"])
         plot_mat_kwargs["incl_class_names"] = not(omit_class_names)
@@ -919,6 +964,8 @@ if __name__ == "__main__":
             "time, if there are many classes)."))
     parser.add_argument("--test", action="store_true", 
         help="plot confusion matrix for test results")
+    parser.add_argument("--conf_mat_only", action="store_true", 
+        help=("if True, only the confusion matrices are replotted."))
 
     # general arguments
     parser.add_argument("--output_dir", default=None, 
@@ -952,14 +999,15 @@ if __name__ == "__main__":
                 args.model_direc, suffix=args.file_suffix
                 )
 
-            loss_plot_kwargs = get_loss_plot_kwargs(
-                hp_dict, num_classes=args.num_classes
-                )
-
             # plot and save loss
-            save_loss_dict_plot(
-                loss_dict, output_dir=args.output_dir, **loss_plot_kwargs
-                )
+            if not args.conf_mat_only:
+                loss_plot_kwargs = get_loss_plot_kwargs(
+                    hp_dict, num_classes=args.num_classes
+                    )
+
+                save_loss_dict_plot(
+                    loss_dict, output_dir=args.output_dir, **loss_plot_kwargs
+                    )
 
             # plot and save confusion matrix
             plot_conf_mats(
