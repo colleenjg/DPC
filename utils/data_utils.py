@@ -206,7 +206,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
     - ucf_hmdb_ms_ds : bool (default=3)
         Level of temporal downsampling to use.
     - split_n : int (default=1)
-        Dataset train:val(:test) split to use.
+        Dataset train/val(/test) split to use.
     - supervised : bool (default=False)
         If True, data loader is initialized for a supervised task.
     - num_workers : int (default=4)
@@ -219,13 +219,13 @@ def get_dataloader(data_path_dir="process_data", transform=None,
 
     Keyword args
     ------------
-    **gabor_kwargs
+    - gabor_kwargs : dict
         Additional initialization arguments for 
         gabor_stimuli.GaborSequenceGenerator
 
     Returns
     -------
-    - dataloader : torch DataLoader
+    - dataloader : torch data.DataLoader
     """
     
     logger.info(f"Loading {mode} data...", extra={"spacing": "\n"})

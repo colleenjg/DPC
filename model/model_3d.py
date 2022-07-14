@@ -13,9 +13,82 @@ TAB = "    "
 
 #############################################
 class DPC_RNN(torch.nn.Module):
-    """DPC with RNN"""
+    """
+    Dense CPC RNN network.
+    
+    Attributes
+    ----------
+    - agg : convrnn.ConvGRU
+        Convolution GRU neural network module.
+    - backbone : ResNet2d3d_full
+        Backbone ResNet network.
+    - final_bn : BatchNorm1d
+        Batch normalization module for the final layer.
+    - final_fc : Sequential
+        Final layer, composed of a dropout layer and a full connected layer.
+    - last_duration: int
+        Final temporal dimension of each feature (approx 1/4 of seq_len).
+    - last_size : int
+        Final spatial dimension of each feature (last_size x last_size) 
+        (approx 1/32 of sample_size).
+    - mask : 6D Tensor
+        Mask indicating the nature of each predicted-ground truth pair, 
+        with dims: B x PS x HW x B x PS x HW 
+        (see self.compute_mask() for details).
+    - network_pred : nn.Module
+        Prediction network.
+    - num_seq : int
+        Number of sequences in a input batch sample (with shared labels).
+    - param : dict
+        Dictionary recording network parameters, including 
+        "num_layers", "hidden_size", "feature_size", and "kernel_size".
+    - pred_step : int
+        Number of steps ahead to predict.
+    - relu : nn.ReLU
+        ReLU layer.
+    - sample_size : int
+        Height or width of input images (expected to be square).
+    - seq_len : int
+        Length of each sequence.
+
+    Methods
+    -------
+    - self.compute_mask(B):
+        Sets mask indicating the nature of each predicted-ground truth pair 
+        (i.e., positive, negative spatial, easy/hard negative temporal, etc.).
+    - self.forward(batch):
+        Passes input through the network about produces output class 
+        predictions and the final context.
+    - self.get_similarity_score(predicted, ground_truth):
+        Gets a similarity score for all possible pairs of predicted and ground 
+        truth features.
+    - self.pred_steps(hidden):
+        Predicts features for subsequent timesteps from the hidden layer.
+    - self.reset_mask()
+        Resets the mask attribute.
+    """
+
     def __init__(self, sample_size, num_seq=8, seq_len=5, pred_step=3, 
-                 network="resnet50"):
+                 network="ResNet50"):
+        """
+        DPC_RNN(sample_size)
+
+        Required args
+        -------------
+        - sample_size : int
+            Height or width of input images (expected to be square).
+        - seq_len : int (default=5)
+            Length of each sequence.
+        - pred_step : int (default=3)
+            Number of steps ahead to predict.
+        - network : str (default="ResNet50")
+            Backbone network on which to build LC_RNN.
+            
+        Optional args
+        -------------
+        - num_seq : int (default=8)
+            Number of sequences in a input batch sample (with shared labels).        
+        """
         
         super(DPC_RNN, self).__init__()
         
@@ -38,7 +111,7 @@ class DPC_RNN(torch.nn.Module):
             extra={"spacing": TAB}
             )
 
-        self.backbone, self.param = resnet_2d3d.select_resnet(
+        self.backbone, self.param = resnet_2d3d.select_ResNet(
             network, track_running_stats=False
             )
         self.param["num_layers"] = 1 # param for GRU
@@ -67,22 +140,43 @@ class DPC_RNN(torch.nn.Module):
             )
         self.mask = None
         self.relu = torch.nn.ReLU(inplace=False)
+
+        # Note that ResNet weights are initialized independently.
         self._initialize_weights(self.agg)
         self._initialize_weights(self.network_pred)
 
 
     def _initialize_weights(self, module):
+        """
+        self._initialize_weights(module)
+
+        Initializes the weights and biases for the input module.
+
+        Required args
+        ------------
+        - module (nn.Module):
+            Module for which to initialize weights and biases.
+        """
         for name, param in module.named_parameters():
             if "bias" in name:
                 torch.nn.init.constant_(param, 0.0)
             elif "weight" in name:
                 torch.nn.init.orthogonal_(param, 1)
-        # other resnet weights have been initialized in resnet itself
 
 
     def pred_steps(self, hidden):
-        ### predict next steps from hidden layer ###
-        # returns: [B, pred_step, D, last_size, last_size] #
+        """
+        self.pred_steps(hidden)
+
+        Predicts features for subsequent timesteps from the hidden layer.
+        
+        Returns
+        -------
+        - pred : 5D Tensor
+            Predicted features, with dims: 
+                B x PS x D (feature size) x last size x last size
+        """
+
         pred = []
         for _ in range(self.pred_step):
             # sequentially predict future
@@ -94,21 +188,38 @@ class DPC_RNN(torch.nn.Module):
                 )
             hidden = hidden[:, -1, :]
 
-        pred = torch.stack(pred, 1) # B, pred_step, xxx
+        pred = torch.stack(pred, 1)
 
         return pred
 
 
     def get_similarity_score(self, predicted, ground_truth):
-        ### Get similarity score ###
-        # predicted (pred): [B, pred_step, feature_size, last_size, last_size]
-        # ground-truth (GT): [B, pred_step, feature_size, last_size, last_size]
+        """
+        self.get_similarity_score(predicted, ground_truth)
 
-        # Dot product for pred-GT pair taken along the feature dimension
+        Gets a similarity score for all possible pairs of predicted and ground 
+        truth features.
 
-        # Returns a 6D tensor, where:
-        # first 3 dims are from pred (B, PS, D), and the
-        # last 3 dims are from GT (B, PS, D). 
+        Specifically, calculates the dot product along the feature dimension.
+
+        Required args
+        -------------
+        - predicted : 5D Tensor
+            Predicted features, with dims: 
+                B_pred x PS x D (feature size) x last size x last size
+        - ground_truth : 5D Tensor
+            Ground truth features, with dims: 
+                B_gt x PS x D (feature size) x last size x last size
+
+
+        Returns
+        -------
+        - score : 6D Tensor
+            Dot product for each predicted-ground truth feature pair, 
+            calculated along the feature dimension (D).
+            Dimensions: B_pred x PS x HW x B_gt x PS x HW, 
+            where HW = last_size ** 2
+        """
 
         if predicted.size() != ground_truth.size():
             raise ValueError(
@@ -133,16 +244,44 @@ class DPC_RNN(torch.nn.Module):
 
 
     def reset_mask(self):
+        """
+        self.reset_mask()
+
+        Resets the mask attribute.
+        """
+        
         self.mask = None
 
 
     def compute_mask(self, B, device="cpu"):
-        # mask meaning: 
-        # -3: spatial neg
-        # (-2: omit)
-        # -1: temporal neg (hard)
-        # 0: easy neg
-        # 1: pos
+        """
+        self.compute_mask(B)
+
+        Computes mask indicating the nature of each predicted-ground truth pair 
+        (i.e., positive, negative spatial, easy/hard negative temporal, etc.).
+
+        Only recomputes if a new value for B is provided.
+
+        Mask dimensions: B x PS x HW x B x PS x HW
+
+        Mask values: 
+            -3 : spatial neg
+           (-2 : omit)
+            -1 : temporal neg (hard)
+             0 : easy neg
+             1 : pos
+
+        Required args
+        -------------
+        - B : int
+            Batch size (per GPU, if batches are split across parallel models).
+
+        Optional args
+        -------------
+        - device : str or torch.device
+            Device on which to place mask, when first computed.
+
+        """
 
         # only recompute if needed
         if self.mask is not None and B == len(self.mask):            
@@ -179,7 +318,6 @@ class DPC_RNN(torch.nn.Module):
             mask, dtype=torch.int8, requires_grad=False
             ).to(device)
 
-        # mask: B x PS x HW x B x PS x HW
         self.mask = mask.reshape(B, HW, PS, B, HW, PS).contiguous().permute(
             0, 2, 1, 3, 5, 4
         )
@@ -188,8 +326,30 @@ class DPC_RNN(torch.nn.Module):
 
 
     def forward(self, batch):
-        # batch: [B, N, C, SL, H, W]
-        ### extract feature ###
+        """
+        self.forward(batch)
+
+        Passes batch through the network, and returns the score for the input, 
+        as well as the mask for the batch size.
+
+        Required args
+        -------------
+        - batch : 6D Tensor
+            Input tensor with dims: B x N x C x SL x H x W.
+            Note: B is the size of the batch sent one GPU, if the model is 
+            split across GPUs. 
+
+        Returns
+        -------
+        - score : 6D Tensor
+            Similarity score for each predicted-ground truth pair, 
+                with dims: B x PS x HW x B x PS x HW
+        - self.mask : 6D Tensor      
+            Mask indicating the nature of each predicted-ground truth pair, 
+            with dims: B x PS x HW x B x PS x HW
+            (see self.compute_mask() for details).
+        """
+
         (B, N, C, SL, H, W) = batch.shape
         batch = batch.reshape(B * N, C, SL, H, W)
         feature = self.backbone(batch)
@@ -227,20 +387,81 @@ class DPC_RNN(torch.nn.Module):
 
 #############################################
 class LC_RNN(torch.nn.Module):
-    def __init__(self, sample_size, num_seq, seq_len, network="resnet18", 
+    """
+    Linear classification RNN.
+    
+    Attributes
+    ----------
+    - agg : convrnn.ConvGRU
+        Convolution GRU neural network module.
+    - backbone : ResNet2d3d_full
+        Backbone ResNet network.
+    - final_bn : BatchNorm1d
+        Batch normalization module for the final layer.
+    - final_fc : Sequential
+        Final layer, composed of a dropout layer and a full connected layer.
+    - last_duration: int
+        Final temporal dimension of each feature (approx 1/4 of seq_len).
+    - last_size : int
+        Final spatial dimension of each feature (last_size x last_size) 
+        (approx 1/32 of sample_size).
+    - num_classes : int (default=101)
+        Number of classes to the final prediction layer.
+    - num_seq : int
+        Number of sequences in a input batch sample (with shared labels).
+    - param : dict
+        Dictionary recording network parameters, including 
+        "num_layers", "hidden_size", "feature_size", and "kernel_size".
+    - sample_size : int
+        Height or width of input images (expected to be square).
+    - seq_len : int
+        Length of each sequence.
+
+    Methods
+    -------
+    - self.forward(batch):
+        Passes input through the network about produces output class 
+        predictions and the final context.
+    """
+
+    def __init__(self, sample_size, num_seq, seq_len, network="ResNet18", 
                  dropout=0.5, num_classes=101):
+        """
+        LC_RNN(sample_size, num_seq, seq_len)
+
+        Constructs a LC_RNN object.
+
+        Required args
+        -------------
+        - sample_size : int
+            Height or width of input images (expected to be square).
+        - num_seq : int
+            Number of sequences in a input batch sample (with shared labels).
+        - seq_len : int
+            Length of each sequence.
+        
+        Optional args
+        -------------
+        - network : str (default="ResNet18")
+            Backbone network on which to build LC_RNN.
+        - dropout : float (default=0.5)
+            Dropout proportion for the dropout layer in the final fully 
+            connected layer.
+        - num_classes : int (default=101)
+            Number of classes to the final prediction layer.
+        """
 
         super(LC_RNN, self).__init__()
         self.sample_size = sample_size
-        self.num_seq = num_seq
-        self.seq_len = seq_len
+        self.num_seq = num_seq # N
+        self.seq_len = seq_len # SL
         self.num_classes = num_classes
 
         self.last_duration = int(math.ceil(seq_len / 4))
         self.last_size = int(math.ceil(sample_size / 32))
         track_running_stats = True 
 
-        self.backbone, self.param = resnet_2d3d.select_resnet(
+        self.backbone, self.param = resnet_2d3d.select_ResNet(
             network, 
             track_running_stats=track_running_stats
             )
@@ -267,11 +488,30 @@ class LC_RNN(torch.nn.Module):
                 self.param["feature_size"], self.num_classes
                 )
             )
+        
+        # Note that ResNet weights are initialized independently.
         self._initialize_weights(self.final_fc)
 
 
     def forward(self, batch):
-        # seq1: [B, N, C, SL, H, W]
+        """
+        self.forward(batch)
+
+        Passes batch through the network.
+
+        Required args
+        -------------
+        - batch : 6D Tensor
+            Input tensor with dims: B x N x C x SL x H x W
+
+        Returns
+        -------
+        - output : 3D Tensor
+            Network output, with dims: B x 1 x number of classes
+        - context : list of 4D Tensors
+            Final network context, with dims: B x 1 x feature size
+        """
+        
         (B, N, C, SL, H, W) = batch.shape
         batch = batch.reshape(B * N, C, SL, H, W)
         feature = self.backbone(batch)
@@ -297,11 +537,20 @@ class LC_RNN(torch.nn.Module):
 
 
     def _initialize_weights(self, module):
+        """
+        self._initialize_weights(module)
+
+        Initializes the weights and biases for the input module.
+
+        Required args
+        ------------
+        - module (nn.Module):
+            Module for which to initialize weights and biases.
+        """
+        
         for name, param in module.named_parameters():
             if "bias" in name:
                 torch.nn.init.constant_(param, 0.0)
             elif "weight" in name:
                 torch.nn.init.orthogonal_(param, 1)
                  
-        # other resnet weights have been initialized in resnet_3d.py
-

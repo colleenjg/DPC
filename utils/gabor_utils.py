@@ -33,6 +33,8 @@ class GaborConfusionMeter(loss_utils.ConfusionMeter):
     """
     Class for computing and plotting Gabor sequencce classification performance 
     in a confusion matrix.
+
+    See loss_utils.ConfusionMeter for inherited attributes and methods.
     
     Attributes
     ----------
@@ -349,7 +351,7 @@ class GaborConfusionMeter(loss_utils.ConfusionMeter):
         """
 
         # accomodate longer main labels on right
-        cbar_kwargs = {"pad"   : 0.1}
+        cbar_kwargs = {"pad" : 0.1}
 
         try:
             if nest_frames: # nest self.mat, if needed
@@ -877,12 +879,12 @@ def update_dataset_possizes(main_loader, val_loader=None, seed=None, incr=0):
     
     Required args
     -------------
-    - main_loader : torch.DataLoader
+    - main_loader : torch data.DataLoader
         Torch dataloader.
 
     Optional args
     -------------
-    - val_loader : torch.DataLoader (default=None)
+    - val_loader : torch data.DataLoader (default=None)
         Torch dataloader.
     - seed : int (default=None)
         Seed.
@@ -921,12 +923,12 @@ def update_unexp(main_loader, val_loader=None, epoch_n=0, unexp_epoch=0):
     
     Required args
     -------------
-    - main_loader : torch.DataLoader
+    - main_loader : torch data.DataLoader
         Torch dataloader.
 
     Optional args
     -------------
-    - val_loader : torch.DataLoader (default=None)
+    - val_loader : torch data.DataLoader (default=None)
         Torch dataloader.
     - epoch_n : int (default=0)
         Epoch number.
@@ -960,12 +962,12 @@ def update_gabors(main_loader, val_loader=None, seed=None, epoch_n=0,
     
     Required args
     -------------
-    - main_loader : torch.DataLoader
+    - main_loader : torch data.DataLoader
         Torch dataloader.
 
     Optional args
     -------------
-    - val_loader : torch.DataLoader (default=None)
+    - val_loader : torch data.DataLoader (default=None)
         Torch dataloader.
     - seed : int (default=None)
         Seed.
@@ -1004,7 +1006,7 @@ def get_gabor_sup_target_to_store(dataset, sup_target):
     -------------
     - dataset : gabor_stimuli.GaborSequenceGenerator
         Gabor dataset
-    - sup_target : torch Tensor
+    - sup_target : Tensor
         Supervised target returned by the Gabors dataset for each sequence, 
         with dims: 
             B (batch size) x N (num seq) x SL (seq len) x 2 [label, unexp_label]
@@ -1033,7 +1035,7 @@ def get_gabor_sup_label(sup_target, warn=False):
 
     Required args
     -------------
-    - sup_target: torch Tensor
+    - sup_target: Tensor
         Supervised target returned by the Gabors dataset for each sequence, 
         with dims: 
             B (batch size) x N (num seq) x SL (seq len) x 2, where the last 
@@ -1459,7 +1461,7 @@ def update_records(dataset, loss_dict, acc_dict, output, sup_target,
     -------------
     - supervised : bool (default=False)
         If True, loss and accuracy are calculated based on a supervised task, 
-        instead of the dense CPC task.
+        instead of the Dense CPC task.
     - confusion_mat : GaborConfusionMeter or None (default=None)
         GaborConfusionMeter to update (in place).
     """

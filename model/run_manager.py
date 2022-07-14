@@ -19,11 +19,59 @@ TAB = "    "
 
 #############################################
 def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50, 
-                log_idx=0, topk=TOPK, loss_weight=None, device="cpu", 
-                log_freq=5, writer=None, train_off=False, output_dir=None, 
+                topk=TOPK, loss_weight=None, device="cpu", log_freq=5, 
+                writer=None, log_idx=0, train_off=False, output_dir=None, 
                 save_by_batch=False):
     """
     train_epoch(dataloader, model, optimizer)
+
+    Runs one epoch of training on the model with the dataloader provided.
+
+    Required args
+    -------------
+    - dataloader : torch data.DataLoader
+        Torch dataloader to use for model training.
+    - model : nn.Module
+        Dense CPC (DPC) or linear classification (LC) model to train.
+    - optimizer : torch.optim object
+        Torch optimizer.
+
+    Optional args
+    -------------
+    - epoch_n : int (default=0)
+        Current epoch number, used primarily for logging and storing progress. 
+        If epoch_n is 0, the data is passed through the model without training, 
+        in order to obtain a baseline.
+    - num_epochs : int (default=50)
+        Total number of training epochs, used for logging.
+    - topk : list (default=TOPK)
+        The top k accuracies to record (e.g., [1, 3, 5] for top 1, 3 and 5).
+    - loss_weight : int (default=None)
+        Class weights to provide to the loss function.
+    - device : int (default="cpu")
+        Device on which to train the model.
+    - log_freq : int (default=5)
+        Batch frequency at which to log progress to the console and, 
+        optionally, the writer.
+    - writer : tensorboardX.SummaryWriter (default=None)
+    - log_idx : int (default=0)
+        Log index, used for writing to tensorboard, if writer is not None.
+    - train_off : bool (default=False)
+        If True, no training is done for this epoch 
+        (e.g., to obtain a baseline).
+    - output_dir : str or path (default=None)
+        Output directory in which to save confusion matrices, if applicable. 
+        If None, confusion matrices are not generated.
+    - save_by_batch : bool (default=False)
+        If True, loss and accuracy data is saved for each batch.
+    
+    Returns
+    -------
+    - train_dict : dict
+        Dictionary recording training loss and accuracy data 
+        (see loss_utils.init_loss_dict() for keys).
+    - log_idx : int
+        Updated log index, for writing to tensorboard.
     """
     
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
@@ -34,7 +82,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     train, spacing = training_utils.set_model_train_mode(
         model, epoch_n, train_off
         )
-    _, supervised = training_utils.get_num_classes_sup(model)
+    num_classes, supervised = training_utils.get_num_classes_sup(model)
 
     train_dict = loss_utils.init_loss_dict(
         ks=topk, val=False, supervised=supervised, save_by_batch=save_by_batch
@@ -169,11 +217,48 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
 
 
 #############################################
-def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=10, 
+def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50, 
                       topk=TOPK, loss_weight=None, device="cpu", test=False, 
                       output_dir=None, save_by_batch=False):
     """
     val_or_test_epoch(dataloader, model)
+
+    Runs one epoch of evaluation on the model with the dataloader provided.
+
+    Required args
+    -------------
+    - dataloader : torch data.DataLoader
+        Torch dataloader to for model evaluation.
+    - model : nn.Module
+        Dense CPC (DPC) or linear classification (LC) model to train.
+
+    Optional args
+    -------------
+    - epoch_n : int (default=0)
+        Current epoch number, used primarily for logging and storing progress. 
+        If epoch_n is 0, the data is passed through the model without training, 
+        in order to obtain a baseline.
+    - num_epochs : int (default=50)
+        Total number of training epochs, used for logging.
+    - topk : int (default=TOPK)
+        The top k accuracies to record (e.g., [1, 3, 5] for top 1, 3 and 5).
+    - loss_weight : int (default=None)
+        Class weights to provide to the loss function.
+    - device : int (default="cpu")
+        Device on which to train the model.
+    - test : bool (default=False)
+        If True, mode is test instead of validation. Used for logging.
+    - output_dir : str or path (default=None)
+        Output directory in which to save confusion matrices, if applicable. 
+        If None, confusion matrices are not generated.
+    - save_by_batch : bool (default=False)
+        If True, loss and accuracy data is saved for each batch.
+    
+    Returns
+    -------
+    - val_dict : dict
+        Dictionary recording validation or test loss and accuracy data .
+        (see loss_utils.init_loss_dict() for keys).
     """
 
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
@@ -346,6 +431,57 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                reload_kwargs=dict()):
     """
     train_full(train_loader, model, optimizer)
+
+    Trains and evaluates a model
+
+    Required args
+    -------------
+    - main_loader : torch data.DataLoader
+        Main Torch dataloader to use for model training, or evaluation 
+        if "test" key is a provided in reload_kwargs.
+    - model : nn.Module
+        Dense CPC (DPC) or linear classification (LC) model to train.
+    - optimizer : torch.optim object
+        Torch optimizer.
+
+    Optional args
+    -------------
+    - output_dir : str or path (default=".")
+        Output directory in which to save training and evalution records.
+    - net_name : str (default=None)
+        Network name, saved in the model checkpoint.
+    - dataset : str (default="UCF101")
+        Dataset name, used to set some parameters.
+    - num_epochs : int (default=50)
+        Total number of epochs to train the model on. Ignored if test mode is 
+        identified.
+    - topk : list (default=TOPK)
+        The top k accuracies to record (e.g., [1, 3, 5] for top 1, 3 and 5).
+    - scheduler : optim.lr_scheduler object (default=None)
+        Torch learning rate scheduler.
+    - device : int (default="cpu")
+        Device on which to train the model.
+    - val_loader : torch data.DataLoader (default=None)
+        Validation Torch dataloader to use for evaluating model, and 
+        identifying and recording the one the yields the best accuracy. 
+        If None, no evaluation is performed. 
+    - seed : int (default=None)
+        Seed, for inclusion in the records. Also used to deterministically 
+        update the positions and sizes attribute for the Gabors dataset, if 
+        applicable.
+    - unexp_epoch : int (default=10)
+        Number of epochs at which to set the dataset to produce unexpected 
+        sequences, if the dataset if a Gabors dataset.
+    - log_freq : int (default=5)
+        Batch frequency at which to log training progress to the console and, 
+        optionally, the training writer.
+    - use_tb : bool (default=False)
+        If True, tensorboard is used.
+    - save_by_batch : bool (default=False)
+        If True, loss and accuracy data is saved for each batch.
+    - reload_kwargs : dict (default=dict())
+        Dictionary with keys for reloading checkpointed parameters into the 
+        model (see checkpoint_utils.load_checkpoint()).
     """
 
     dataset = misc_utils.normalize_dataset_name(dataset)
@@ -418,12 +554,12 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 optimizer, 
                 epoch_n=epoch_n, 
                 num_epochs=num_epochs,
-                writer=writer_train,
-                log_idx=log_idx, 
                 topk=topk,
                 loss_weight=loss_weight,
                 device=device, 
                 log_freq=log_freq,
+                writer=writer_train,
+                log_idx=log_idx, 
                 output_dir=output_dir,
                 save_by_batch=save_by_batch,
                 )

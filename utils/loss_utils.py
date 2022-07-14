@@ -186,7 +186,7 @@ class ConfusionMeter(object):
         """
         
         aspect_ratios = {
-            "1+"    : 13,
+            "1+"    : 12.6,
             "10+"   : 18,
             "100+"  : 32,
             "1000+" : 140,
@@ -198,22 +198,17 @@ class ConfusionMeter(object):
             # main plot and overall figure constant
             cbar_kwargs["aspect"] = aspect_ratios["1+"]
             new_aspect = cbar_kwargs["aspect"]
-            im.autoscale() # fix the colorbar limits?
             clims = im.get_clim()
-            im.set_clim(clims)
 
         for _ in range(4):
             cm = fig.colorbar(im, **cbar_kwargs)
-            cm.set_label("Counts", rotation=270, labelpad=18)
-            cm.update_ticks() # doesn't quite work
             cm.ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-            yticks = cm.ax.get_yticks()
 
-            max_tick = max(yticks)
+            max_tick = max(
+                [tick for tick in cm.ax.get_yticks() if tick <= clims[1]]
+                )
             if adj_aspect:
                 for min_val in [1, 10, 100, 1000]:
-                    if min_val > max(clims): 
-                        break
                     if max_tick >= min_val:
                         new_aspect = aspect_ratios[f"{min_val}+"]
 
@@ -222,6 +217,8 @@ class ConfusionMeter(object):
                 cm.remove()
             else:
                 break
+
+        cm.set_label("Counts", rotation=270, labelpad=18)
 
 
     def plot_mat(self, save_path=None, incl_class_names=True, annotate=False, 

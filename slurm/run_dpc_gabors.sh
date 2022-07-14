@@ -130,7 +130,7 @@ echo -e "\nARRAY ID HYPERPARAMETERS\n"\
 "unexpected epoch: $UNEXP_EPOCH\n"\
 "sequence length: $SEQ_LEN\n"\
 "number of steps to predict: $PRED_STEP\n"\
-"number of sequences per batch item: $NUM_SEQ\n"\
+"number of consecutive sequences per batch item: $NUM_SEQ\n"\
 "roll argument: $ROLL_ARG\n"\
 "number of epochs: $NUM_EPOCHS\n"\
 "suffix argument: $SUFFIX_ARG\n"\

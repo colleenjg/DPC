@@ -74,6 +74,14 @@ class BasicLogFormatter(logging.Formatter):
 def set_logger_level(logger, level="info"):
     """
     set_logger_level(logger)
+
+
+
+    Required args
+    -------------
+
+    Optional args
+    -------------
     """
 
     if str(level).isdigit():
@@ -91,20 +99,22 @@ def get_logger(name=None, level="info", fmt=None, skip_exists=True):
 
     Returns logger. 
 
-    Optional args:
-        - name (str)        : logger name. If None, the root logger is returned.
-                              default: None
-        - level (str)       : level of the logger ("info", "error", "warning", 
-                               "debug", "critical")
-                              default: "info"
-        - fmt (Formatter)   : logging Formatter to use for the handlers
-                              default: None
-        - skip_exists (bool): if a logger with the name already has handlers, 
-                              does nothing and returns existing logger
-                              default: True
+    Optional args
+    -------------
+    - name : str (default=None)
+        Logger name. If None, the root logger is returned.
+    - level : str (default="info")
+        Level of the logger ("info", "error", "warning", "debug", "critical").
+    - fmt : Formatter (default=None)
+        Logging Formatter to use for the handlers.
+    - skip_exists : bool (default=True)
+        If a logger with the name already has handlers, does nothing and 
+        returns existing logger.
 
-    Returns:
-        - logger (Logger): logger object
+    Returns
+    -------
+    - logger : Logger
+        Logger object.
     """
 
     # create one instance
@@ -138,13 +148,16 @@ def get_logger_with_basic_format(**logger_kw):
 
     Returns logger with basic formatting, defined by BasicLogFormatter class.
 
-    Keyword args:
-        - logger_kw (dict): keyword arguments for get_logger()
+    Keyword args
+    ------------
+    - logger_kw : dict
+        Keyword arguments for get_logger().
         
-    Returns:
-        - logger (Logger): logger object
+    Returns
+    -------
+    - logger : Logger
+        Logger object.
     """
-
 
     basic_formatter = BasicLogFormatter()
 

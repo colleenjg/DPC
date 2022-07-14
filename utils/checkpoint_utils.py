@@ -191,9 +191,8 @@ def load_pretrained_checkpoint(checkpoint_path, model, raise_err=True,
             model, checkpoint["state_dict"]
             )
 
-        model = resnet_2d3d.neq_load_customized(
-            model, checkpoint["state_dict"]
-            )
+        # Load in place
+        resnet_2d3d.neq_load_customized(model, checkpoint["state_dict"])
             
     logger.info(
         f"=> Loaded {reload_str} checkpoint '{checkpoint_path}' "

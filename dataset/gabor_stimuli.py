@@ -31,7 +31,7 @@ def check_if_is_gabors(dataset):
 
     Required args
     -------------
-    - dataset : torch dataset object
+    - dataset : torch data.Dataset object
         Torch dataset object.
 
     Returns
@@ -103,7 +103,7 @@ class GaborSequenceGenerator(data.Dataset):
         Number of equally spaced orientations to sample from, between 0 and 360 
         degrees. 
     - num_seq : int
-        Number of sequences to return per sample
+        Number of consecutive sequences to return per sample
     - num_sigmas_visible : float
         Number of standard deviations to make visible on each side of a Gabor 
         patch.
@@ -130,7 +130,7 @@ class GaborSequenceGenerator(data.Dataset):
     - sizes : 2D array
         Gabor patch sizes for each image type (in visual degrees), with 
         dims: image type x number of gabors
-    - sub_batch_idxs : 2D torch Tensor
+    - sub_batch_idxs : 2D Tensor
         Tensor for reindexing a sequences into overlapping sub-batches 
         (for "test" mode), with dims: number of sub batches x num_seq 
     - supervised : bool
@@ -235,7 +235,7 @@ class GaborSequenceGenerator(data.Dataset):
         - seq_len : int (default=10)
             Number of frames per sequence.
         - num_seq : int (default=5)
-            Number of sequences to return per sample.
+            Number of consecutive sequences to return per sample.
         - num_gabors : int(default=NUM_GABORS)
             Number of Gabor patches per image
         - num_mean_oris : int(default=gabor_utils.NUM_MEAN_ORIS)
@@ -439,7 +439,7 @@ class GaborSequenceGenerator(data.Dataset):
         """
         set_transform()
 
-        Sets the torch Tensor to use on Gabor sequences, once generated.
+        Sets the Tensor to use on Gabor sequences, once generated.
 
         Optional args
         -------------
@@ -682,11 +682,12 @@ class GaborSequenceGenerator(data.Dataset):
         - get_num_seq : bool (default=True)
             If True, indices for self.num_seq consecutive sequences of length 
             self.seq_len are returned. Otherwise, indices for all possible 
-            sequences of length self.seq_len are returned.
+            sequences of length self.seq_len are returned. In all cases, 
+            sequences are non-overlapping.
 
         Returns
         -------
-        - sequence_idxs : 2D torch Tensor
+        - sequence_idxs : 2D Tensor
             Sequence indices, with dims: number of sequences x seq length
         """
         
@@ -721,7 +722,7 @@ class GaborSequenceGenerator(data.Dataset):
         """
         self.sub_batch_idxs
 
-        - 2D torch Tensor
+        - 2D Tensor
             Indices for indexing into a full continous sequence to generate 
             overlapping sub-batches (used in "test" mode).
         """
@@ -1213,11 +1214,11 @@ class GaborSequenceGenerator(data.Dataset):
 
         Returns
         -------
-        - gabor_seq : 5D array
-            Gabor image sequence, 
+        - gabor_seq : 5D Tensor
+            Gabor image sequences, 
             with dims: 
                 number of seq x color channels (3) x seq len x height x width
-        - seq_ext_labels : 3D array
+        - seq_ext_labels : 3D Tensor
             with dims: 
                 number of seq x number of images x labels [class label, unexp]
         """
@@ -1228,13 +1229,7 @@ class GaborSequenceGenerator(data.Dataset):
             Image.fromarray(gabor_img, mode="RGB") for gabor_img in gabor_seq
             ]
         
-        if self.transform is not None:
-            gabor_seq = self.transform(gabor_seq) # apply same transform
-        else:
-            gabor_seq = [
-                torchvision.transforms.ToTensor()(gabor_img) 
-                for gabor_img in gabor_seq
-                ]
+        gabor_seq = self.transform(gabor_seq) # apply transform
 
         gabor_seq = torch.stack(gabor_seq, 0)
 
@@ -1277,13 +1272,13 @@ class GaborSequenceGenerator(data.Dataset):
 
         Returns
         -------
-        - gabor_seq : 5D array
-            Gabor image sequence, 
+        - gabor_seq : 5D Tensor
+            Gabor image sequences, 
             with dims: 
                 number of seq x color channels (3) x seq len x height x width
         
         if self.return_label:
-        - seq_ext_labels : 3D array
+        - seq_ext_labels : 3D Tensor
             with dims: 
                 number of seq x number of images x labels [class label, unexp]
         """

@@ -253,7 +253,7 @@ def set_gradients(model, supervised=False, train_what="all", lr=1e-3):
         logger.info("=> Training only the last layer.")
         if supervised:
             for name, param in model.named_parameters():
-                if ("resnet" in name) or ("rnn" in name):
+                if ("resnet" in name.lower()) or ("rnn" in name.lower()):
                     param.requires_grad = False
         else:
             for name, param in model.resnet.named_parameters():
@@ -263,7 +263,7 @@ def set_gradients(model, supervised=False, train_what="all", lr=1e-3):
         logger.info("=> Finetuning backbone with a smaller learning rate.")
         params = []
         for name, param in model.named_parameters():
-            if ("resnet" in name) or ("rnn" in name):
+            if ("resnet" in name.lower()) or ("rnn" in name.lower()):
                 params.append({"params": param, "lr": lr / 10})
             else:
                 params.append({"params": param})
@@ -491,7 +491,7 @@ if __name__ == "__main__":
 
     # supervised only
     parser.add_argument("--dropout", default=0.5, type=float, 
-        help="dropout proportion")
+        help="dropout proportion for the final dropout layer")
     parser.add_argument("--test", default=False, 
         help=("if not False, must be 'random' or the path to a saved model, "
             "and supervised network will be run in test mode"))
