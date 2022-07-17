@@ -18,6 +18,28 @@ def plot_acc(sub_ax, data_dict, epoch_ns, chance=None, color="k", ls=None,
              data_label="train"):
     """
     plot_acc(sub_ax, data_dict, epoch_ns)
+
+    Plots accuracy data.
+    
+    Required args
+    -------------
+    - sub_ax : plt subplot
+        Subplot on which to plot accuracy data.
+    - data_dict : dict
+        Dictionary from which to retrieve accuracy data.
+    - epoch_ns : array-like
+        Epoch numbers to use for accuracy data x axis.
+
+    Optional args
+    -------------
+    - chance : float (default=None)
+        If not None, level at which a dashed horizontal chance line is plotted.
+    - color : str (default="k")
+        Color to use to plot the data.
+    - ls : str (default=None)
+        Linestyle to use to plot the data.
+    - data_label : str (default="train")
+        Data name to use in labelling the data in the plots.
     """
 
     if len(data_label) and data_label[-1] != " ":
@@ -43,6 +65,28 @@ def plot_batches(batch_ax, data_dict, epoch_ns, U_ax=None, data_label="train",
                  colors="Blues"):
     """
     plot_batches(batch_ax, loss_dict, epoch_ns)
+
+    Plots loss and accuracy data by batch, and optionally U sequence frequency 
+    for the Gabors dataset.
+    
+    Required args
+    -------------
+    - batch_ax : plt subplot
+        Subplot on which to plot batch data.
+    - data_dict : dict
+        Dictionary from which to retrieve batch data.
+    - epoch_ns : array-like
+        Epoch numbers to use for batch data x axis.
+
+    Optional args
+    -------------
+    - U_ax : plt subplot (default=None)
+        Subplot on which to plot U sequence frequency by batch for the Gabors 
+        dataset, if applicable.
+    - data_label : str (default="train")
+        Data name to use in labelling the data in the plots.
+    - colors : str (default="Blues")
+        Name of the colormap to use to determine batch colors.
     """
     
     avg_loss_by_batch = np.asarray(data_dict["avg_loss_by_batch"]).T
@@ -52,7 +96,6 @@ def plot_batches(batch_ax, data_dict, epoch_ns, U_ax=None, data_label="train",
 
     if U_ax is not None:
         target_key = "sup_target_by_batch"
- 
         freqs = []
         for image_type in ["U", "D"]:
             # num_epochs x num_batches x B x N x SL x (image type, ori)
@@ -89,6 +132,31 @@ def plot_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
                    unexp_epoch=10, by_batch=False):
     """
     plot_loss_dict(loss_dict)
+
+    Plots loss and accuracy information from loss dictionary.
+
+    Required args
+    -------------
+    - loss_dict : dict
+        Dictionary containing loss and accuracy information. See 
+        loss_utils.init_loss_dict() for information on keys and values.
+
+    Optional args
+    -------------
+    - num_classes : int (default=None)
+        Number of classes, if applicable, used to calculate chance level.
+     - dataset : str (default="UCF101")
+        Dataset name, used to set some parameters.
+    - unexp_epoch : int (default=10)
+        Epoch as of which unexpected sequences are introduced, if the dataset 
+        is a Gabors dataset.
+    - by_batch : bool (default=False)
+        If True, loss and accuracy data is plotted by batch.
+
+    Returns
+    -------
+    - fig : plt.Figure
+        Figure in which loss information is plotted.
     """
 
     datatypes = ["train"]

@@ -4,14 +4,12 @@ import argparse
 import copy
 import logging
 from pathlib import Path
-import warnings
 
 import matplotlib.pyplot as plt
 import torch
-import torch.optim as optim
 
-from model import model_3d, run_manager
-from utils import data_utils, gabor_utils, misc_utils, training_utils
+from model import run_manager
+from utils import data_utils, misc_utils, training_utils
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +19,39 @@ TAB = "    "
 def check_adjust_args(args):
     """
     check_adjust_args(args)
+
+    Verifies consistency between arguments, update values for consistency, and 
+    initializes additional arguments, as applicable.
+
+    - Normalizes dataset name
+    - Sets arguments:
+        - args.supervised from args.model
+    - Checks that values are accepted and inter-compatible for:
+        - args.model
+        - args.train_what, given args.model
+        - args.test, given args.supervised
+    - Sets opposite arguments:
+        - args.same_possizes from args.diff_possizes
+        - args.gray from args.not_gray
+    - If needed, sets default values for:
+        - args.wd
+    - If args.test is not False, updates values for:
+        - args.num_epochs = 0
+        - args.batch_size = 1
+        - args.save_best = False
+
+
+    Required args
+    -------------
+    - args : argparse.Namespace
+        Argparse namespace containing arguments provided by command line, 
+        needed to run the model training or testing.
+
+    Returns
+    -------
+    - args : argparse.Namespace
+        Argparse namespace containing input arguments, adjusted and check, as 
+        needed.
     """
 
     args = copy.deepcopy(args)
@@ -44,7 +75,8 @@ def check_adjust_args(args):
     elif "lc" in args.model:
         if args.model not in ["lc-rnn", "lc"]:
             raise NotImplementedError(
-                "Only the 'lc-rnn' model is implemented for supervised learning."
+                "Only the 'lc-rnn' model is implemented for supervised "
+                "learning."
                 )
         args.model = "lc-rnn"
         args.supervised = True
@@ -83,9 +115,25 @@ def check_adjust_args(args):
 
 
 #############################################
-def set_path(args):
+def get_output_directory(args):
     """
-    set_path(args)
+    get_output_directory(args)
+
+    If training a new model, optionally from a pretrained one, creates a 
+    directory in which the model and associated results are stored. If resuming 
+    from or testing a model, verifies the the directory exists, and raises an 
+    error if it doesn't.
+
+    Required args
+    -------------
+    - args : argparse.Namespace
+        Argparse namespace containing arguments needed to create or identify 
+        the output directory.
+
+    Returns
+    -------
+    - output_dir : path
+        Path to the directory in which to save the model and associated results.
     """
 
     if args.test == "random":
@@ -152,6 +200,16 @@ def set_path(args):
 def get_dataloaders(args):
     """
     get_dataloaders(args)
+
+
+    Required args
+    -------------
+    - args : argparse.Namespace
+
+    Returns
+    -------
+    - main_loader : torch data.DataLoader
+    - val_loader : torch data.DataLoader
     """
 
     dataset = misc_utils.normalize_dataset_name(args.dataset)
@@ -209,112 +267,22 @@ def get_dataloaders(args):
 
 
 #############################################
-def get_model(args, dataset=None):
-    """
-    get_model(args)
-    """
-
-    if args.supervised:
-        num_classes = misc_utils.get_num_classes(
-            dataset, dataset_name=args.dataset
-            )
-
-        model = model_3d.LC_RNN(
-            sample_size=args.img_dim, 
-            num_seq=args.num_seq, 
-            seq_len=args.seq_len, 
-            network=args.net,
-            num_classes=num_classes,
-            dropout=args.dropout
-            )
-    
-    else:
-        model = model_3d.DPC_RNN(
-            sample_size=args.img_dim, 
-            num_seq=args.num_seq, 
-            seq_len=args.seq_len, 
-            network=args.net, 
-            pred_step=args.pred_step
-            )
-
-    return model
-
-
-#############################################
-def set_gradients(model, supervised=False, train_what="all", lr=1e-3):
-    """
-    set_gradients(model)
-    """
-
-    model = training_utils.get_model(model)
-
-    params = model.parameters()
-    if train_what == "last":
-        logger.info("=> Training only the last layer.")
-        if supervised:
-            for name, param in model.named_parameters():
-                if ("resnet" in name.lower()) or ("rnn" in name.lower()):
-                    param.requires_grad = False
-        else:
-            for name, param in model.resnet.named_parameters():
-                param.requires_grad = False
-
-    elif supervised and train_what == "ft":
-        logger.info("=> Finetuning backbone with a smaller learning rate.")
-        params = []
-        for name, param in model.named_parameters():
-            if ("resnet" in name.lower()) or ("rnn" in name.lower()):
-                params.append({"params": param, "lr": lr / 10})
-            else:
-                params.append({"params": param})
-    
-    elif train_what != "all":
-        raise ValueError(
-            f"{train_what} value for train_what is not recognized."
-            )
-    else: 
-        pass # train all layers
-
-    training_utils.check_grad(model)
-
-    return params
-
-
-#############################################
-def init_optimizer(model, lr=1e-3, wd=1e-5, dataset="UCF101", img_dim=128, 
-                   supervised=False, train_what="all", test=False):
-    """
-    init_optimizer(model)
-    """
-
-    if test:
-        return None, None
-
-    # set gradients
-    params = set_gradients(model, supervised, train_what=train_what, lr=lr)
-
-    # get optimizer and scheduler
-    optimizer = torch.optim.Adam(params, lr=lr, weight_decay=wd)
-
-    scheduler = None
-    if supervised:
-        lr_lambda = training_utils.get_lr_lambda(dataset, img_dim=img_dim)    
-        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
-
-    return optimizer, scheduler
-
-
-#############################################
 def run_training(args):
     """
     run_training(args)
+
+
+    Required args
+    -------------
+    - args : argparse.Namespace
+
     """
 
     args = copy.deepcopy(args)
 
     args = check_adjust_args(args)
 
-    args.output_dir = set_path(args)
+    args.output_dir = get_output_directory(args)
 
     # get device and dataloaders
     device, args.num_workers = training_utils.get_device(
@@ -325,7 +293,11 @@ def run_training(args):
     main_loader, val_loader = get_dataloaders(args)
 
     # get model
-    model = get_model(args, dataset=main_loader.dataset)
+    model = training_utils.get_model(
+        dataset=main_loader.dataset, supervised=args.supervised, 
+        img_dim=args.img_dim, num_seq=args.num_seq, seq_len=args.seq_len, 
+        network=args.net, pred_step=args.pred_step, dropout=args.dropout
+        )
 
     allow_data_parallel = training_utils.allow_data_parallel(
         main_loader, device, args.supervised
@@ -337,7 +309,7 @@ def run_training(args):
     model = model.to(device)
 
     # get optimizer and scheduler
-    optimizer, scheduler = init_optimizer(
+    optimizer, scheduler = training_utils.init_optimizer(
         model, lr=args.lr, wd=args.wd, dataset=args.dataset, 
         img_dim=args.img_dim, supervised=args.supervised, 
         train_what=args.train_what, test=args.test
@@ -378,6 +350,13 @@ def run_training(args):
 def main(args):
     """
     main(args)
+
+
+
+    Required args
+    -------------
+    - args : argparse.Namespace
+
     """
 
     args = copy.deepcopy(args)

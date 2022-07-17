@@ -19,6 +19,24 @@ TAB = "    "
 def check_checkpoint(checkpoint_path, raise_err=True):
     """
     check_checkpoint(checkpoint_path)
+
+    Checks whether a checkpoint exists at a specific path, and either raises an 
+    error or a warning if it doesn't exist.
+
+    Required args
+    -------------
+    - checkpoint_path : str or path
+        Path to the checkpoint.
+
+    Optional args
+    -------------
+    - raise_error : bool (default=True)
+        If True, an error is raised if the checkpoint does not exist. 
+        Otherwise, a warning is produced.
+
+    Returns
+    -------
+    - checkpoint_exists : bool
     """
 
     if Path(checkpoint_path).is_file():
@@ -38,15 +56,37 @@ def check_checkpoint(checkpoint_path, raise_err=True):
 def load_key_from_checkpoint(checkpoint, keys):
     """
     load_key_from_checkpoint(checkpoint, keys)
+
+    Loads a specific key from a checkpoint, optionally trying several 
+    possibilities, in order.  The first key that exists in the checkpoint 
+    dictionary is used.
+
+    Required args
+    -------------
+    - checkpoint : dict
+        Checkpoint dictionary to load from.
+    - keys : list
+        Keys to try loading from checkpoint, in order.
+
+    Returns
+    -------
+    - value : object
+        Object stored under the specified key in the checkpoint dictionary.
     """
 
-    if len(keys) != 2:
-        raise ValueError("'keys' must have a length of 2.")
-
-    try:
-        value = checkpoint[keys[0]]
-    except KeyError:
-        value = checkpoint[keys[1]]
+    loaded = False
+    for key in keys:
+        if key in checkpoint.keys():
+            loaded = True
+            value = checkpoint[key]
+            break
+    
+    if not loaded:
+        key_names = ", ".join([str(key) for key in keys])
+        raise KeyError(
+            "'checkpoint' does not contain any of the following keys: "
+            f"{key_names}'"
+            )
 
     return value
 
@@ -55,6 +95,21 @@ def load_key_from_checkpoint(checkpoint, keys):
 def get_state_dict(model, state_dict):
     """
     get_state_dict(model, state_dict)
+
+    Returns a copy of the state dictionary, with keys modified to be usable 
+    with the model, depending on whether it is wrapped with nn.DataParallel().
+
+    Required args
+    -------------
+    - model : nn.Module or nn.DataParallel
+        Model.
+    - state_dict : dict
+        State dictionary.
+
+    Returns
+    -------
+    - state_dict : dict
+        State dictionary, with keys updated to be usable with the model.
     """
 
     # in case there is a mismatch: model wrapped or not with DataParallel()
@@ -78,6 +133,39 @@ def load_resume_checkpoint(checkpoint_path, model, optimizer=None,
                            lr=1e-3, reset_lr=False, raise_err=True):
     """
     load_resume_checkpoint(checkpoint_path, model)
+
+    Loads a checkpoint in place to resume model training, and returns variables 
+    to situate new start point.
+
+    Required args
+    -------------
+    - checkpoint_path : str or path
+        Path to the checkpoint.
+    - model : nn.Module or nn.DataParallel
+        Model to load checkpoint into.
+
+    Optional args
+    -------------
+    - optimizer : torch.optim object (default=None)
+        Torch optimizer.
+    - lr : float (default=1e-3)
+    - reset_lr : bool (default=False)
+        If True, instead of attempting to update the state of the optimizer 
+        with the saved optimizer checkpoint, the optimizer is used in its 
+        initialized state.
+    - raise_err : bool (default=raise_err)
+        If True, an error is raised if no checkpoint is found under 
+        checkpoint_path. Otherwise, A warning is created, the model state is 
+        not updated, and default values are returned.
+
+    Returns
+    -------
+    - log_idx : int
+        Log index to resume from, for writing to tensorboard.
+    - best_acc : float
+        Best validation accuracy logged for the model.
+    - start_epoch_n : int
+        Epoch number to resume from.
     """
 
     log_idx, start_epoch_n = 0, 0
@@ -124,19 +212,16 @@ def load_resume_checkpoint(checkpoint_path, model, optimizer=None,
         else:
             raise err
 
-    # if not resetting lr, load old optimizer
-    if optimizer is not None and not reset_lr: 
-        optimizer.load_state_dict(checkpoint["optimizer"])
-    else: 
-        # optimizer state is not reloaded
-        old_lr_str = "(unknown)" if old_lr is None else f"of {old_lr}"
-        if old_lr != lr:
-            lr_str = (f", with lr of {lr} instead of previous value "
-                f"{old_lr_str}")
-        
-        logger.info(
-            (f"==== Using new optimizer{lr_str} ====")
-            )
+    if optimizer is not None:
+        if reset_lr:
+            old_lr_str = "(unknown)" if old_lr is None else f"of {old_lr}"
+            if old_lr != lr:
+                lr_str = (f", with lr of {lr} instead of previous value "
+                    f"{old_lr_str}")
+            logger.info(f"==== Using new optimizer{lr_str} ====")
+        else: 
+            # if not resetting lr, load old optimizer
+            optimizer.load_state_dict(checkpoint["optimizer"])
     
     logger.info(
         f"=> Loaded checkpoint to resume from: '{checkpoint_path}' "
@@ -151,6 +236,24 @@ def load_pretrained_checkpoint(checkpoint_path, model, raise_err=True,
                                test=False):
     """
     load_pretrained_checkpoint(checkpoint_path, model, optimizer)
+
+    Loads a pretrained model checkpoint in place.
+
+    Required args
+    -------------
+    - checkpoint_path : str or path
+        Path to the checkpoint.
+    - model : nn.Module or nn.DataParallel
+        Model to load checkpoint into.
+
+    Optional args
+    -------------
+    - raise_err : bool (default=raise_err)
+        If True, an error is raised if no checkpoint is found under 
+        checkpoint_path. Otherwise, A warning is created, the model state is 
+        not updated, and default values are returned.
+    - test : bool (default=False)
+        If True, checkpoint is loaded for testing purposes. Used for logging.
     """
 
     # check if the checkpoint exists
@@ -207,6 +310,41 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
                     test=True, lr=1e-3, reset_lr=False):
     """
     load_checkpoint(model)
+
+    Loads a checkpoint in place to resume model training, and returns variables 
+    to situate the start point.
+
+    Required args
+    -------------
+    - model : nn.Module or nn.DataParallel
+        Model to load checkpoint into.
+
+    Optional args
+    -------------
+    - optimizer : torch.optim object (default=None)
+        Torch optimizer.
+    - resume : str or path (default=False)
+        Path to checkpoint to resume from, if provided.
+    - pretrained : str or path (default=False)
+        Path to checkpoint storing the pretrained model to reload, if provided.
+    - test : str or path (default=True)
+        If provided, path to checkpoint storing model to test or 'random' if 
+        testing random weights.
+    - lr : float (default=1e-3)
+        Learning rate against which to compare old learning rate.
+    - reset_lr : bool (default=False)
+        If True, instead of attempting to update the state of the optimizer 
+        with the saved optimizer checkpoint, the optimizer is used in its 
+        initialized state.
+
+    Returns
+    -------
+    - log_idx : int
+        Log index to start or resume from, for writing to tensorboard.
+    - best_acc : float
+        Best validation accuracy to start or resume with.
+    - start_epoch_n : int
+        Epoch number to start or resume from.
     """
 
     if bool(resume) + bool(pretrained) + bool(test) > 1:
@@ -217,7 +355,7 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
 
     if resume:
         log_idx, best_acc, start_epoch_n = load_resume_checkpoint(
-            resume, model, optimizer, lr=lr, reset_lr=reset_lr, raise_err=False
+            resume, model, optimizer, lr=lr, reset_lr=reset_lr, raise_err=True
             )
     elif pretrained or test:
         reload_model = pretrained if pretrained else test
@@ -227,18 +365,39 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
 
         else:
             load_pretrained_checkpoint(
-                reload_model, model, raise_err=False, test=test
+                reload_model, model, raise_err=True, test=test
             )
-
     
     return log_idx, best_acc, start_epoch_n
 
 
 #############################################
-def save_checkpoint(state_dict, is_best=0, gap=1, filename=None, 
+def save_checkpoint(state_dict, is_best=False, gap=1, filename=None, 
                     keep_all=False):
     """
     save_checkpoint(state_dict)
+
+    Saves checkpoint under specified name, optionally removing previous versions.
+
+    Required args
+    -------------
+    - state_dict : dict
+        State dictionary to save as a checkpoint.
+
+    Optional args
+    -------------
+    - is_best : bool (default=False)
+        If True, the current model is the best model, and additionally saved 
+        under the name 'model_best_epoch{epoch_n}.pth.tar", where epoch_n is 
+        retrieved from the state dictionary. 
+    - gap : int (default=1)
+        The gap between the current epoch and the previous epoch to remove, 
+        if keep_all is False.
+    - filename : str or path (default=None)
+        Filename under which to store checkpoint. If None, a default path name 
+        is used.
+    - keep_all : bool (default=False)
+        If False, previous epoch checkpoints are removed.
     """
     
     if filename is None:

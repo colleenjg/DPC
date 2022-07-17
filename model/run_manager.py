@@ -82,7 +82,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     train, spacing = training_utils.set_model_train_mode(
         model, epoch_n, train_off
         )
-    num_classes, supervised = training_utils.get_num_classes_sup(model)
+    _, supervised = training_utils.get_num_classes_sup(model)
 
     train_dict = loss_utils.init_loss_dict(
         ks=topk, val=False, supervised=supervised, save_by_batch=save_by_batch
@@ -470,8 +470,8 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         update the positions and sizes attribute for the Gabors dataset, if 
         applicable.
     - unexp_epoch : int (default=10)
-        Number of epochs at which to set the dataset to produce unexpected 
-        sequences, if the dataset if a Gabors dataset.
+        Epoch as of which unexpected sequences are introduced, if the dataset 
+        is a Gabors dataset.
     - log_freq : int (default=5)
         Batch frequency at which to log training progress to the console and, 
         optionally, the training writer.
@@ -499,7 +499,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     if is_gabors and supervised:
         gabor_utils.warn_supervised(main_loader.dataset)
 
-    loss_weight = training_utils.class_weight(dataset, supervised)
+    loss_weight = training_utils.class_weights(dataset, supervised)
 
     model_direc = misc_utils.init_model_direc(output_dir)
 
@@ -622,7 +622,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         if use_tb:
             misc_utils.update_tb(
                 writer_train, train_dict, epoch_n=epoch_n, 
-                writer_val=writer_val, val_dict=val_dict, ks=topk
+                writer_val=writer_val, val_dict=val_dict
                 )
 
         logger.debug(f"Epoch train loss: {train_dict['loss']}")

@@ -3,6 +3,7 @@ import logging
 import os
 from pathlib import Path
 import multiprocessing
+import random
 import shutil
 import sys
 import time
@@ -22,10 +23,27 @@ TAB = "    "
 #############################################
 class BasicLogFormatter(logging.Formatter):
     """
-    BasicLogFormatter()
-
     Basic formatting class that formats different level logs differently. 
     Allows a spacing extra argument to add space at the beginning of the log.
+
+    Class attributes
+    ----------------
+    - crt_fmt : str
+        Formatting string for critical logs.
+    - dbg_fmt : str
+        Formatting string for debugging logs.
+    - err_fmt : str
+        Formatting string for error logs.
+    - info_fmt : str
+        Formatting string for information logs.
+    - wrn_fmt : str
+        Formatting string for warning logs.
+
+    Methods
+    -------
+    - self.format(record):
+        Returns formatted record for logging.
+
     """
 
     dbg_fmt  = "%(spacing)s%(levelname)s: %(module)s: %(lineno)d: %(msg)s"
@@ -36,12 +54,35 @@ class BasicLogFormatter(logging.Formatter):
 
     def __init__(self, fmt="%(spacing)s%(levelname)s: %(msg)s"):
         """
-        Optional args:
-            - fmt (str): default format style.
+        BasicLogFormatter()
+
+        Constructs a BasicLogFormatter object.
+
+        Optional args
+        -------------
+        - fmt : str
+            Default format style.
         """
+
         super().__init__(fmt=fmt, datefmt=None, style="%") 
 
+
     def format(self, record):
+        """
+        self.format(record)
+
+        Formats record to log, depending on the record level number.
+
+        Required args
+        -------------
+        - record : str
+            Record to log.
+
+        Returns
+        -------
+        - formatted_log : str
+            Record, formatted for logging.
+        """
 
         if not hasattr(record, "spacing"):
             record.spacing = ""
@@ -75,13 +116,17 @@ def set_logger_level(logger, level="info"):
     """
     set_logger_level(logger)
 
-
+    Sets the level of the logger.
 
     Required args
     -------------
+    - logger : logging.Logger
+        Logger for which to adjust logging level.
 
     Optional args
     -------------
+    - level : str or int (default="info")
+        Level at which to set logger.            
     """
 
     if str(level).isdigit():
@@ -172,6 +217,18 @@ def get_num_jobs(max_n=None, min_n=1):
     get_num_jobs()
 
     Get number of jobs to run in parallel.
+
+    Optional args
+    -------------
+    - max_n : int (default=None)
+        Maximum number of jobs allowed, if not None.
+    - min_n : int (default=1)
+        Minimum number of jobs allowed.
+
+    Returns
+    -------
+    - num_jobs : int
+        Number of jobs computed.
     """
     
     num_jobs = multiprocessing.cpu_count()
@@ -195,6 +252,20 @@ def get_num_jobs(max_n=None, min_n=1):
 def renest(flat_list, target_shape):
     """
     renest(flat_list, target_shape)
+
+    Places a flat list into the specified target shape.
+
+    Required args
+    -------------
+    - flat_list : list
+        List to be reshaped using target_shape.
+    - target_shape : tuple
+        Shape into which to reshape flat_list.
+
+    Returns
+    -------
+    - reshape_list : list
+        flat_list nested into the target shape.
     """
 
     if len(flat_list) != np.product(target_shape):
@@ -223,6 +294,20 @@ def renest(flat_list, target_shape):
 def get_new_seed(seed=None, seed_none=False):
     """
     get_new_seed()
+
+    Deterministically retrieves a new seed based on a previous one.
+
+    Optional args
+    -------------
+    - seed : int (default=None)
+        Seed based on which to select new seed.
+    - seed_none : bool (default=False)
+        If True, a seed is generated even if the input seed is None.
+
+    Returns
+    -------
+    - seed : int
+        New seed. 
     """
 
     if seed_none or seed is not None:
@@ -236,11 +321,26 @@ def get_new_seed(seed=None, seed_none=False):
 def seed_all(seed=None, deterministic_algorithms=True):
     """
     seed_all()
+
+    If a seed is provided, seeds modules used for random processes, and 
+    optionally also sets torch algorithms to behave deterministically.
+    
+    NOTE: Setting torch models to behave deterministically may cause errors, 
+    depending on the torch modules used.
+
+    Optional args
+    -------------
+    - seed : int (default=None)
+        Seed to use in seeding modules (random, numpy, and torch).
+    - deterministic_algorithms : bool (default=True)
+        If True, torch algorithms are set to behave deterministically, if seed 
+        is None.
     """
 
     if seed is not None:
         logger.debug(f'Random state seed: {seed}')
 
+        random.random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
@@ -251,9 +351,24 @@ def seed_all(seed=None, deterministic_algorithms=True):
 
 
 #############################################
-def get_torch_generator(seed, gen_none=False):
+def get_torch_generator(seed=None, gen_none=False):
     """
-    get_torch_generator(seed)
+    get_torch_generator()
+
+    Returns a torch Generator.
+
+    Optional args
+    -------------
+    - seed : int (default=None)
+        Seed to use in seeding torch Generator.
+    - gen_none : bool (default=False)
+        If True, a torch Generator even if seed is None. Otherwise, None is 
+        returned.
+
+    Returns
+    -------
+    rng : torch.Generator
+        Torch generator or None.
     """
 
     rng = None
@@ -268,6 +383,26 @@ def get_torch_generator(seed, gen_none=False):
 def format_time(duration, sep_min=True, lead=False):
     """
     format_time(duration)
+
+    Converts a duration in seconds into a string.
+
+    Required args
+    -------------
+    - duration : float
+        Time in seconds.
+
+    Optional args
+    -------------
+    - sep_min : bool (default=True)
+        If True, minutes are separated from seconds in the duration string.
+    - lead : bool (default=False)
+        If True, 'Time: ' is included in the string before the duration is 
+        expressed.
+
+    Returns
+    -------
+    - time_str : str
+        Duration string.
     """
     
     if sep_min:
@@ -287,6 +422,24 @@ def format_time(duration, sep_min=True, lead=False):
 def get_unique_filename(filename, overwrite=False):
     """
     get_unique_filename(filename)
+
+    Returns a unique filename, based on the input filename provided.
+
+    Required args
+    -------------
+    - filename : str or path
+        Filename.
+
+    Optional args
+    -------------
+    - overwrite : bool (default=False)
+        If True, and the filename exists, the existing version is removed 
+        (with a wait time of 5 seconds to allow cancelling the operation).
+
+    Returns
+    -------
+    - filename : str or path
+        Unique version of the filename.
     """
     
     if Path(filename).is_file():
@@ -314,6 +467,25 @@ def get_unique_filename(filename, overwrite=False):
 def get_unique_direc(direc, overwrite=False):
     """
     get_unique_direc(direc)
+
+    Returns a unique directory name, based on the input directory name 
+    provided.
+
+    Required args
+    -------------
+    - direc : str or path
+        Directory name.
+
+    Optional args
+    -------------
+    - overwrite : bool (default=False)
+        If True, and the directory exists, it is removed 
+        (with a wait time of 5 seconds to allow cancelling the operation).
+
+    Returns
+    -------
+    - direc : str or path
+        Unique version of the directory name.
     """
     
     if Path(direc).is_dir():
@@ -338,6 +510,23 @@ def get_unique_direc(direc, overwrite=False):
 def normalize_dataset_name(dataset_name="UCF101", short=False, eye="left"):
     """
     normalize_dataset_name()
+
+    Normalizes the dataset name provided.
+
+    Optional args
+    -------------
+    - dataset_name : str (default="UCF101")
+        Dataset name.
+    - short : bool (default=False)
+        If True, the short version of the dataset name is returned.
+    - eye : str (default="left")
+        Additional information for specifying the short name of the MouseSim 
+        dataset, namely the eye parameter.
+
+    Returns
+    -------
+    - dataset_name : str
+        Normalized dataset name.
     """
 
     if dataset_name.lower() == "ucf101":
@@ -364,20 +553,25 @@ def normalize_dataset_name(dataset_name="UCF101", short=False, eye="left"):
 
 
 #############################################
-def get_num_classes(dataset=None, dataset_name="UCF101"):
+def get_num_classes(dataset="UCF101"):
     """
     get_num_classes()
+
+    Returns the number of classes for a given dataset.
+
+    Optional args
+    -------------
+    - dataset : torch data.Dataset or str (default="UCF101")
+        Torch dataset for which to retrieve the number of classes or name of 
+        the dataset.
+
+    Returns
+    -------
+    - num_classes : int 
+        Number of classes for the dataset.
     """
 
-    if dataset is not None:
-        if hasattr(dataset, "class_dict_decode"):
-            num_classes = len(dataset.class_dict_decode)
-        else:
-            raise NotImplementedError(
-                "Cannot retrieve number of classes for the dataset of type "
-                f"{type(dataset)}."
-                )
-    else:
+    if isinstance(dataset, str):
         dataset_name = normalize_dataset_name(dataset_name)
 
         if dataset_name == "UCF101":
@@ -392,30 +586,64 @@ def get_num_classes(dataset=None, dataset_name="UCF101"):
             raise ValueError(
                 f"Cannot retrieve number of classes for {dataset_name}."
                 )
+    else:
+        if hasattr(dataset, "class_dict_decode"):
+            num_classes = len(dataset.class_dict_decode)
+        else:
+            raise NotImplementedError(
+                "Cannot retrieve number of classes for the dataset of type "
+                f"{type(dataset)}."
+                )
 
     return num_classes
 
 
 #############################################
-def add_nested_dict(src_dict, target_dict, keys, nested_key, 
+def add_nested_dict(src_dict, target_dict, keys, main_key, 
                     raise_missing=True):
     """
-    add_nested_dict(src_dict, target_dict, keys, nested_key)
+    add_nested_dict(src_dict, target_dict, keys, main_key)
+
+    Adds keys from a source dictionary to a dictionary stored under the main 
+    key provided in the target dictionary, in place. 
+
+    Required args
+    -------------
+    - src_dict : dict
+        Source dictionary from which to add keys.
+    - target_dict : dict
+        Target dictionary in which to add keys under the main key.
+    - keys : list
+        Keys to retrieve from the source dictionary.
+    - main_key : str
+        Main key under which to store new dictionary in target dictionary.
+
+    Optional args
+    -------------
+    - raise_missing : bool (default=True)
+        If True and some keys are missing from the source dictionary, an error 
+        is raised. Otherwise, missing keys are ignored.
+
+    Returns
+    -------
+    - src_dict : dict
+        Copy of the input source dictionary, with keys removed if they were 
+        copied to the target directory.
     """
     
     src_dict = copy.deepcopy(src_dict)
 
-    if nested_key in target_dict.keys():
+    if main_key in target_dict.keys():
         raise ValueError(
-            f"{nested_key} key already exists in the target dictionary."
+            f"{main_key} key already exists in the target dictionary."
             )
         
-    target_dict[nested_key] = dict()
+    target_dict[main_key] = dict()
     
     missing = []
     for key in keys:
         if key in src_dict.keys():
-            target_dict[nested_key][key] = src_dict.pop(key)
+            target_dict[main_key][key] = src_dict.pop(key)
         else:
             missing.append(key)
 
@@ -436,6 +664,23 @@ def add_nested_dict(src_dict, target_dict, keys, nested_key,
 def init_tb_writers(direc=".", val=False):
     """
     init_tb_writers()
+
+    Initializes tensorboard writers.
+
+    Optional args
+    -------------
+    - direc : str or path (default=".") 
+        Directory in which to initialize writer or wriers.
+    - val : bool (default=False)
+        If True, the validation writer (writer_val) is initialized. Otherwise, 
+        it is set to None.
+
+    Returns
+    -------
+    - writer_train : tensorboardX.SummaryWriter
+        Tensorboard writer for training.
+    - writer_val : tensorboardX.SummaryWriter or None
+        Tensorboard writer for validation.
     """
 
     from tensorboardX import SummaryWriter
@@ -448,6 +693,7 @@ def init_tb_writers(direc=".", val=False):
     writer_val = None
     if val:
         writer_val = SummaryWriter(logdir=str(Path(direc, "val")))
+
     return writer_train, writer_val
 
 
@@ -455,6 +701,19 @@ def init_tb_writers(direc=".", val=False):
 def init_model_direc(output_dir="."):
     """
     init_model_direc()
+
+    Creates a model directory under the specified output directory, and returns 
+    its path.
+
+    Optional args
+    -------------
+    - output_dir : str or path (default=".")
+        Directory in which to create model directory.
+
+    Returns
+    -------
+    - model_direc : path
+        Model directory, created under the output directory.
     """
     
     model_direc = Path(output_dir, "model")
@@ -464,15 +723,29 @@ def init_model_direc(output_dir="."):
 
 
 #############################################
-def denorm(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+def denorm_transform(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
     """
-    denorm()
+    denorm_transform()
+
+    Returns a denormalization transform.
+
+    Optional args
+    -------------
+    - mean : list (default=[0.485, 0.456, 0.406])
+        List of mean values to use for the denormalization.
+    - std : list (default=[0.229, 0.224, 0.225])
+        List of mean values to use for the denormalization.
+
+    Returns
+    -------
+    - transforms.Normalize
+        Normalization transform to use for denormalization.
     """
     
-    if len(mean) != 3:
-        raise ValueError("'mean' must comprise 3 values.")
-    if len(std) != 3:
-        raise ValueError("'std' must comprise 3 values.")
+    if len(mean) != len(std):
+        raise ValueError(
+            "'mean' and 'std' must comprise the same number of values."
+            )
     inv_mean = [-mean[i] / std[i] for i in range(3)]
     inv_std = [1 / i for i in std]
     
@@ -484,13 +757,28 @@ def write_input_seq_tb(writer, input_seq, n=2, i=0):
     """
     write_input_seq_tb(writer, input_seq)
 
-    Write input sequences to a tensorboard writer.
+    Writes input sequences to a tensorboard writer.
+
+    Required args
+    -------------
+    - writer : tensorboardX.SummaryWriter
+        Tensorboard writer to write sequence images to.
+    - input_seq : 6D Tensor
+        Sequences from which to select images to write to tensorboard writer, 
+        after denormalization.
+
+    Optional args
+    -------------
+    - n : int (default=2)
+        Number of batch samples from which to record sequences.
+    - i : int (default=0)
+        Index under which to record sequences.
     """
 
     _, N, C, SL, H, W = input_seq.shape
     writer.add_image(
         "input_seq", 
-        denorm(vutils.make_grid(
+        denorm_transform(vutils.make_grid(
             input_seq[:n].transpose(2, 3).reshape(-1, C, H, W), 
             nrow=N * SL)
         ), i
@@ -499,13 +787,32 @@ def write_input_seq_tb(writer, input_seq, n=2, i=0):
 
 #############################################
 def update_tb(writer_train, train_dict, epoch_n=0, writer_val=None, 
-              val_dict=None, ks=[1, 2, 3]):
+              val_dict=None):
     """
     update_tb(writer_train, train_dict)
+
+    Updates tensorboard writers from data dictionaries. 
+
+    Required args
+    -------------
+    - writer_train : tensorboardX.SummaryWriter
+        Tensorboard writer for the training data.
+    - train_dict : dict
+        Training dictionary, comprising loss and accuracy keys 
+        (i.e., 'loss', 'acc', 'top{i}').
+
+    Optional args
+    -------------
+    - epoch_n : int (default=0)
+        Epoch number to tie to the data being written to the tensorboard.
+    - writer_val : tensorboardX.SummaryWriter (default=None)
+        Tensorboard writer for the validation data.
+    - val_dict : dict (default=None)
+        Validation dictionary, comprising loss and accuracy keys 
+        (i.e., 'loss', 'acc', 'top{i}').
     """
 
-    topk_datatypes = [f"accuracy/top{int(k)}" for k in ks]     
-    datatypes = ["global/loss", "global/accuracy"] + topk_datatypes
+    datatypes = ["global/loss", "global/accuracy"]
 
     for mode in ["train", "val"]:
         if mode == "train":
@@ -519,13 +826,20 @@ def update_tb(writer_train, train_dict, epoch_n=0, writer_val=None,
             writer = writer_val
             data_dict = val_dict
 
+        topk_datatypes, topk_data = [], []
+        for key, value in data_dict.items():
+            if key.startswith("top"):
+                topk_datatypes.append(f"accuracy/{key}")
+                topk_data.append(value)
+ 
         all_data = [
             data_dict["loss"], 
             data_dict["acc"], 
-            *data_dict["topk_meters"]
+            *topk_data
             ]
 
-        for datatype, data in zip(datatypes, all_data):
+        use_datatypes = datatypes + topk_datatypes
+        for datatype, data in zip(use_datatypes, all_data):
             writer.add_scalar(datatype, data, epoch_n)
 
 
@@ -533,6 +847,16 @@ def update_tb(writer_train, train_dict, epoch_n=0, writer_val=None,
 def get_technical_hyperparams():
     """
     get_technical_hyperparams()
+
+    Returns a list of technical hyperparameter names.
+
+    Returns
+    -------
+    - technical_params : list
+        List of parameters to include in the technical hyperparameters 
+        subdictionary.
+    - ignore_params : list
+        List of parameters to ignore when collecting hyperparameters.
     """
 
     technical_params = [
@@ -549,6 +873,28 @@ def get_technical_hyperparams():
 def get_model_hyperparams(supervised=False, resume=False, test=False):
     """
     get_model_hyperparams()
+
+    Returns a list of model hyperparameter names.
+
+    Optional args
+    -------------
+    - supervised : bool (default=False)
+        If True, parameters not relevant to the supervised task are 
+        ignored. Otherwise, those not relevant to the self-supervised task 
+        are ignored.
+    - resume : bool (default=False)
+        If True, parameters not relevant to resuming model training are 
+        ignored.
+    - test : bool (default=False)
+        If True, parameters not relevant to testing are ignored.
+
+    Returns
+    -------
+    - model_params : list
+        List of parameters to include in the model hyperparameters 
+        subdictionary.
+    - ignore_params : list
+        List of parameters to ignore when collecting hyperparameters.
     """
 
     model_params = [
@@ -580,7 +926,22 @@ def get_model_hyperparams(supervised=False, resume=False, test=False):
 #############################################
 def get_dataset_hyperparams(dataset="UCF101"):
     """
-    get_dataset_hyperparams(dataset)
+    get_dataset_hyperparams()
+
+    Returns a list of dataset hyperparameter names.
+
+    Optional args
+    -------------
+    - dataset : str (default="UCF101")
+        Dataset name, used to identify parameters to ignore or retain.
+
+    Returns
+    -------
+    - dataset_params : list
+        List of parameters to include in the dataset hyperparameters 
+        subdictionary.
+    - ignore_params : list
+        List of parameters to ignore when collecting hyperparameters.
     """
 
     dataset_params = [
@@ -616,6 +977,24 @@ def get_dataset_hyperparams(dataset="UCF101"):
 def get_general_hyperparams(resume=False, test=False):
     """
     get_general_hyperparams()
+
+    Returns a list of general hyperparameter names.
+
+    Optional args
+    -------------
+    - resume : bool (default=False)
+        If True, parameters not relevant to resuming model training are 
+        ignored.
+    - test : bool (default=False)
+        If True, parameters not relevant to testing are ignored.
+
+    Returns
+    -------
+    - general_params : list
+        List of parameters to include in the general hyperparameters 
+        subdictionary.
+    - ignore_params : list
+        List of parameters to ignore when collecting hyperparameters.
     """
     
     general_params = [
@@ -641,6 +1020,20 @@ def get_general_hyperparams(resume=False, test=False):
 def check_missed_hyperparams(hyperparams, ignore_params=[]):
     """
     check_missed_hyperparams(hyperparams)
+
+    Checks for hyperparameters that are left over in the hyperparameters  
+    dictionary. If any are not also listed in the parameters to ignore, a 
+    warning is logged to the console. 
+
+    Required args
+    -------------
+    - hyperparams : dict
+        Hyperparameters dictionary containing any leftover keys.
+
+    Optional args
+    -------------
+    - ignore_params : list (default=[])
+        Hyperparameters in the dictionary that can be ignored, if left over.
     """
 
     left_over = []
@@ -660,6 +1053,19 @@ def check_missed_hyperparams(hyperparams, ignore_params=[]):
 def save_hyperparameters(hyperparams, direc=None):
     """
     save_hyperparameters(hyperparams)
+
+    Creates a nested hyperparameters dictionary and saves it in a json file.
+
+    Required args
+    -------------
+    - hyperparams : dict
+        Dictionary containing hyperparameters to be stored (not nested).
+
+    Optional args
+    -------------
+    - direc : str or path (default=None)
+        Directory in which to save hyperparameters json file. If None, it is 
+        inferred from hyperparams["output_dir"].
     """
 
     hyperparams = copy.deepcopy(hyperparams)
@@ -692,7 +1098,7 @@ def save_hyperparameters(hyperparams, direc=None):
     technical_params, add_ignore_params = get_technical_hyperparams()
 
     hyperparams = add_nested_dict(
-        hyperparams, hyperparam_dict, technical_params, nested_key="technical", 
+        hyperparams, hyperparam_dict, technical_params, main_key="technical", 
         raise_missing=False
         )
     ignore_params = ignore_params + add_ignore_params
@@ -705,7 +1111,7 @@ def save_hyperparameters(hyperparams, direc=None):
     ignore_params = ignore_params + add_ignore_params
 
     hyperparams = add_nested_dict(
-        hyperparams, hyperparam_dict, model_params, nested_key="model", 
+        hyperparams, hyperparam_dict, model_params, main_key="model", 
         raise_missing=False
         )
 
@@ -715,7 +1121,7 @@ def save_hyperparameters(hyperparams, direc=None):
     ignore_params = ignore_params + add_ignore_params
 
     hyperparams = add_nested_dict(
-        hyperparams, hyperparam_dict, dataset_params, nested_key="dataset", 
+        hyperparams, hyperparam_dict, dataset_params, main_key="dataset", 
         raise_missing=False
         )
 
@@ -727,17 +1133,17 @@ def save_hyperparameters(hyperparams, direc=None):
     ignore_params = ignore_params + add_ignore_params
 
     hyperparams = add_nested_dict(
-        hyperparams, hyperparam_dict, general_params, nested_key="general", 
+        hyperparams, hyperparam_dict, general_params, main_key="general", 
         raise_missing=False
         )
     
 
     # convert Path objects to strings
-    for nested_key in hyperparam_dict.keys():
-        for key in hyperparam_dict[nested_key].keys():
-            val = hyperparam_dict[nested_key][key]
+    for main_key in hyperparam_dict.keys():
+        for key in hyperparam_dict[main_key].keys():
+            val = hyperparam_dict[main_key][key]
             if isinstance(val, Path):
-                hyperparam_dict[nested_key][key] = str(val)
+                hyperparam_dict[main_key][key] = str(val)
 
 
     # final check

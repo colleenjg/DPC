@@ -7,7 +7,9 @@ import warnings
 
 import numpy as np
 import torch
+import torch.optim as optim
 
+from model import model_3d
 from utils import gabor_utils, misc_utils
 
 logger = logging.getLogger(__name__)
@@ -18,6 +20,18 @@ TAB = "    "
 def get_device(num_workers=None, cpu_only=False):
     """
     get_device()
+
+
+
+    Optional args
+    -------------
+    - num_workers
+    - cpu_only
+
+    Returns
+    -------
+    - device
+    - num_workers
     """
 
     device_name = "cuda" if torch.cuda.is_available() and not cpu_only else "cpu"
@@ -35,6 +49,21 @@ def get_device(num_workers=None, cpu_only=False):
 def allow_data_parallel(dataloader, device, supervised=False):
     """
     allow_data_parallel(dataloader, device)
+
+
+
+    Required args
+    -------------
+    - dataloader : 
+    - device : 
+
+    Optional args
+    -------------
+    - supervised : bool (default=False)
+
+    Returns
+    -------
+    - allow_parallel : bool
     """
     
     allow_parallel = False
@@ -54,9 +83,89 @@ def allow_data_parallel(dataloader, device, supervised=False):
 
 
 #############################################
+def get_model(dataset="UCF101", supervised=True, img_dim=224, num_seq=8, 
+              seq_len=5, network="resnet18", pred_step=3, dropout=0.1):
+    """
+    get_model()
+
+
+
+    Required args
+    -------------
+    - dataset : torch data.Dataset or str (default="UCF101")
+        Torch dataset for which to retrieve the number of classes or name of 
+        the dataset, if supervised is True.
+
+    Optional args
+    -------------
+    - supervised : bool (default=True)
+    - img_dim : int (default=224)
+    - num_seq : int (default=8)
+    - seq_len : int (default=5)
+    - network : str (default="resnet18")
+    - pred_step : int (default=3)
+    - dropout : float (default=0.1)
+
+    Returns
+    -------
+    - model
+    """
+
+    model_kwargs = {
+        "sample_size": img_dim,
+        "num_seq": num_seq,
+        "seq_len": seq_len,
+        "network": network,
+    }
+
+    if supervised:
+        num_classes = misc_utils.get_num_classes(dataset)
+
+        model = model_3d.LC_RNN(
+            num_classes=num_classes,
+            dropout=dropout,
+            **model_kwargs
+            )
+    
+    else:
+        model = model_3d.DPC_RNN(pred_step=pred_step, **model_kwargs)
+
+    return model
+
+
+#############################################
+def get_model_only(model):
+    """
+    get_model_only(model)
+
+
+
+    Required args
+    -------------
+    - model : 
+
+    Returns
+    -------
+    - model : 
+    """
+    
+    # in case the model is wrapped with DataParallel()
+    if hasattr(model, "device_ids"):
+        model = model.module
+
+    return model
+
+
+#############################################
 def log_weight_decay_prop(model):
     """
     log_weight_decay_prop(model)
+
+
+
+    Required args
+    -------------
+    - model : 
     """
     
     total_weight = 0.0
@@ -79,6 +188,14 @@ def get_target_from_mask(mask):
     get_target_from_mask(mask)
     
     Task mask as input, compute the target for contrastive loss
+
+    Required args
+    -------------
+    - mask : 
+
+    Returns
+    -------
+    - target : 
     """
     
     # mask meaning: 1: pos
@@ -92,9 +209,15 @@ def get_target_from_mask(mask):
 def check_grad(model):
     """
     check_grad(model)
+
+
+
+    Required args
+    -------------
+    - model : 
     """
 
-    model = get_model(model)
+    model = get_model_only(model)
     
     logger.debug("\n===========Check Grad============")
     for name, param in model.named_parameters():
@@ -103,7 +226,63 @@ def check_grad(model):
 
 
 #############################################
-def get_multistepLR_restart_multiplier(epoch, gamma=0.1, step=[10, 15, 20], 
+def set_gradients(model, supervised=False, train_what="all", lr=1e-3):
+    """
+    set_gradients(model)
+
+
+
+    Required args
+    -------------
+    - model : 
+
+    Optional args
+    -------------
+    - supervised : bool (default=False)
+    - train_what : str (default="all")
+    - lr : float (default=1e-3)
+
+    Returns
+    -------
+    - params
+    """
+
+    model = get_model_only(model)
+
+    params = model.parameters()
+    if train_what == "last":
+        logger.info("=> Training only the last layer.")
+        if supervised:
+            for name, param in model.named_parameters():
+                if ("resnet" in name.lower()) or ("rnn" in name.lower()):
+                    param.requires_grad = False
+        else:
+            for name, param in model.resnet.named_parameters():
+                param.requires_grad = False
+
+    elif supervised and train_what == "ft":
+        logger.info("=> Finetuning backbone with a smaller learning rate.")
+        params = []
+        for name, param in model.named_parameters():
+            if ("resnet" in name.lower()) or ("rnn" in name.lower()):
+                params.append({"params": param, "lr": lr / 10})
+            else:
+                params.append({"params": param})
+    
+    elif train_what != "all":
+        raise ValueError(
+            f"{train_what} value for train_what is not recognized."
+            )
+    else: 
+        pass # train all layers
+
+    check_grad(model)
+
+    return params
+    
+    
+#############################################
+def get_multistepLR_restart_multiplier(epoch_n, gamma=0.1, step=[10, 15, 20], 
                                        repeat=3):
     """
     get_multistepLR_restart_multiplier(epoch)
@@ -113,14 +292,29 @@ def get_multistepLR_restart_multiplier(epoch, gamma=0.1, step=[10, 15, 20],
     10 <= ep < 15: gamma^1 
     15 <= ep < 20: gamma^2
     20 <= ep < 30: gamma^0 ... repeat 3 cycles and then keep gamma^2
+
+    Required args
+    -------------
+    - epoch_n : 
+
+    Optional args
+    -------------
+    - gamma : float (default=0.1)
+    - step : list (default[10, 15, 20])
+    - repeat : int (default=3)
+
+    Returns
+    -------
+    - float
     """
 
     max_step = max(step)
-    effective_epoch = epoch % max_step
-    if epoch // max_step >= repeat:
+    effective_epoch = epoch_n % max_step
+    if epoch_n // max_step >= repeat:
         exp = len(step) - 1
     else:
         exp = len([i for i in step if effective_epoch >= i])
+
     return gamma ** exp
 
 
@@ -128,6 +322,17 @@ def get_multistepLR_restart_multiplier(epoch, gamma=0.1, step=[10, 15, 20],
 def get_lr_lambda(dataset="UCF101", img_dim=224): 
     """
     get_lr_lambda()
+
+
+
+    Optional args
+    -------------
+    - dataset : str (default="UCF101")
+    - img_dim : int (default=224)
+
+    Returns
+    -------
+    - lr_lambda : lambda function
     """
     
     dataset = misc_utils.normalize_dataset_name(dataset)
@@ -152,33 +357,55 @@ def get_lr_lambda(dataset="UCF101", img_dim=224):
     else:
         raise ValueError(f"{dataset} dataset not recognized.")
 
-    lr_lambda = lambda ep: get_multistepLR_restart_multiplier(
-        ep, gamma=0.1, step=steps, repeat=1
+    lr_lambda = lambda ep_n: get_multistepLR_restart_multiplier(
+        ep_n, gamma=0.1, step=steps, repeat=1
         )
 
     return lr_lambda
 
 
 #############################################
-def get_model(model):
+def init_optimizer(model, lr=1e-3, wd=1e-5, dataset="UCF101", img_dim=128, 
+                   supervised=False, train_what="all", test=False):
     """
-    get_model(model)
+    init_optimizer(model)
     """
+
+    if test:
+        return None, None
+
+    # set gradients
+    params = set_gradients(model, supervised, train_what=train_what, lr=lr)
+
+    # get optimizer and scheduler
+    optimizer = torch.optim.Adam(params, lr=lr, weight_decay=wd)
+
+    scheduler = None
+    if supervised:
+        lr_lambda = get_lr_lambda(dataset, img_dim=img_dim)    
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
+    return optimizer, scheduler
     
-    # in case the model is wrapped with DataParallel()
-    if hasattr(model, "device_ids"):
-        model = model.module
-
-    return model
-
-
+    
 #############################################
 def get_num_classes_sup(model):
     """
     get_num_classes_sup(model)
+
+
+
+    Required args
+    -------------
+    - model : 
+
+    Returns
+    -------
+    - num_classes : int or None
+    - supervised : bool
     """
     
-    model = get_model(model)
+    model = get_model_only(model)
     num_classes = None
     
     supervised = hasattr(model, "num_classes")
@@ -189,25 +416,50 @@ def get_num_classes_sup(model):
 
 
 #############################################
-def class_weight(dataset="MouseSim", supervised=True):
+def class_weights(dataset="MouseSim", supervised=True):
+    """
+    class_weights()
 
-    weight = None
+
+
+    Optional args
+    -------------
+    - dataset : str (default="MouseSim")
+    - supervised : bool (default=True)
+
+    Returns
+    -------
+    - class_weights : torch.Tensor or None
+    """
+    
+    weights = None
     dataset = misc_utils.normalize_dataset_name(dataset)
     if supervised and dataset == "MouseSim":
-        weight = [6, 1]
+        weights = [6, 1]
         logger.warning(
-            f"Loss will be weighted per class as follows: {weight}."
+            f"Loss will be weighted per class as follows: {weights}."
             )
 
-        weight = torch.Tensor(weight) # based on training set
+        weights = torch.Tensor(weights) # based on training set
 
-    return weight
+    return weights
 
 
 #############################################
 def check_end(start_epoch_n=0, num_epochs=50):
     """
     check_end()
+
+
+
+    Optional args
+    -------------
+    - start_epoch_n : int (default=0)
+    - num_epochs : int (default=50)
+
+    Returns
+    -------
+    - end
     """
     
     end = False
@@ -230,6 +482,14 @@ def resize_input_seq(input_seq):
     each batch item is a sub-batch in which all sets of sequences 
     share a label
 
+    Required args
+    -------------
+    - input_seq : 
+
+    Returns
+    -------
+    - input_seq : 
+    - SUB_B : 
     """
 
     B, SUB_B, N, C, SL, H, W = input_seq.size()
@@ -242,6 +502,21 @@ def resize_input_seq(input_seq):
 def set_model_train_mode(model, epoch_n=0, train_off=False):
     """
     set_model_train_mode(model)
+
+
+    Required args
+    -------------
+    - model :
+
+    Optional args
+    -------------
+    - epoch_n : int (default=0)
+    - train_off : bool (default=False)
+
+    Returns
+    -------
+    - train : 
+    - spacing : 
     """
 
     if epoch_n == 0 or train_off:
@@ -265,6 +540,25 @@ def set_model_train_mode(model, epoch_n=0, train_off=False):
 def prep_supervised_loss(output, target, shared_pred=False, SUB_B=None):
     """
     prep_supervised_loss(output, target)
+
+
+
+    Required args
+    -------------
+    - output : 
+    - target : 
+
+    Optional args
+    -------------
+    - shared_pred : bool (default=False)
+    - SUB_B : int (default=None)
+
+    Returns
+    -------
+    - output_flattened : 
+    - target_flattened : 
+    - loss_reshape : 
+    - target : 
     """
     
     if shared_pred:
@@ -299,6 +593,24 @@ def prep_supervised_loss(output, target, shared_pred=False, SUB_B=None):
 def prep_self_supervised_loss(output, mask, input_seq_shape=None):
     """
     prep_self_supervised_loss(output, mask)
+
+
+
+    Required args
+    -------------
+    - output
+    - mask
+
+    Optional args
+    -------------
+    - input_seq_shape : tuple (default=None)
+
+    Returns
+    -------
+    - output_flattened : 
+    - target_flattened : 
+    - loss_reshape : 
+    - target : 
     """
     
     input_seq_str = ""
@@ -336,6 +648,28 @@ def prep_loss(output, mask, sup_target=None, input_seq_shape=None,
               supervised=False, shared_pred=False, SUB_B=None, is_gabors=False):
     """
     prep_loss(output, mask)
+
+
+    Required args
+    -------------
+    - output
+    - mask
+
+    Optional args
+    -------------
+    - sup_target : 
+    - input_seq_shape : tuple (default=None)
+    - supervised : bool (default=False)
+    - shared_pred : bool (default=False)
+    - SUB_B : int (default=None)
+    - is_gabors : bool (default=True)    
+
+    Returns
+    -------
+    - output_flattened : 
+    - target_flattened : 
+    - loss_reshape : 
+    - target : 
     """
 
     if supervised:
@@ -348,15 +682,13 @@ def prep_loss(output, mask, sup_target=None, input_seq_shape=None,
                 output, sup_target, shared_pred=shared_pred, SUB_B=SUB_B
                 )
 
-        return output_flattened, target_flattened, loss_reshape, target
-
     else:
         output_flattened, target_flattened, loss_reshape, target = \
             prep_self_supervised_loss(
                 output, mask, input_seq_shape=input_seq_shape
                 )
 
-        return output_flattened, target_flattened, loss_reshape, target
+    return output_flattened, target_flattened, loss_reshape, target
 
 
 
@@ -364,8 +696,20 @@ def prep_loss(output, mask, sup_target=None, input_seq_shape=None,
 def get_sup_target_to_store(dataset, sup_target):
     """
     get_sup_target_to_store(dataset, sup_target)
+
+    Required args
+    -------------
+    - dataset : 
+    - sup_target : 
+
+    Returns
+    -------
+    - sup_target : 
     """
     
+    if isinstance(dataset, str):
+        raise ValueError("'dataset' should be a dataset object, not a string.")
+
     is_gabors = hasattr(dataset, "num_gabors")
 
     if is_gabors:
@@ -383,6 +727,22 @@ def add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item,
                    sup_target=None, output=None, target=None, epoch_n=0):
     """
     add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item)
+
+
+
+    Required args
+    -------------
+    - data_dict : 
+    - dataset : 
+    - batch_loss : 
+    - batch_loss_by_item : 
+
+    Optional args
+    -------------
+    - sup_target : 
+    - output : 
+    - target : 
+    - epoch_n : int (default=0)
     """
     
     n_items = np.asarray(batch_loss_by_item).size
@@ -408,6 +768,27 @@ def log_epoch(stats_str, duration=None, epoch_n=0, num_epochs=50, val=False,
               test=False, batch_idx=0, n_batches=None, spacing="\n"):
     """
     log_epoch(stats_str)
+
+
+
+    Required args
+    -------------
+    - stats_str : str
+
+    Optional args
+    -------------
+    - duration : float (default=None)
+    - epoch_n : int (default=0)
+    - num_epochs : int (default=50)
+    - val : bool (default=False)
+    - test : bool (default=False)
+    - batch_idx : int (default=0)
+    - n_batches : int (default=None)
+    - spacing : str (default="\n")
+
+    Returns
+    -------
+    - log_str : str
     """
 
     if test:
@@ -443,13 +824,21 @@ def log_epoch(stats_str, duration=None, epoch_n=0, num_epochs=50, val=False,
 def write_log(content, epoch_n, filename):
     """
     write_log(content, epoch_n, filename)
+
+    Required args
+    -------------
+    - content
+    - epoch_n
+    - filename
     """
     
-    open_mode = "a" if Path(filename).is_file() else "w"
+    filename = Path(filename)
+    filename.parent.mkdir(exist_ok=True, parents=True)
+
+    open_mode = "a" if filename.is_file() else "w"
 
     with open(filename, open_mode) as f:
         f.write(f"## Epoch {epoch_n}:\n")
         f.write(f"Time: {datetime.now()}\n")
         f.write(f"{content}\n\n")
-
 

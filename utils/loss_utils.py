@@ -758,9 +758,7 @@ def get_loss_plot_kwargs(hp_dict, num_classes=None):
                 f"Inferred number of Gabor classes: {num_classes}."
                 )
         else:
-            num_classes = misc_utils.get_num_classes(
-                dataset_name=dataset
-                )
+            num_classes = misc_utils.get_num_classes(dataset)
 
     elif num_classes is not None:
         num_classes = int(num_classes)

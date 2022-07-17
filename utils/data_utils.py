@@ -285,7 +285,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             )
 
     elif dataset == "MouseSim":
-        drop_last = False # Note: False is not compatible with DataParallel
+        drop_last = False # NOTE: False is not compatible with DataParallel
         dataset = dataset_3d.MouseSim_3d(
             data_path_dir=data_path_dir,
             eye=eye,

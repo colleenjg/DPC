@@ -142,7 +142,7 @@ EXIT=0
 
 set -x # echo commands to console
 
-python train_model.py \
+python run_model.py \
     --output_dir $SCRATCH/dpc/models \
     --dataset $FIXED_DATASET \
     --net $FIXED_NET \
@@ -175,7 +175,7 @@ set +x # stop echoing commands to console
 # 5. Print instructions for testing model
 if [[ $MODEL == "lc-rnn" ]]; then
     echo -e "To test the model, run:\n"\
-    "python train_model.py"\
+    "python run_model.py"\
     "--model $MODEL"\
     "--dataset $FIXED_DATASET"\
     "--img_dim $FIXED_IMG_DIM"\

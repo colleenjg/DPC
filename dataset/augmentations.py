@@ -625,7 +625,7 @@ class RandomGray(object):
     Augmentation for converting images to grayscale based on a randomly 
     selected channel.
 
-    Note: This augmentation actually selects a single channel for each image, 
+    NOTE: This augmentation actually selects a single channel for each image, 
     instead of fully converting all channels to grayscale.
 
     Attributes

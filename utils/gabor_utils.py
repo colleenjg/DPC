@@ -1018,7 +1018,10 @@ def get_gabor_sup_target_to_store(dataset, sup_target):
         Supervised target, with decoded labels, and dims: 
         B (batch size) x N (num seq) x SL (seq len) x 2 [image type, ori]
     """
-    
+
+    if isinstance(dataset, str):
+        raise ValueError("'dataset' should be a Gabor dataset object.")
+
     seq_labels, seq_unexp = torch.moveaxis(sup_target, -1, 0)
     sup_target = dataset.image_label_to_class(seq_labels, seq_unexp)
 
@@ -1088,6 +1091,9 @@ def warn_supervised(dataset):
     - dataset : gabor_stimuli.GaborSequenceGenerator
         Gabor dataset
     """
+
+    if isinstance(dataset, str):
+        raise ValueError("'dataset' should be a Gabor dataset object.")
 
     if dataset.mode == "test":
         raise ValueError(
@@ -1359,7 +1365,10 @@ def init_gabor_conf_mat(dataset):
     - confusion_mat : GaborConfusionMeter
         GaborConfusionMeter object
     """
-    
+
+    if isinstance(dataset, str):
+        raise ValueError("'dataset' should be a Gabor dataset object.")
+
     gabor_classes = list(dataset.class_dict_encode.keys())
     confusion_mat = GaborConfusionMeter(gabor_classes)
 
@@ -1396,7 +1405,10 @@ def init_gabor_records(dataset, init_conf_mat=True):
     - confusion_mat : GaborConfusionMeter or None
         GaborConfusionMeter object or None, if init_conf_mat is False.
     """
-    
+
+    if isinstance(dataset, str):
+        raise ValueError("'dataset' should be a Gabor dataset object.")
+
     gabor_classes = list(dataset.class_dict_encode.keys())
     if init_conf_mat:
         confusion_mat = init_gabor_conf_mat(dataset)

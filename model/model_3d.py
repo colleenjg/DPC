@@ -336,7 +336,7 @@ class DPC_RNN(torch.nn.Module):
         -------------
         - batch : 6D Tensor
             Input tensor with dims: B x N x C x SL x H x W.
-            Note: B is the size of the batch sent one GPU, if the model is 
+            NOTE: B is the size of the batch sent one GPU, if the model is 
             split across GPUs. 
 
         Returns

@@ -40,6 +40,9 @@ def check_if_is_gabors(dataset):
         Whether the input dataset is a GaborSequenceGenerator object.
     """
 
+    if isinstance(dataset, str):
+        raise ValueError("'dataset' should be a Gabor dataset object.")
+
     is_gabors = isinstance(dataset, GaborSequenceGenerator)
 
     return is_gabors
