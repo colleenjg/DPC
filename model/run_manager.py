@@ -19,13 +19,17 @@ TAB = "    "
 
 #############################################
 def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50, 
-                topk=TOPK, loss_weight=None, device="cpu", log_freq=5, 
+                topk=TOPK, loss_weights=None, device="cpu", log_freq=5, 
                 writer=None, log_idx=0, train_off=False, output_dir=None, 
                 save_by_batch=False):
     """
     train_epoch(dataloader, model, optimizer)
 
     Runs one epoch of training on the model with the dataloader provided.
+
+    If the dataset is a Gabor dataset and an output directory is provided, 
+    confusion matrices for each epoch are generated and saved, whether the task 
+    is supervised or not.
 
     Required args
     -------------
@@ -46,9 +50,9 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
         Total number of training epochs, used for logging.
     - topk : list (default=TOPK)
         The top k accuracies to record (e.g., [1, 3, 5] for top 1, 3 and 5).
-    - loss_weight : int (default=None)
+    - loss_weights : tuple (default=None)
         Class weights to provide to the loss function.
-    - device : int (default="cpu")
+    - device : torch.device or str (default="cpu")
         Device on which to train the model.
     - log_freq : int (default=5)
         Batch frequency at which to log progress to the console and, 
@@ -68,8 +72,33 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     Returns
     -------
     - train_dict : dict
-        Dictionary recording training loss and accuracy data 
-        (see loss_utils.init_loss_dict() for keys).
+        Dictionary recording training loss and accuracy data, with keys:
+
+        'acc' (float)   : Final local accuracy average.
+        'epoch_n' (int) : Epoch number.
+        'loss' (float)  : Final local loss average.
+        'top{k}' (float): Final local top k accuracy average.
+        
+        if save_by_batch:
+        'avg_loss_by_batch' (list)          : average loss values for each batch
+        'batch_epoch_n' (list)              : epoch number for each batch
+        'loss_by_item' (3D list)            : loss values with dims: 
+            batches x B x N
+        'sup_target_by_batch' (3 or 5D list): supervised targets for each batch, 
+            with dims: B x N (x SL x [image type, mean ori] if Gabor 
+            dataset).
+        
+        if Gabor dataset:
+        'gabor_loss_dict' (dict):  Gabor loss dictionary, with keys
+            '{image_type}' (list)       : image type loss, for each batch
+            '{mean ori}' (list)         : orientation loss, for each batch
+            'image_types_overall' (list): overall image type loss, for each 
+                                          batch
+            'mean_oris_overall'   (list): overall mean ori loss, for each batch
+            'overall'             (list): overall loss, for each batch
+        'gabor_acc_dict' (dict) : Gabor top 1 accuracy dictionary, with the 
+                                  same keys as 'gabor_loss_dict'.
+
     - log_idx : int
         Updated log index, for writing to tensorboard.
     """
@@ -85,7 +114,8 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     _, supervised = training_utils.get_num_classes_sup(model)
 
     train_dict = loss_utils.init_loss_dict(
-        ks=topk, val=False, supervised=supervised, save_by_batch=save_by_batch
+        ks=topk, val=False, supervised=supervised, save_by_batch=save_by_batch, 
+        is_gabor=is_gabor
         )["train"]
     train_dict["epoch_n"] = epoch_n
 
@@ -96,7 +126,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
                 )
         
     criterion, criterion_no_reduction = loss_utils.get_criteria(
-        loss_weight=loss_weight, device=device
+        loss_weights=loss_weights, device=device
         )
 
     batch_times = []
@@ -136,7 +166,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
         if save_by_batch:
             batch_loss = criterion_no_reduction(
                 output_flattened, target_flattened
-                ).detach().cpu().reshape(loss_reshape)
+                ).reshape(loss_reshape)
 
             if not supervised:
                 # take mean across spatial (HW) dimension
@@ -158,9 +188,9 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
                     dataloader.dataset,
                     gabor_loss_dict, 
                     gabor_acc_dict,
-                    output=output_flattened.detach().cpu().numpy(),
-                    sup_target=sup_target.detach().cpu().numpy(),
-                    batch_loss=batch_loss,
+                    output=output_flattened.detach().cpu(),
+                    sup_target=sup_target.detach().cpu(),
+                    batch_loss=batch_loss.detach().cpu(),
                     supervised=supervised,
                     confusion_mat=gabor_conf_mat,
                     )
@@ -174,9 +204,9 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
 
         # log results
         if idx % log_freq == 0 or idx == len(dataloader) - 1:
-            loss_avg, acc_avg, loss_val, acc_val, stats_str = \
+            loss_avg, acc_avg, stats_str, loss_val, acc_val = \
                 loss_utils.get_stats(
-                    losses, topk_meters, ks=topk, local=True, last=True
+                    losses, topk_meters, ks=topk, local=True, incl_last=True
                 )
             
             training_utils.log_epoch(
@@ -218,12 +248,18 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
 
 #############################################
 def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50, 
-                      topk=TOPK, loss_weight=None, device="cpu", test=False, 
+                      topk=TOPK, loss_weights=None, device="cpu", test=False, 
                       output_dir=None, save_by_batch=False):
     """
     val_or_test_epoch(dataloader, model)
 
     Runs one epoch of evaluation on the model with the dataloader provided.
+
+    If an output directory is provided and the model is run in the supervised 
+    mode, the latest confusion matrix is saved. 
+    
+    Aditionally, if the dataset is a Gabor dataset, confusion matrices for each 
+    epoch are generated and saved, whether the task is supervised or not.
 
     Required args
     -------------
@@ -242,9 +278,9 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
         Total number of training epochs, used for logging.
     - topk : int (default=TOPK)
         The top k accuracies to record (e.g., [1, 3, 5] for top 1, 3 and 5).
-    - loss_weight : int (default=None)
+    - loss_weights : tuple (default=None)
         Class weights to provide to the loss function.
-    - device : int (default="cpu")
+    - device : torch.device or str (default="cpu")
         Device on which to train the model.
     - test : bool (default=False)
         If True, mode is test instead of validation. Used for logging.
@@ -257,8 +293,37 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
     Returns
     -------
     - val_or_test_dict : dict
-        Dictionary recording validation or test loss and accuracy data .
-        (see loss_utils.init_loss_dict() for keys).
+        Dictionary recording validation or test loss and accuracy data, with 
+        keys:
+
+        'acc' (float)   : Overall accuracy average.
+        'epoch_n' (int) : Epoch number.
+        'loss' (float)  : Overall loss average.
+        'top{k}' (float): Overall top k accuracy average.
+        
+        if save_by_batch:
+        'avg_loss_by_batch' (list)          : average loss values for each batch
+        'batch_epoch_n' (list)              : epoch number for each batch
+        'loss_by_item' (3D list)            : loss values with dims: 
+            batches x B x N
+        'sup_target_by_batch' (3 or 5D list): supervised targets for each batch, 
+            with dims: B x N (x SL x [image type, mean ori] if Gabor 
+            dataset).
+        
+        if output_dir is not None:
+        'confusion_matrix' (dict): confusion matrix storage dictionary for the 
+                                   epoch
+
+        if Gabor dataset:
+        'gabor_loss_dict' (dict):  Gabor loss dictionary, with keys
+            '{image_type}' (list)       : image type loss, for each batch
+            '{mean ori}' (list)         : orientation loss, for each batch
+            'image_types_overall' (list): overall image type loss, for each 
+                                          batch
+            'mean_oris_overall'   (list): overall mean ori loss, for each batch
+            'overall'             (list): overall loss, for each batch
+        'gabor_acc_dict' (dict) : Gabor top 1 accuracy dictionary, with the 
+                                  same keys as 'gabor_loss_dict'.
     """
 
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
@@ -268,7 +333,7 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
     model.eval()
 
     criterion, criterion_no_reduction = loss_utils.get_criteria(
-        loss_weight=loss_weight, device=device
+        loss_weights=loss_weights, device=device
         )
 
     confusion_mat = None
@@ -276,7 +341,8 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
 
     mode = "test" if test else "val"
     val_or_test_dict = loss_utils.init_loss_dict(
-        ks=topk, val=True, supervised=supervised, save_by_batch=save_by_batch
+        ks=topk, val=True, supervised=supervised, save_by_batch=save_by_batch,
+        is_gabor=is_gabor
         )["val"]
     val_or_test_dict["epoch_n"] = epoch_n
 
@@ -337,14 +403,14 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
             if confusion_mat is not None:
                 _, pred = torch.max(output_flattened, 1)
                 confusion_mat.update(
-                    pred.detach().cpu().numpy(), 
-                    target_flattened.reshape(-1).byte().detach().cpu().numpy()
+                    pred.detach().cpu(), 
+                    target_flattened.reshape(-1).byte().detach().cpu()
                     )
 
             if save_by_batch:
                 batch_loss = criterion_no_reduction(
                     output_flattened, target_flattened
-                    ).detach().cpu().reshape(loss_reshape)
+                    ).reshape(loss_reshape)
 
                 if not supervised:
                     # take mean across spatial (HW) dimension
@@ -366,9 +432,9 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
                         dataloader.dataset,
                         gabor_loss_dict, 
                         gabor_acc_dict,
-                        output=output_flattened.detach().cpu().numpy(),
-                        sup_target=sup_target.detach().cpu().numpy(),
-                        batch_loss=batch_loss.detach().cpu().numpy(),
+                        output=output_flattened.detach().cpu(),
+                        sup_target=sup_target.detach().cpu(),
+                        batch_loss=batch_loss.detach().cpu(),
                         supervised=supervised,
                         confusion_mat=gabor_conf_mat,
                         )
@@ -434,7 +500,10 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     """
     train_full(train_loader, model, optimizer)
 
-    Trains and evaluates a model
+    Trains and evaluates a model.
+
+    If the model is evaluated in supervised mode, via validation or test, a 
+    confusion matrix is saved for the best and test run, respectively.
 
     Required args
     -------------
@@ -461,7 +530,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         The top k accuracies to record (e.g., [1, 3, 5] for top 1, 3 and 5).
     - scheduler : torch optim.lr_scheduler object (default=None)
         Torch learning rate scheduler.
-    - device : int (default="cpu")
+    - device : torch.device or str (default="cpu")
         Device on which to train the model.
     - val_loader : torch data.DataLoader (default=None)
         Validation Torch dataloader to use for evaluating model, and 
@@ -501,7 +570,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     if is_gabor and supervised:
         gabor_utils.warn_supervised(main_loader.dataset)
 
-    loss_weight = training_utils.class_weights(dataset, supervised)
+    loss_weights = training_utils.class_weights(dataset, supervised)
 
     model_direc = misc_utils.init_model_direc(output_dir)
 
@@ -528,7 +597,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         # initialize loss dictionary or load, if it exists
         loss_dict = loss_utils.init_loss_dict(
             output_dir, ks=topk, val=save_best, supervised=supervised, 
-            save_by_batch=save_by_batch
+            save_by_batch=save_by_batch, is_gabor=is_gabor
             )
         
         if save_by_batch and is_gabor:
@@ -557,7 +626,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 epoch_n=epoch_n, 
                 num_epochs=num_epochs,
                 topk=topk,
-                loss_weight=loss_weight,
+                loss_weights=loss_weights,
                 device=device, 
                 log_freq=log_freq,
                 writer=writer_train,
@@ -577,7 +646,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 epoch_n=epoch_n, 
                 num_epochs=num_epochs, 
                 topk=topk,
-                loss_weight=loss_weight,
+                loss_weights=loss_weights,
                 device=device,
                 output_dir=output_dir,
                 test=test,
@@ -598,7 +667,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 best_acc = max(val_dict["acc"], best_acc)
                 if is_best and "confusion_matrix" in val_dict.keys():
                     # plot best confusion matrix
-                    loss_utils.load_replot_conf_mat(
+                    loss_utils.load_plot_conf_mat(
                         val_dict["confusion_matrix"], mode="val", suffix="best",
                         omit_class_names=True, epoch_n=epoch_n, 
                         output_dir=output_dir
@@ -661,7 +730,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     if "confusion_matrix_best" in loss_dict["val"].keys():
         best_idx = np.argmax(loss_dict["val"]["acc"])
         best_epoch_n = loss_dict["val"]["epoch_n"][best_idx]
-        loss_utils.load_replot_conf_mat(
+        loss_utils.load_plot_conf_mat(
             loss_dict["val"]["confusion_matrix_best"], mode="val", 
             suffix="best", omit_class_names=False, epoch_n=best_epoch_n, 
             output_dir=output_dir

@@ -37,7 +37,11 @@ def get_device(num_workers=None, cpu_only=False):
         Number of workers.
     """
 
-    device_name = "cuda" if torch.cuda.is_available() and not cpu_only else "cpu"
+    if torch.cuda.is_available() and not cpu_only:
+        device_name = "cuda"
+    else:
+         device_name = "cpu"
+
     device = torch.device(device_name)
 
     if num_workers is None:
@@ -436,7 +440,8 @@ def get_lr_lambda(dataset="UCF101", img_dim=256):
 
 #############################################
 def init_optimizer(model, lr=1e-3, wd=1e-5, dataset="UCF101", img_dim=256, 
-                   use_scheduler=False, train_what="all", test=False):
+                   supervised=False, use_scheduler=False, train_what="all", 
+                   test=False):
     """
     init_optimizer(model)
 
@@ -458,6 +463,8 @@ def init_optimizer(model, lr=1e-3, wd=1e-5, dataset="UCF101", img_dim=256,
         Dataset name.
     - img_dim : int (default=256)
         Image dimensions, when they are input to the model.
+    - supervised : bool (default=False)
+        Determines how to set parameter gradients.
     - use_scheduler : bool (default=False)
         If True, a learning rate scheduler is returned. 
     - train_what : str (default="all")
@@ -479,7 +486,7 @@ def init_optimizer(model, lr=1e-3, wd=1e-5, dataset="UCF101", img_dim=256,
         return None, None
 
     # set gradients
-    params = set_gradients(model, train_what=train_what, lr=lr)
+    params = set_gradients(model, supervised, train_what=train_what, lr=lr)
 
     # get optimizer and scheduler
     optimizer = optim.Adam(params, lr=lr, weight_decay=wd)
@@ -760,10 +767,10 @@ def prep_self_supervised_loss(output, mask, input_seq_shape=None):
 
     Returns
     -------
-    - output_flattened : 3D Tensor
+    - output_flattened : 2D Tensor
         Flattened model output tensor, with dims: 
             B * PS * HW x B_per (per GPU) * PS * HW
-    - target_flattened : 3D Tensor
+    - target_flattened : 2D Tensor
         Flattened target mask identifying all positive pairs by 1s, and all 
         other pairs (negative) by 0s, with the same dimensions as 
         output_flattened.
@@ -848,10 +855,10 @@ def prep_loss(output, mask=None, sup_target=None, input_seq_shape=None,
 
     Returns
     -------
-    - output_flattened : 2 or 3D Tensor
+    - output_flattened : 2D Tensor
         Flattened output. For details, see prep_supervised_loss() if 
         supervised is True, and prep_self_supervised_loss() otherwise.
-    - target_flattened : 1 or 3D Tensor
+    - target_flattened : 1 or 2D Tensor
         Flattened target. For details, see prep_supervised_loss() if 
         supervised is True, and prep_self_supervised_loss() otherwise.
     - loss_reshape : tuple
@@ -892,7 +899,7 @@ def get_sup_target_to_store(dataset, sup_target):
     Gets the supervised target to store based on the dataset type.
 
     If the dataset is a Gabor dataset, class labels in the input supervised 
-    target tensor are converted to class names [image type, orientation] before 
+    target tensor are converted to class names [image type, mean ori] before 
     the tensor is converted to a nested list. Also, targets are retained for 
     all sequence items.
 
@@ -904,12 +911,13 @@ def get_sup_target_to_store(dataset, sup_target):
     - sup_target : 2 or 4D Tensor
         Tensor specifying the target class for each sequence. Required if 
         supervised is True. 
-        Dimensions: B x N (x SL x [label, unexp_label] if Gabor dataset).
+        Dimensions: B x N (x SL x [label, unexp label] if Gabor dataset).
 
     Returns
     -------
     - sup_target : list
-        Input sup_target converted to a nested list. 
+        Input sup_target converted to a nested list, or modified if Gabor 
+        dataset to B x N x SL x [image type, mean ori]. 
     """
     
     if isinstance(dataset, str):
@@ -940,27 +948,41 @@ def add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item,
     -------------
     - data_dict : dict
         Data dictionary to which to append batch information, with keys:
-        "avg_loss_by_batch", "batch_epoch_n", "loss_by_item", and optionally 
-        "output_by_batch", "target_by_batch", and "sup_target_by_batch".
+        Dictionary recording loss and accuracy data, with keys:
+        'avg_loss_by_batch' (list): average loss values for each batch
+        'batch_epoch_n' (list)    : epoch number for each batch
+        'loss_by_item' (3D list)  : loss values with dims batches x B x N
+        
+        and optionally:
+        'output_by_batch' (4 or 7D array-like)    : output values for each 
+            batch, with dims batch x B x N x number of classes if the task is 
+            supervised or batch x B x PS x HW x B_per x PS x HW, otherwise.
+        'sup_target_by_batch' (4 or 6D Tensor): supervised targets for each 
+            batch, each with dims: batch x B x N (x SL x [image type, mean ori] 
+            if Gabor dataset).
+        'target_by_batch' (3 or 7D array-like)    : target values for each 
+            batch, each with dims batch x B x N if the task is supervised or 
+            batch x B x PS x HW x B_per x PS x HW, otherwise.
+
     - dataset : torch data.Dataset object
         Torch dataset object, used to identify whether the dataset is a 
         Gabor dataset.
     - batch_loss : float
         Loss for the batch for which data is being added.
-    - batch_loss_by_item : 2D Tensor
-        Batch losses separated by item, with dims: B x N.
+    - batch_loss_by_item : list
+        Batch losses separated by item.
 
     Optional args
     -------------
-    - sup_target : 2 or 4D Tensor
-        Tensor specifying the target class for each sequence. Required if 
+    - sup_target : 2 or 4D nested array-like
+        List specifying the target class for each sequence. Required if 
         supervised is True. 
         Dimensions: B x N (x SL x [label, unexp_label] if Gabor dataset).
-    - output : 3 or 6D Tensor
+    - output : 3 or 6D nested array-like
         Model output for the batch, with dims:
             B x N x number of classes if supervised, and 
             B x PS x HW x B x PS x HW otherwise.
-    - target : 2, 4 or 6D Tensor
+    - target : 2, 4 or 6D nested array-like
         Target for the batch. See sup_target if supervised. 
         Otherwise, dimensions are B x PS x HW x B x PS x HW. 
     - epoch_n : int (default=0)

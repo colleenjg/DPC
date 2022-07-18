@@ -179,7 +179,9 @@ def get_output_directory(args):
 
         suffix_str = ""
         if len(args.suffix):
-            suffix_str = f"_{args.suffix}"
+            suffix_str = args.suffix
+            if suffix_str[0] != "_":
+                suffix_str = f"_{args.suffix}"
 
         save_name = (
             f"{dataset_str}-{args.img_dim}_r{args.net[6:]}_{args.model}_"

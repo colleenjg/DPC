@@ -214,11 +214,12 @@ def load_resume_checkpoint(checkpoint_path, model, optimizer=None,
 
     if optimizer is not None:
         if reset_lr:
+            lr_str = ""
             old_lr_str = "(unknown)" if old_lr is None else f"of {old_lr}"
             if old_lr != lr:
                 lr_str = (f", with lr of {lr} instead of previous value "
                     f"{old_lr_str}")
-            logger.info(f"==== Using new optimizer{lr_str} ====")
+            logger.info(f"Using new optimizer{lr_str}.")
         else: 
             # if not resetting lr, load old optimizer
             optimizer.load_state_dict(checkpoint["optimizer"])

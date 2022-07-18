@@ -195,8 +195,8 @@ def get_logger_with_basic_format(**logger_kw):
 
     Keyword args
     ------------
-    - logger_kw : dict
-        Keyword arguments for get_logger().
+    **logger_kw : dict
+        Keyword arguments for get_logger(), excluding 'fmt'.
         
     Returns
     -------
@@ -340,7 +340,7 @@ def seed_all(seed=None, deterministic_algorithms=True):
     if seed is not None:
         logger.debug(f'Random state seed: {seed}')
 
-        random.random.seed(seed)
+        random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)

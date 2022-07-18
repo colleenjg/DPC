@@ -827,7 +827,7 @@ class GaborSequenceGenerator(data.Dataset):
 
         Returns
         -------
-        - seq_image_labels : nd array
+        - seq_image_labels : nd Tensor
             Class labels for the input image types and orientations (in degrees)
             (same shape as seq_image_types).
         """
@@ -1192,8 +1192,8 @@ class GaborSequenceGenerator(data.Dataset):
         # Retrieve labels
         seq_labels = self.image_class_to_label(
             seq_image_types, seq_image_mean_oris
-            )
-        seq_unexp_labels = gabor_utils.get_unexp(seq_image_types)
+            ).numpy()
+        seq_unexp_labels = gabor_utils.get_unexp(seq_image_types).numpy()
         seq_ext_labels = np.vstack([seq_labels, seq_unexp_labels]).T
         seq_ext_labels = np.repeat(seq_ext_labels, self.gab_img_len, axis=0)
 

@@ -4,6 +4,7 @@ import logging
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 
 from utils import misc_utils
@@ -26,7 +27,13 @@ def plot_acc(sub_ax, data_dict, epoch_ns, chance=None, color="k", ls=None,
     - sub_ax : plt subplot
         Subplot on which to plot accuracy data.
     - data_dict : dict
-        Dictionary from which to retrieve accuracy data.
+        Dictionary recording loss and accuracy information with keys:
+
+        'acc' (list)    : Final local accuracy average per epoch.
+        'epoch_n' (list): Epoch number per epoch.
+        'loss' (list)   : Final local loss average per epoch.
+        'top{k}' (list) : Final local top k accuracy average per epoch.
+        
     - epoch_ns : array-like
         Epoch numbers to use for accuracy data x axis.
 
@@ -61,10 +68,10 @@ def plot_acc(sub_ax, data_dict, epoch_ns, chance=None, color="k", ls=None,
 
 
 #############################################
-def plot_batches(batch_ax, data_dict, epoch_ns, U_ax=None, data_label="train", 
+def plot_batches(batch_ax, data_dict, U_ax=None, data_label="train", 
                  colors="Blues"):
     """
-    plot_batches(batch_ax, loss_dict, epoch_ns)
+    plot_batches(batch_ax, loss_dict)
 
     Plots loss and accuracy data by batch, and optionally U sequence frequency 
     for the Gabors dataset.
@@ -74,9 +81,14 @@ def plot_batches(batch_ax, data_dict, epoch_ns, U_ax=None, data_label="train",
     - batch_ax : plt subplot
         Subplot on which to plot batch data.
     - data_dict : dict
-        Dictionary from which to retrieve batch data.
-    - epoch_ns : array-like
-        Epoch numbers to use for batch data x axis.
+        Dictionary recording loss and accuracy information, under keys:
+        'avg_loss_by_batch' (2D list)       : average loss values with dims:
+                                              epochs x batches
+        'batch_epoch_n' (2D list)           : epoch number, with dims:
+                                              epochs x batches
+        'sup_target_by_batch' (4 or 6D list): supervised targets with dims: 
+            epochs x batches x B x N (x SL x [image type, mean ori] 
+            if Gabor dataset).
 
     Optional args
     -------------
@@ -89,7 +101,10 @@ def plot_batches(batch_ax, data_dict, epoch_ns, U_ax=None, data_label="train",
         Name of the colormap to use to determine batch colors.
     """
     
+    # transpose to number of batches x number of epochs
     avg_loss_by_batch = np.asarray(data_dict["avg_loss_by_batch"]).T
+    epoch_ns = np.asarray(data_dict["batch_epoch_n"]).T
+
     num_batches = len(avg_loss_by_batch)
     batch_cmap = mpl.cm.get_cmap(colors)
     cmap_samples = np.linspace(1.0, 0.3, num_batches)
@@ -108,17 +123,20 @@ def plot_batches(batch_ax, data_dict, epoch_ns, U_ax=None, data_label="train",
         batch_color = batch_cmap(cmap_samples[b])
         label = data_label if b == 0 and len(data_label) else None
         batch_ax.plot(
-            epoch_ns, batch_losses, color=batch_color, alpha=0.8, label=label
+            epoch_ns[b], batch_losses, color=batch_color, alpha=0.8, 
+            label=label
             )
         if U_ax is not None:
             label = data_label if b == 0 and len(data_label) else None
             U_ax.plot(
-                epoch_ns, U_freqs_over_DU[b], color=batch_color, 
+                epoch_ns[b], U_freqs_over_DU[b], color=batch_color, 
                 alpha=0.8, label=label, marker="."
             )
     
+    epoch_ns = epoch_ns.mean(axis=0)
     batch_ax.plot(
-        epoch_ns, avg_loss_by_batch.mean(axis=0), color="k", alpha=0.6, lw=2.5, 
+        epoch_ns, avg_loss_by_batch.mean(axis=0), color="k", 
+        alpha=0.6, lw=2.5, 
         )
     if U_ax is not None:
         U_ax.plot(
@@ -128,18 +146,47 @@ def plot_batches(batch_ax, data_dict, epoch_ns, U_ax=None, data_label="train",
 
 
 #############################################
-def plot_loss_dict(loss_dict, num_classes=None, dataset="UCF101", 
-                   unexp_epoch=10, by_batch=False):
+def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101", 
+                        unexp_epoch=10, by_batch=False):
     """
-    plot_loss_dict(loss_dict)
+    plot_from_loss_dict(loss_dict)
 
     Plots loss and accuracy information from loss dictionary.
 
     Required args
     -------------
     - loss_dict : dict
-        Dictionary containing loss and accuracy information. See 
-        loss_utils.init_loss_dict() for information on keys and values.
+        Dictionary recording loss and accuracy information in dictionaries 
+        stored under the 'train' and optionally the 'val' key, each with keys:
+
+        'acc' (list)    : Final local accuracy average per epoch.
+        'epoch_n' (list): Epoch number per epoch.
+        'loss' (list)   : Final local loss average per epoch.
+        'top{k}' (list) : Final local top k accuracy average per epoch.
+
+        and optionally:
+        'avg_loss_by_batch' (2D list)       : average loss values with dims:
+                                              epochs x batches
+        'batch_epoch_n' (2D list)           : epoch number, with dims:
+                                              epochs x batches
+        'loss_by_item' (4d list)            : loss values with dims: 
+                                              epochs x batches x B x N
+        'sup_target_by_batch' (4 or 6D list): supervised targets with dims: 
+            epochs x batches x B x N (x SL x [image type, mean ori] 
+            if Gabor dataset).
+        
+        if Gabor dataset:
+        'gabor_loss_dict' (list):  Gabor loss dictionaries for each epoch, 
+                                   with keys
+            '{image_type}' (list)       : image type loss, for each batch
+            '{mean ori}' (list)         : orientation loss, for each batch
+            'image_types_overall' (list): overall image type loss, for each 
+                                          batch
+            'mean_oris_overall'   (list): overall mean ori loss, for each batch
+            'overall'             (list): overall loss, for each batch
+        'gabor_acc_dict' (list) : Gabor top 1 accuracy dictionaries for each 
+                                  epoch, with the same keys as 
+                                  'gabor_loss_dict'.
 
     Optional args
     -------------
@@ -159,11 +206,11 @@ def plot_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
         Figure in which loss information is plotted.
     """
 
-    datatypes = ["train"]
+    modes = ["train"]
     colors = ["blue"]
     ls = ["dashed"]
     if "val" in loss_dict.keys():
-        datatypes.append("val")
+        modes.append("val")
         colors.append("orange")
         ls.append(None)
 
@@ -172,45 +219,45 @@ def plot_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
     dataset = misc_utils.normalize_dataset_name(dataset)
     plot_seq = by_batch and (dataset == "Gabors")
     nrows = 1 + int(plot_seq) if by_batch else 2
-    ncols = len(datatypes) if by_batch else 1
+    ncols = len(modes) if by_batch else 1
     fig, ax = plt.subplots(
         nrows, ncols, figsize=[8.5 * ncols, 3.25 * nrows], sharex=True, 
         squeeze=False
         )
     ax = ax.reshape(nrows, ncols)
 
-    for d, datatype in enumerate(datatypes):
-        epoch_ns = loss_dict[datatype]["epoch_n"]  
+    for m, mode in enumerate(modes):
+        epoch_ns = loss_dict[mode]["epoch_n"]  
 
-        data_label = f"{datatype} "
-        if ncols == len(datatypes):
-            ax[0, d].set_title(datatype.capitalize())
+        data_label = f"{mode} "
+        if ncols == len(modes):
+            ax[0, m].set_title(mode.capitalize())
             data_label = ""
 
         if by_batch:
-            U_ax = ax[1, d] if plot_seq else None
+            U_ax = ax[1, m] if plot_seq else None
             plot_batches(
-                ax[0, d], loss_dict[datatype], epoch_ns, U_ax=U_ax, 
-                data_label="", colors=f"{colors[d].capitalize()}s"
+                ax[0, m], loss_dict[mode], U_ax=U_ax, data_label="", 
+                colors=f"{colors[m].capitalize()}s"
                 )
         else:
             ax[0, 0].plot(
-                epoch_ns, loss_dict[datatype]["loss"], color=colors[d], 
-                ls=ls[d], label=f"{data_label}loss"
+                epoch_ns, loss_dict[mode]["loss"], color=colors[m], 
+                ls=ls[m], label=f"{data_label}loss"
                 )
 
             plot_acc(
-                ax[1, 0], loss_dict[datatype], epoch_ns, chance=chance, 
-                color=colors[d], ls=ls[d], data_label=data_label
+                ax[1, 0], loss_dict[mode], epoch_ns, chance=chance, 
+                color=colors[m], ls=ls[m], data_label=data_label
                 )
 
-        if datatype == "val":
-            best_idx = np.argmax(loss_dict[datatype]["acc"])
+        if mode == "val":
+            best_idx = np.argmax(loss_dict[mode]["acc"])
             best_epoch_n = epoch_ns[best_idx]
             for s, sub_ax in enumerate(ax.reshape(-1)):
                 label = None
                 if s == 1:
-                    best_acc = 100 * loss_dict[datatype]["acc"][best_idx]
+                    best_acc = 100 * loss_dict[mode]["acc"][best_idx]
                     label = f"ep {best_epoch_n}: {best_acc:.2f}%"
                 sub_ax.axvline(
                     best_epoch_n, color="k", ls="dashed", alpha=0.8, 
@@ -239,4 +286,65 @@ def plot_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
 
     return fig
 
+
+#############################################
+def add_colorbar(im, adj_aspect=True, **cbar_kwargs):
+    """
+    add_colorbar(im)
+
+    Adds a colorbar to the plot associated with the image provided.
+
+    For adj_aspect, aspect ratios are computed for the default plt figure size.
+
+    Required args
+    -------------
+    - im : mpl.image.AxesImage
+        Confusion matrix axis image, with a colormap associated.
+
+    Optional args
+    -------------
+    - adj_aspect : bool (default=True)
+        If True, the colorbar width is adjusted to compensate for tick 
+        value width to minimize the impact on the confusion matrix width.
+
+    Keyword args
+    ------------
+    **cbar_kwargs : dict
+        Keyword arguments for plt.colorbar().
+    """
+    
+    aspect_ratios = {
+        "1+"    : 12.6,
+        "10+"   : 18,
+        "100+"  : 32,
+        "1000+" : 140,
+    }
+    
+    fig = im.figure
+    if adj_aspect:
+        # ensure that the colormap aspect ratio keeps the widths of the 
+        # main plot and overall figure constant
+        cbar_kwargs["aspect"] = aspect_ratios["1+"]
+        new_aspect = cbar_kwargs["aspect"]
+        clims = im.get_clim()
+
+    for _ in range(4):
+        cm = fig.colorbar(im, **cbar_kwargs)
+        cm.ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+        max_tick = max(
+            [tick for tick in cm.ax.get_yticks() if tick <= clims[1]]
+            )
+        if adj_aspect:
+            for min_val in [1, 10, 100, 1000]:
+                if max_tick >= min_val:
+                    new_aspect = aspect_ratios[f"{min_val}+"]
+
+        if adj_aspect and (new_aspect != cbar_kwargs["aspect"]):
+            cbar_kwargs["aspect"] = new_aspect
+            cm.remove()
+        else:
+            break
+
+    cm.set_label("Counts", rotation=270, labelpad=18)
 

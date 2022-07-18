@@ -219,7 +219,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
 
     Keyword args
     ------------
-    - gabor_kwargs : dict
+    **gabor_kwargs : dict
         Additional initialization arguments for 
         gabor_stimuli.GaborSequenceGenerator
 

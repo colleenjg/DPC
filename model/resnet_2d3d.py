@@ -902,7 +902,7 @@ def ResNet18_2d3d_full(**kwargs):
 
     Keyword args
     ------------
-    - kwargs : dict
+    **kwargs : dict
         Keyword arguments for ResNet2d3d_full initialization 
         (excluding 'block_types', and 'blocks_per').
 
@@ -933,7 +933,7 @@ def ResNet34_2d3d_full(**kwargs):
 
     Keyword args
     ------------
-    - kwargs : dict
+    **kwargs : dict
         Keyword arguments for ResNet2d3d_full initialization 
         (excluding 'block_types', and 'blocks_per').
 
@@ -964,7 +964,7 @@ def ResNet50_2d3d_full(**kwargs):
 
     Keyword args
     ------------
-    - kwargs : dict
+    **kwargs : dict
         Keyword arguments for ResNet2d3d_full initialization 
         (excluding 'block_types', and 'blocks_per').
 
@@ -995,7 +995,7 @@ def ResNet101_2d3d_full(**kwargs):
 
     Keyword args
     ------------
-    - kwargs : dict
+    **kwargs : dict
         Keyword arguments for ResNet2d3d_full initialization 
         (excluding 'block_types', and 'blocks_per').
 
@@ -1026,7 +1026,7 @@ def ResNet152_2d3d_full(**kwargs):
 
     Keyword args
     ------------
-    - kwargs : dict
+    **kwargs : dict
         Keyword arguments for ResNet2d3d_full initialization 
         (excluding 'block_types', and 'blocks_per').
 
@@ -1057,7 +1057,7 @@ def ResNet200_2d3d_full(**kwargs):
 
     Keyword args
     ------------
-    - kwargs : dict
+    **kwargs : dict
         Keyword arguments for ResNet2d3d_full initialization 
         (excluding 'block_types', and 'blocks_per').
 
