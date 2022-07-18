@@ -897,22 +897,24 @@ def get_model_hyperparams(supervised=False, resume=False, test=False):
         List of parameters to ignore when collecting hyperparameters.
     """
 
-    model_params = [
-        "batch_size", "model", "net", "pretrained", "resume", "supervised", 
-        "test"
-        ]
+    model_params = ["batch_size", "model", "net", "supervised"]
     ignore_params = []
 
-    training_params = ["lr", "num_epochs", "train_what", "wd"]
+    training_params = ["lr", "num_epochs", "train_what", "use_scheduler", "wd"]
     if test:
-        ignore_params = ignore_params + training_params
-        ignore_params = ignore_params + ["dropout", "pred_step", "reset_lr"]
+        ignore_params.extend(training_params)
+        ignore_params.extend(
+            ["dropout", "pred_step", "pretrained", "resume", "reset_lr"]
+        )
     else:
-        model_params = model_params + training_params
+        model_params.extend(training_params)
+        ignore_params.append("test")
         if resume:
-            model_params = model_params + ["reset_lr"]
+            model_params.extend(["reset_lr", "resume"])
+            ignore_params.append("pretrained")
         else:
-            ignore_params = ignore_params + ["reset_lr"]
+            model_params.append("pretrained")
+            ignore_params.extend(["reset_lr", "resume"])
         if supervised:
             model_params.append("dropout")
             ignore_params.append("pred_step")
@@ -944,31 +946,29 @@ def get_dataset_hyperparams(dataset="UCF101"):
         List of parameters to ignore when collecting hyperparameters.
     """
 
-    dataset_params = [
-        "dataset", "img_dim", "num_seq", "no_augm", "seq_len"
-    ]
+    dataset_params = ["dataset", "img_dim", "num_seq", "no_augm", "seq_len"]
     ignore_params = ["diff_possizes", "no_gray"]
 
     ucf_hmdb_ms_params = ["ucf_hmdb_ms_ds"]
     if dataset in ["UCF101", "HMDB51", "MouseSim"]:
-        dataset_params = dataset_params + ucf_hmdb_ms_params
+        dataset_params.extend(ucf_hmdb_ms_params)
     else:
-        ignore_params = ignore_params + ucf_hmdb_ms_params        
+        ignore_params.extend(ucf_hmdb_ms_params)        
 
     ms_params = ["eye"]
     if dataset == "MouseSim":
-        dataset_params = dataset_params + ms_params
+        dataset_params.extend(ms_params)
     else:
-        ignore_params = ignore_params + ms_params
+        ignore_params.extend(ms_params)
 
     gabor_params = [
         "diff_U_possizes", "gab_img_len", "gray", "num_gabors", 
         "same_possizes", "roll", "train_len", "U_prob", "unexp_epoch"
         ]
     if dataset == "Gabors":
-        dataset_params = dataset_params + gabor_params
+        dataset_params.extend(gabor_params)
     else:
-        ignore_params = ignore_params + gabor_params
+        ignore_params.extend(gabor_params)
     
     return dataset_params, ignore_params
 

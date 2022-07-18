@@ -1,8 +1,8 @@
 from datetime import datetime
 import logging
 import multiprocessing
-
 from pathlib import Path
+import time
 import warnings
 
 import numpy as np
@@ -21,17 +21,20 @@ def get_device(num_workers=None, cpu_only=False):
     """
     get_device()
 
-
+    Returns a device on which the code can be run, and the number of workers 
+    that should be used, based on the input parameters and available resources.
 
     Optional args
     -------------
-    - num_workers
-    - cpu_only
+    - num_workers : int (default=None)
+    - cpu_only : bool (default=False)
 
     Returns
     -------
-    - device
-    - num_workers
+    - device : torch.device
+        Device on which to run code.
+    - num_workers : int
+        Number of workers.
     """
 
     device_name = "cuda" if torch.cuda.is_available() and not cpu_only else "cpu"
@@ -50,20 +53,27 @@ def allow_data_parallel(dataloader, device, supervised=False):
     """
     allow_data_parallel(dataloader, device)
 
-
+    Check whether the available resources and the task being run are compatible 
+    with training a model in parallel over multiple GPUs, using 
+    torch nn.DataParallel.
 
     Required args
     -------------
-    - dataloader : 
-    - device : 
+    - dataloader : torch data.DataLoader:
+        Dataloader with which code will be run.
+    - device : torch.device
+        Device on which code will be run.
 
     Optional args
     -------------
     - supervised : bool (default=False)
+        If True, the target task is supervised. If not, dataloader.drop_last 
+        must be True for the model to be run in parallel.
 
     Returns
     -------
     - allow_parallel : bool
+        Whether the model should be trained in parallel over multiple GPUs.
     """
     
     allow_parallel = False
@@ -83,12 +93,12 @@ def allow_data_parallel(dataloader, device, supervised=False):
 
 
 #############################################
-def get_model(dataset="UCF101", supervised=True, img_dim=224, num_seq=8, 
-              seq_len=5, network="resnet18", pred_step=3, dropout=0.1):
+def get_model(dataset="UCF101", supervised=True, img_dim=224, num_seq=10, 
+              seq_len=5, network="resnet18", pred_step=3, dropout=0.5):
     """
     get_model()
 
-
+    Returns a model, based on the parameters provided.
 
     Required args
     -------------
@@ -99,16 +109,26 @@ def get_model(dataset="UCF101", supervised=True, img_dim=224, num_seq=8,
     Optional args
     -------------
     - supervised : bool (default=True)
-    - img_dim : int (default=224)
-    - num_seq : int (default=8)
-    - seq_len : int (default=5)
+        If True, the supervised model is returned. Otherwise, the 
+        self-supervised model is returned.
+    - img_dim : int (default=256)
+        Image dimensions, when they are input to the model.
+    - num_seq : int (default=5)
+            Number of consecutive sequences to return per sample.
+    - seq_len : int (default=10)
+        Number of frames per sequence.
     - network : str (default="resnet18")
+        Backbone network on which to build the model.
     - pred_step : int (default=3)
+        Number of steps ahead to predict.
     - dropout : float (default=0.1)
+        Dropout proportion for the dropout layer in the final fully 
+        connected layer.
 
     Returns
     -------
-    - model
+    - model : model_3d.LC_RNN or model_3d.DPC_RNN
+        Model.
     """
 
     model_kwargs = {
@@ -138,18 +158,20 @@ def get_model_only(model):
     """
     get_model_only(model)
 
-
+    Returns the input model, unwrapped if it is wrapped in 
+    torch nn.DataParallel.
 
     Required args
     -------------
-    - model : 
+    - model : torch nn.Module or nn.DataParallel
+        Model or wrapped model, to unwrap.
 
     Returns
     -------
-    - model : 
+    - model : torch nn.Module
+        Model, not wrapped in torch nn.DataParallel.
     """
     
-    # in case the model is wrapped with DataParallel()
     if hasattr(model, "device_ids"):
         model = model.module
 
@@ -157,45 +179,28 @@ def get_model_only(model):
 
 
 #############################################
-def log_weight_decay_prop(model):
-    """
-    log_weight_decay_prop(model)
-
-
-
-    Required args
-    -------------
-    - model : 
-    """
-    
-    total_weight = 0.0
-    decay_weight = 0.0
-    for m in model.parameters():
-        if m.requires_grad: 
-            decay_weight += m.norm(2).data
-        total_weight += m.norm(2).data
-    perc = decay_weight / total_weight * 100
-    logger.info(
-        "Norm of weights to decay: "
-        f"{decay_weight:.2f} / {total_weight:.2f} ({perc:05.2f}% of total)", 
-        extra={"spacing": TAB}
-        )
-
-
-#############################################
 def get_target_from_mask(mask):
     """
     get_target_from_mask(mask)
     
-    Task mask as input, compute the target for contrastive loss
+    Computes a target for computing a contrastive loss from the mask returned 
+    by a DPC model. 
+
+    NOTE: target.requires_grad is set to False. 
 
     Required args
     -------------
-    - mask : 
+    - mask : 6D Tensor
+        Mask indicating the nature of each predicted-ground truth pair, 
+        where 1s indicate positive pairs, with dims: 
+            B x PS x HW x B x PS x HW.
 
     Returns
     -------
-    - target : 
+    - target : 6D Tensor
+        Target mask identifying all positive pairs by 1s, and all other pairs 
+        (negative) by 0s, with dims:
+            B x PS x HW x B x PS x HW.
     """
     
     # mask meaning: 1: pos
@@ -206,18 +211,47 @@ def get_target_from_mask(mask):
 
 
 #############################################
+def log_weight_decay_prop(model):
+    """
+    log_weight_decay_prop(model)
+
+    Applies weight decay, and logs the proportion of weights decayed over the 
+    total weights of the model. 
+
+    Required args
+    -------------
+    - model : torch nn.Module or nn.DataParallel
+        Model or wrapped model.
+    """
+    
+    total_weight = 0.0
+    decay_weight = 0.0
+    for m in model.parameters():
+        if m.requires_grad: 
+            decay_weight += m.norm(2).data
+        total_weight += m.norm(2).data
+
+    perc = decay_weight / total_weight * 100
+    logger.info(
+        "Norm of weights to decay: "
+        f"{decay_weight:.2f} / {total_weight:.2f} ({perc:05.2f}% of total)", 
+        extra={"spacing": TAB}
+        )
+
+
+#############################################
 def check_grad(model):
     """
     check_grad(model)
 
-
+    Logs, at the DEBUG level, each named parameter, and whether it requires 
+    a gradient. 
 
     Required args
     -------------
-    - model : 
+    - model : torch nn.Module or nn.DataParallel
+        Model or wrapped model.
     """
-
-    model = get_model_only(model)
     
     logger.debug("\n===========Check Grad============")
     for name, param in model.named_parameters():
@@ -230,45 +264,65 @@ def set_gradients(model, supervised=False, train_what="all", lr=1e-3):
     """
     set_gradients(model)
 
-
+    Sets the gradients for the parameters, based on the type of training to be 
+    done, and returns a dictionary, for use with an optimizer, that specifies 
+    the learning rate to use for certain parameters.
 
     Required args
     -------------
-    - model : 
+    - model : torch nn.Module or nn.DataParallel
+        Model or wrapped model.
 
     Optional args
     -------------
     - supervised : bool (default=False)
+        Determines which parameters should have their gradients modified if 
+        train_what in 'last' or 'ft'. If True, both ResNet and RNN parameters 
+        are affected. Otherwise, only ResNet parameters are affected.
     - train_what : str (default="all")
+        Specifies how the parameter gradients should be set for different 
+        parameters. If 'all', no changes are made to the parameters gradient 
+        settings. If 'ft', a lower learning rate is specified for affected 
+        parameters. If 'last', affected parameters are set to not require a 
+        gradient.
     - lr : float (default=1e-3)
+        Original learning rate, based on which the lower learning rate used for 
+        fine-tuning is calculated.
 
     Returns
     -------
-    - params
+    - params : dict
+        Parameter dictionary for use with a torch optimizer, optionally 
+        specifying a learning rate for certain parameters. 
     """
 
-    model = get_model_only(model)
-
     params = model.parameters()
-    if train_what == "last":
-        logger.info("=> Training only the last layer.")
-        if supervised:
-            for name, param in model.named_parameters():
-                if ("resnet" in name.lower()) or ("rnn" in name.lower()):
-                    param.requires_grad = False
+
+    if train_what in ["last", "ft"]:
+        affected_params = []
+        unaffected_params = []
+        for name, param in model.named_parameters():
+            if "resnet" in name.lower():
+                affected_params.append(param)
+            elif supervised and "rnn" in name.lower():
+                affected_params.append(param)
+            else:
+                unaffected_params.append(param)
+
+        if train_what == "ft":
+            logger.info("=> Finetuning backbone with a smaller learning rate.")
+
+            params = []
+            for param in affected_params:
+                params.append({"params": param, "lr": lr / 10})
+            for param in unaffected_params:
+                params.append({"params": param})
+
         else:
-            for name, param in model.resnet.named_parameters():
+            logger.info("=> Training only the last layer.")
+            for param in affected_params:
                 param.requires_grad = False
 
-    elif supervised and train_what == "ft":
-        logger.info("=> Finetuning backbone with a smaller learning rate.")
-        params = []
-        for name, param in model.named_parameters():
-            if ("resnet" in name.lower()) or ("rnn" in name.lower()):
-                params.append({"params": param, "lr": lr / 10})
-            else:
-                params.append({"params": param})
-    
     elif train_what != "all":
         raise ValueError(
             f"{train_what} value for train_what is not recognized."
@@ -282,57 +336,73 @@ def set_gradients(model, supervised=False, train_what="all", lr=1e-3):
     
     
 #############################################
-def get_multistepLR_restart_multiplier(epoch_n, gamma=0.1, step=[10, 15, 20], 
-                                       repeat=3):
+def get_multistepLR_restart_multiplier(epoch_n, gamma=0.1, steps=[10, 15, 20], 
+                                       num_cycles=3):
     """
-    get_multistepLR_restart_multiplier(epoch)
+    get_multistepLR_restart_multiplier(epoch_n)
 
-    Returns the multipier for LambdaLR, 
-    0  <= ep < 10: gamma^0
-    10 <= ep < 15: gamma^1 
-    15 <= ep < 20: gamma^2
-    20 <= ep < 30: gamma^0 ... repeat 3 cycles and then keep gamma^2
+    Returns a learning rate multiplier (gamma) based on the following pattern:
+
+        if ep_n in:
+            [0      to step 1[ : gamma^0
+            [step 1 to step 2[ : gamma^1
+            [step 2 to step 3[ : gamma^2
+
+            [step 3 + step 1 to step 3 + step 2[ : gamma^0
+            ...
+
+        After all restarts are completed, the highest exponent value is used.
 
     Required args
     -------------
-    - epoch_n : 
+    - epoch_n : int
+        Epoch number for which to calculate adjusted gamma.
 
     Optional args
     -------------
     - gamma : float (default=0.1)
-    - step : list (default[10, 15, 20])
-    - repeat : int (default=3)
+        Base gamma value.
+    - steps : list (default[10, 15, 20])
+        Epochs at which to modify gamma.
+    - num_cycles : int (default=3)
+        Number of cycles to go through before settling on a consistent value.
 
     Returns
     -------
     - float
+        Gamma value to use for the specified epoch number.
     """
 
-    max_step = max(step)
+    max_step = max(steps)
     effective_epoch = epoch_n % max_step
-    if epoch_n // max_step >= repeat:
-        exp = len(step) - 1
+    if epoch_n // max_step >= num_cycles: # beyond final repeat
+        exp = len(steps) - 1
     else:
-        exp = len([i for i in step if effective_epoch >= i])
+        exp = sum([True for i in steps if effective_epoch >= i])
 
     return gamma ** exp
 
 
 #############################################
-def get_lr_lambda(dataset="UCF101", img_dim=224): 
+def get_lr_lambda(dataset="UCF101", img_dim=256): 
     """
     get_lr_lambda()
 
-
+    Returns a lambda function to use to calculate the learning rate multiplier 
+    for a given epoch number.
 
     Optional args
     -------------
     - dataset : str (default="UCF101")
-    - img_dim : int (default=224)
+        Dataset name.
+    - img_dim : int (default=256)
+        Image dimensions, when they are input to the model.
 
     Returns
     -------
     - lr_lambda : lambda function
+        Lambda function for calculating the learning rate multiplier for a 
+        given epoch number. 
     """
     
     dataset = misc_utils.normalize_dataset_name(dataset)
@@ -358,30 +428,64 @@ def get_lr_lambda(dataset="UCF101", img_dim=224):
         raise ValueError(f"{dataset} dataset not recognized.")
 
     lr_lambda = lambda ep_n: get_multistepLR_restart_multiplier(
-        ep_n, gamma=0.1, step=steps, repeat=1
+        ep_n, gamma=0.1, steps=steps, num_cycles=1
         )
 
     return lr_lambda
 
 
 #############################################
-def init_optimizer(model, lr=1e-3, wd=1e-5, dataset="UCF101", img_dim=128, 
-                   supervised=False, train_what="all", test=False):
+def init_optimizer(model, lr=1e-3, wd=1e-5, dataset="UCF101", img_dim=256, 
+                   use_scheduler=False, train_what="all", test=False):
     """
     init_optimizer(model)
+
+    Initializes a torch optimizer tied to the model parameters, and optionally 
+    a learning rate scheduler.
+
+    Required args
+    -------------
+    - model : torch nn.Module or nn.DataParallel
+        Model or wrapped model.
+
+    Optional args
+    -------------
+    - lr : float (1e-3)
+        Learning weight to initialize the optimizer with.
+    - wd : float (1e-5)
+        Weight decay value to initialize the optimizer with.
+    - dataset : str (default="UCF101")
+        Dataset name.
+    - img_dim : int (default=256)
+        Image dimensions, when they are input to the model.
+    - use_scheduler : bool (default=False)
+        If True, a learning rate scheduler is returned. 
+    - train_what : str (default="all")
+        Specifies which parameters to train, and whether to adjust some of 
+        their learning rates. Accepted values include 'all', 'ft', and 'last'. 
+    - test : bool (default=False)
+        If True, None values are returned for the optimizer and scheduler. 
+
+    Returns
+    -------
+    - optimizer : torch.optim object or None
+        Optimizer or None if test is True.
+    - scheduler : torch.optim.lr_scheduler object or None
+        Torch learning rate scheduler, if use_scheduler, or None if test is 
+        True.
     """
 
     if test:
         return None, None
 
     # set gradients
-    params = set_gradients(model, supervised, train_what=train_what, lr=lr)
+    params = set_gradients(model, train_what=train_what, lr=lr)
 
     # get optimizer and scheduler
-    optimizer = torch.optim.Adam(params, lr=lr, weight_decay=wd)
+    optimizer = optim.Adam(params, lr=lr, weight_decay=wd)
 
     scheduler = None
-    if supervised:
+    if use_scheduler:
         lr_lambda = get_lr_lambda(dataset, img_dim=img_dim)    
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
@@ -393,16 +497,21 @@ def get_num_classes_sup(model):
     """
     get_num_classes_sup(model)
 
-
+    Returns the number of classes and whether the model is set to supervised 
+    mode.
 
     Required args
     -------------
-    - model : 
+    - model : torch nn.Module or nn.DataParallel
+        Model or wrapped model.
 
     Returns
     -------
     - num_classes : int or None
+        Number of classes, if the model is set to supervised mode, and None 
+        otherwise.
     - supervised : bool
+        Whether model is set to supervised mode.
     """
     
     model = get_model_only(model)
@@ -420,29 +529,33 @@ def class_weights(dataset="MouseSim", supervised=True):
     """
     class_weights()
 
-
+    Returns class weights for loss calculation, if training will be done in 
+    supervised mode.
 
     Optional args
     -------------
     - dataset : str (default="MouseSim")
+        Dataset name.
     - supervised : bool (default=True)
+        Whether the model will be trained in supervised mode.
 
     Returns
     -------
     - class_weights : torch.Tensor or None
+        Weights for each class if applicable, and None otherwise.
     """
     
-    weights = None
+    class_weights = None
     dataset = misc_utils.normalize_dataset_name(dataset)
     if supervised and dataset == "MouseSim":
-        weights = [6, 1]
+        class_weights = [6, 1] # based on the training set proportions
         logger.warning(
-            f"Loss will be weighted per class as follows: {weights}."
+            f"Loss will be weighted per class as follows: {class_weights}."
             )
 
-        weights = torch.Tensor(weights) # based on training set
+        class_weights = torch.Tensor(class_weights)
 
-    return weights
+    return class_weights
 
 
 #############################################
@@ -450,16 +563,20 @@ def check_end(start_epoch_n=0, num_epochs=50):
     """
     check_end()
 
-
+    Checks whether training has already ended, based on the starting epoch 
+    number, and target total number of epochs.
 
     Optional args
     -------------
     - start_epoch_n : int (default=0)
+        Starting epoch number.
     - num_epochs : int (default=50)
+        Target total number of epochs.
 
     Returns
     -------
-    - end
+    - end : bool
+        Whether the training is already complete.
     """
     
     end = False
@@ -478,21 +595,26 @@ def resize_input_seq(input_seq):
     """
     resize_input_seq(input_seq)
 
-    if the dataset is set to 'supervised' and 'test mode', 
-    each batch item is a sub-batch in which all sets of sequences 
-    share a label
+    If the dataset is set in supervised and test mode, each batch item is a 
+    sub-batch in which all sets of sequences share a label.
 
     Required args
     -------------
-    - input_seq : 
+    - input_seq : 7D Tensor
+        Input sequence to reshape, with dims: B, SUB_B, N, C, SL, H, W
 
     Returns
     -------
-    - input_seq : 
-    - SUB_B : 
+    - input_seq : 6D Tensor
+        Reshaped input sequence, with dims: B * SUB_B, N, C, SL, H, W
+    - SUB_B : int
+        Input sequence sub-batch size, before reshaping.
     """
 
-    B, SUB_B, N, C, SL, H, W = input_seq.size()
+    if len(input_seq.shape) != 7:
+        raise ValueError("'input_seq' should have 7 dimensions.")
+
+    B, SUB_B, N, C, SL, H, W = input_seq.shape
     input_seq = input_seq.reshape(B * SUB_B, N, C, SL, H, W)
 
     return input_seq, SUB_B
@@ -503,20 +625,27 @@ def set_model_train_mode(model, epoch_n=0, train_off=False):
     """
     set_model_train_mode(model)
 
+    Sets the model to train or eval mode.
 
     Required args
     -------------
-    - model :
+    - model : torch nn.Module or nn.DataParallel
+        Model or wrapped model.
 
     Optional args
     -------------
     - epoch_n : int (default=0)
+        Epoch number. If it is 0, model is set to eval mode to allow a baseline 
+        to be computed.
     - train_off : bool (default=False)
+        If True, regardless of the epoch number, model is set to eval mode.
 
     Returns
     -------
-    - train : 
-    - spacing : 
+    - train : bool
+        Whether model has been set to train mode.
+    - spacing : str
+        Spacing to use in logging epoch results.
     """
 
     if epoch_n == 0 or train_off:
@@ -541,24 +670,41 @@ def prep_supervised_loss(output, target, shared_pred=False, SUB_B=None):
     """
     prep_supervised_loss(output, target)
 
+    Prepares target and output for supervised loss computing.
 
+    If shared_pred is True, the output is reshaped to group the subsets of 
+    batch items with the same prediction, and an average is computed over 
+    their softmaxes.
 
     Required args
     -------------
-    - output : 
-    - target : 
+    - output : 3D Tensor
+        Model output, with dims: B or B * SUB_B x N x number of classes.
+    - target : 2D Tensor
+        Tensor specifying the target class for each sequence, 
+        with dims: B x N.
 
     Optional args
     -------------
     - shared_pred : bool (default=False)
+        If True, the target provides a shared prediction for subsets of batch 
+        items, and the first dimension is B * SUB instead of B.
     - SUB_B : int (default=None)
+        Number of batch items per subset that share a target prediction, 
+        if shared_pred is True. 
 
     Returns
     -------
-    - output_flattened : 
-    - target_flattened : 
-    - loss_reshape : 
-    - target : 
+    - output_flattened : 2D Tensor
+        Model output, flattened to group sequences across batches, 
+            with dims: B x number of classes if shared_pred, else 
+                       B * N x number of classes.
+    - target_flattened : 1D Tensor
+        Target values, flattened to group sequences across batches,            
+            with dims: B if shared_pred, else B * N.
+    - loss_reshape : tuple
+        Shape to which loss can be reshaped to separate loss values by batch: 
+        (B, ) if pred_shared is True, and (B, N) otherwise.
     """
     
     if shared_pred:
@@ -586,7 +732,7 @@ def prep_supervised_loss(output, target, shared_pred=False, SUB_B=None):
         target_flattened = target.repeat(1, N).reshape(-1)
         loss_reshape = (B, N)
 
-    return output_flattened, target_flattened, loss_reshape, target
+    return output_flattened, target_flattened, loss_reshape
 
 
 #############################################
@@ -594,23 +740,40 @@ def prep_self_supervised_loss(output, mask, input_seq_shape=None):
     """
     prep_self_supervised_loss(output, mask)
 
-
+    Prepares target and output for self-supervised loss computing.
 
     Required args
     -------------
-    - output
-    - mask
+    - output : 6D Tensor
+        Model output tensor, with dims: 
+            B x PS x HW x B x PS x HW.
+    - mask : 6D Tensor
+        Mask indicating the nature of each predicted-ground truth pair, 
+        where 1s indicate positive pairs, with dims: 
+            B x PS x HW x B x PS x HW.
 
     Optional args
     -------------
     - input_seq_shape : tuple (default=None)
+        Input sequence shape (B, N, C, SL, H, W), optionally used for logging 
+        at the debugging level.
 
     Returns
     -------
-    - output_flattened : 
-    - target_flattened : 
-    - loss_reshape : 
-    - target : 
+    - output_flattened : 3D Tensor
+        Flattened model output tensor, with dims: 
+            B * PS * HW x B_per (per GPU) * PS * HW
+    - target_flattened : 3D Tensor
+        Flattened target mask identifying all positive pairs by 1s, and all 
+        other pairs (negative) by 0s, with the same dimensions as 
+        output_flattened.
+    - loss_reshape : tuple
+        Shape to which loss can be reshaped to separate loss values by batch, 
+        i.e. (B, PS, HW)
+    - target : 6D Tensor
+        Unflattened target mask identifying all positive pairs by 1s, and all 
+        other pairs (negative) by 0s, with dims: 
+            B x PS x HW x B x PS x HW.
     """
     
     input_seq_str = ""
@@ -644,45 +807,74 @@ def prep_self_supervised_loss(output, mask, input_seq_shape=None):
 
 
 #############################################
-def prep_loss(output, mask, sup_target=None, input_seq_shape=None, 
-              supervised=False, shared_pred=False, SUB_B=None, is_gabors=False):
+def prep_loss(output, mask=None, sup_target=None, input_seq_shape=None, 
+              supervised=False, shared_pred=False, SUB_B=None, is_gabor=False):
     """
     prep_loss(output, mask)
 
 
     Required args
     -------------
-    - output
-    - mask
+    - output : 3 or 6D Tensor
+        Model output. For details, see prep_supervised_loss() if 
+        supervised is True, and prep_self_supervised_loss() otherwise.
 
     Optional args
     -------------
-    - sup_target : 
+    - mask : 6D Tensor
+        Mask indicating the nature of each predicted-ground truth pair, 
+        where 1s indicate positive pairs. Required if supervised is False. 
+            Dimensions: B x PS x HW x B x PS x HW.
+    - sup_target : 2 or 3D Tensor
+        Tensor specifying the target class for each sequence. Required if 
+        supervised is True. 
+        Dimensions: B x N (x SL x [label, unexp_label]).
     - input_seq_shape : tuple (default=None)
+        Input sequence shape (B, N, C, SL, H, W), optionally used for logging 
+        at the debugging level, if supervised is False.
     - supervised : bool (default=False)
+        Whether output and target are for the supervised task.
     - shared_pred : bool (default=False)
+        If True, the target provides a shared prediction for subsets of batch 
+        items, and the first dimension is B * SUB instead of B. Only applies if 
+        supervised is True.
     - SUB_B : int (default=None)
-    - is_gabors : bool (default=True)    
+        Number of batch items per subset that share a target prediction, 
+        if shared_pred is True. 
+    - is_gabor : bool (default=True)
+        If True, the output and target are from the Gabors dataset. If so, the 
+        specific supervised target to use for each sequence is returned from 
+        the full targets provided by the dataset for each sequence item.    
 
     Returns
     -------
-    - output_flattened : 
-    - target_flattened : 
-    - loss_reshape : 
-    - target : 
+    - output_flattened : 2 or 3D Tensor
+        Flattened output. For details, see prep_supervised_loss() if 
+        supervised is True, and prep_self_supervised_loss() otherwise.
+    - target_flattened : 1 or 3D Tensor
+        Flattened target. For details, see prep_supervised_loss() if 
+        supervised is True, and prep_self_supervised_loss() otherwise.
+    - loss_reshape : tuple
+        Shape to which loss can be reshaped to separate loss values by batch.
+    - target : 2 or 6D Tensor
+        Unflattened target. If supervised is True, dims are B x N. 
+        See prep_self_supervised_loss() for details otherwise. 
     """
 
     if supervised:
         if sup_target is None:
             raise ValueError("Must pass 'sup_target' if 'supervised' is True.")
-        if is_gabors:
+        if is_gabor:
             sup_target = gabor_utils.get_gabor_sup_label(sup_target)
-        output_flattened, target_flattened, loss_reshape, target = \
+        target = sup_target
+        output_flattened, target_flattened, loss_reshape = \
             prep_supervised_loss(
                 output, sup_target, shared_pred=shared_pred, SUB_B=SUB_B
                 )
 
     else:
+        if mask is None:
+            raise ValueError("Must pass 'mask' if 'supervised' is False.")
         output_flattened, target_flattened, loss_reshape, target = \
             prep_self_supervised_loss(
                 output, mask, input_seq_shape=input_seq_shape
@@ -697,22 +889,35 @@ def get_sup_target_to_store(dataset, sup_target):
     """
     get_sup_target_to_store(dataset, sup_target)
 
+    Gets the supervised target to store based on the dataset type.
+
+    If the dataset is a Gabor dataset, class labels in the input supervised 
+    target tensor are converted to class names [image type, orientation] before 
+    the tensor is converted to a nested list. Also, targets are retained for 
+    all sequence items.
+
     Required args
     -------------
-    - dataset : 
-    - sup_target : 
+    - dataset : torch data.Dataset object
+        Torch dataset object, used to identify whether the dataset is a 
+        Gabor dataset.
+    - sup_target : 2 or 4D Tensor
+        Tensor specifying the target class for each sequence. Required if 
+        supervised is True. 
+        Dimensions: B x N (x SL x [label, unexp_label] if Gabor dataset).
 
     Returns
     -------
-    - sup_target : 
+    - sup_target : list
+        Input sup_target converted to a nested list. 
     """
     
     if isinstance(dataset, str):
         raise ValueError("'dataset' should be a dataset object, not a string.")
 
-    is_gabors = hasattr(dataset, "num_gabors")
+    is_gabor = hasattr(dataset, "num_gabors")
 
-    if is_gabors:
+    if is_gabor:
         sup_target = gabor_utils.get_gabor_sup_target_to_store(
             dataset, sup_target
             )
@@ -728,21 +933,38 @@ def add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item,
     """
     add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item)
 
-
+    Adds batch loss and accuracy data in place to a data dictionary, and 
+    optionally output and target data.
 
     Required args
     -------------
-    - data_dict : 
-    - dataset : 
-    - batch_loss : 
-    - batch_loss_by_item : 
+    - data_dict : dict
+        Data dictionary to which to append batch information, with keys:
+        "avg_loss_by_batch", "batch_epoch_n", "loss_by_item", and optionally 
+        "output_by_batch", "target_by_batch", and "sup_target_by_batch".
+    - dataset : torch data.Dataset object
+        Torch dataset object, used to identify whether the dataset is a 
+        Gabor dataset.
+    - batch_loss : float
+        Loss for the batch for which data is being added.
+    - batch_loss_by_item : 2D Tensor
+        Batch losses separated by item, with dims: B x N.
 
     Optional args
     -------------
-    - sup_target : 
-    - output : 
-    - target : 
+    - sup_target : 2 or 4D Tensor
+        Tensor specifying the target class for each sequence. Required if 
+        supervised is True. 
+        Dimensions: B x N (x SL x [label, unexp_label] if Gabor dataset).
+    - output : 3 or 6D Tensor
+        Model output for the batch, with dims:
+            B x N x number of classes if supervised, and 
+            B x PS x HW x B x PS x HW otherwise.
+    - target : 2, 4 or 6D Tensor
+        Target for the batch. See sup_target if supervised. 
+        Otherwise, dimensions are B x PS x HW x B x PS x HW. 
     - epoch_n : int (default=0)
+        Epoch number associated with the batch for which data is being added.
     """
     
     n_items = np.asarray(batch_loss_by_item).size
@@ -769,26 +991,36 @@ def log_epoch(stats_str, duration=None, epoch_n=0, num_epochs=50, val=False,
     """
     log_epoch(stats_str)
 
-
+    Logs epoch statistics at the INFO level.
 
     Required args
     -------------
     - stats_str : str
+        String containing statistics for the epoch.
 
     Optional args
     -------------
     - duration : float (default=None)
+        Duration of the epoch.
     - epoch_n : int (default=0)
+        Epoch number.
     - num_epochs : int (default=50)
+        Total number of training epochs.
     - val : bool (default=False)
+        If True, a validation epoch is being logged.
     - test : bool (default=False)
+        If True, model testing is being logged.
     - batch_idx : int (default=0)
+        Batch index, if applicable.
     - n_batches : int (default=None)
+        Total number of batches. If None, batch index is not logged.
     - spacing : str (default="\n")
+        Spacing to used before the logged string.
 
     Returns
     -------
     - log_str : str
+        Copy of the string that was logged.
     """
 
     if test:
@@ -821,24 +1053,47 @@ def log_epoch(stats_str, duration=None, epoch_n=0, num_epochs=50, val=False,
 
 
 #############################################
-def write_log(content, epoch_n, filename):
+def write_log(stats_str, epoch_n, filename, overwrite=False):
     """
-    write_log(content, epoch_n, filename)
+    write_log(stats_str, epoch_n, filename)
+
+    Writes epoch statistics to a log file. If the file does not exist, it is 
+    created. Otherwise, it is appended to, or optionally overwritten.
 
     Required args
     -------------
-    - content
-    - epoch_n
-    - filename
+    - stats_str : str
+        String containing statistics for the epoch.
+    - epoch_n : int
+        Epoch number.
+    - filename : str or Path
+        Path of log file in which to log the epoch statistics.
+    
+    Optional args
+    -------------
+    - overwrite : bool (default=False)
+        If True, and filename exists, the file is overwritten. Otherwise, it is 
+        appended to.
     """
     
     filename = Path(filename)
     filename.parent.mkdir(exist_ok=True, parents=True)
 
-    open_mode = "a" if filename.is_file() else "w"
+    open_mode = "w"
+    if filename.is_file():
+        if overwrite:
+            logger.warning(
+                (f"{filename} already exists. Removing, as it will be "
+                "overwritten."), 
+                extra={"spacing": "\n"}
+                )            
+            time.sleep(5) # to allow for skipping file removal.
+            filename.unlink()
+        else:
+            open_mode = "a"
 
     with open(filename, open_mode) as f:
         f.write(f"## Epoch {epoch_n}:\n")
         f.write(f"Time: {datetime.now()}\n")
-        f.write(f"{content}\n\n")
+        f.write(f"{stats_str}\n\n")
 

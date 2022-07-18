@@ -31,7 +31,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     -------------
     - dataloader : torch data.DataLoader
         Torch dataloader to use for model training.
-    - model : nn.Module
+    - model : torch nn.Module or nn.DataParallel
         Dense CPC (DPC) or linear classification (LC) model to train.
     - optimizer : torch.optim object
         Torch optimizer.
@@ -75,7 +75,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     """
     
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
-    is_gabors = gabor_stimuli.check_if_is_gabors(dataloader.dataset)
+    is_gabor = gabor_stimuli.check_if_is_gabor(dataloader.dataset)
         
     model = model.to(device)
 
@@ -89,7 +89,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
         )["train"]
     train_dict["epoch_n"] = epoch_n
 
-    if is_gabors and save_by_batch:
+    if is_gabor and save_by_batch:
         gabor_loss_dict, gabor_acc_dict, gabor_conf_mat = \
             gabor_utils.init_gabor_records(
                 dataloader.dataset, init_conf_mat=(output_dir is not None)
@@ -115,7 +115,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
         output_flattened, target_flattened, loss_reshape, target = \
             training_utils.prep_loss(
                 output_, mask_, sup_target, input_seq_shape, 
-                supervised=supervised, is_gabors=is_gabors
+                supervised=supervised, is_gabor=is_gabor
                 )
 
         target_flattened = target_flattened.to(device)
@@ -153,7 +153,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
                 epoch_n=epoch_n
                 )
 
-            if is_gabors:
+            if is_gabor:
                 gabor_utils.update_records(
                     dataloader.dataset,
                     gabor_loss_dict, 
@@ -201,7 +201,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     for i, k in enumerate(topk):
         train_dict[f"top{k}"] = topk_meters[i].local_avg
 
-    if is_gabors and save_by_batch:
+    if is_gabor and save_by_batch:
         train_dict["gabor_loss_dict"] = gabor_loss_dict
         train_dict["gabor_acc_dict"] = gabor_acc_dict
 
@@ -229,7 +229,7 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
     -------------
     - dataloader : torch data.DataLoader
         Torch dataloader to for model evaluation.
-    - model : nn.Module
+    - model : torch nn.Module or nn.DataParallel
         Dense CPC (DPC) or linear classification (LC) model to train.
 
     Optional args
@@ -256,13 +256,13 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
     
     Returns
     -------
-    - val_dict : dict
+    - val_or_test_dict : dict
         Dictionary recording validation or test loss and accuracy data .
         (see loss_utils.init_loss_dict() for keys).
     """
 
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
-    is_gabors = gabor_stimuli.check_if_is_gabors(dataloader.dataset)
+    is_gabor = gabor_stimuli.check_if_is_gabor(dataloader.dataset)
 
     model = model.to(device)
     model.eval()
@@ -275,19 +275,19 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
     num_classes, supervised = training_utils.get_num_classes_sup(model)
 
     mode = "test" if test else "val"
-    val_dict = loss_utils.init_loss_dict(
+    val_or_test_dict = loss_utils.init_loss_dict(
         ks=topk, val=True, supervised=supervised, save_by_batch=save_by_batch
         )["val"]
-    val_dict["epoch_n"] = epoch_n
+    val_or_test_dict["epoch_n"] = epoch_n
 
-    if is_gabors and save_by_batch:
+    if is_gabor and save_by_batch:
         gabor_loss_dict, gabor_acc_dict, gabor_conf_mat = \
             gabor_utils.init_gabor_records(
                 dataloader.dataset, init_conf_mat=(output_dir is not None)
                 )
 
     if supervised and output_dir is not None:
-        if is_gabors:
+        if is_gabor:
             confusion_mat = gabor_utils.init_gabor_conf_mat(dataloader.dataset)
             plot_mat_kwargs = dict()
         else:
@@ -317,7 +317,7 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
             output_flattened, target_flattened, loss_reshape, target = \
                 training_utils.prep_loss(
                     output_, mask_, sup_target, supervised=supervised, 
-                    shared_pred=shared_pred, SUB_B=SUB_B, is_gabors=is_gabors
+                    shared_pred=shared_pred, SUB_B=SUB_B, is_gabor=is_gabor
                     )
 
             target_flattened = target_flattened.to(device)
@@ -351,7 +351,7 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
                     batch_loss = batch_loss.mean(axis=2)
 
                 training_utils.add_batch_data(
-                    val_dict, 
+                    val_or_test_dict, 
                     dataset=dataloader.dataset, 
                     batch_loss=losses.val, 
                     batch_loss_by_item=batch_loss.detach().cpu().tolist(),
@@ -361,7 +361,7 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
                     epoch_n=epoch_n
                     )
 
-                if is_gabors:
+                if is_gabor:
                     gabor_utils.update_records(
                         dataloader.dataset,
                         gabor_loss_dict, 
@@ -389,10 +389,10 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
         val=True, test=test, spacing="\n"
         )
 
-    val_dict["loss"] = loss_avg
-    val_dict["acc"]  = acc_avg
+    val_or_test_dict["loss"] = loss_avg
+    val_or_test_dict["acc"]  = acc_avg
     for i, k in enumerate(topk):
-        val_dict[f"top{k}"] = topk_meters[i].avg
+        val_or_test_dict[f"top{k}"] = topk_meters[i].avg
     
     if confusion_mat is not None:
         confusion_mat.plot_mat(
@@ -400,11 +400,11 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
             title=f"Epoch {epoch_n} ({mode})",
             **plot_mat_kwargs
             )
-        val_dict["confusion_matrix"] = confusion_mat.get_storage_dict()
+        val_or_test_dict["confusion_matrix"] = confusion_mat.get_storage_dict()
 
-    if is_gabors and save_by_batch:
-        val_dict["gabor_loss_dict"] = gabor_loss_dict
-        val_dict["gabor_acc_dict"] = gabor_acc_dict
+    if is_gabor and save_by_batch:
+        val_or_test_dict["gabor_loss_dict"] = gabor_loss_dict
+        val_or_test_dict["gabor_acc_dict"] = gabor_acc_dict
         if gabor_conf_mat is not None:
             gabor_utils.plot_save_gabor_conf_mat(
                 gabor_conf_mat, mode=mode, epoch_n=epoch_n, 
@@ -414,13 +414,15 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
             ) 
 
     if output_dir is not None:
+        overwrite = True if test else False
         training_utils.write_log(
-            content=stats_str,
+            stats_str=stats_str,
             epoch_n=epoch_n,
-            filename=Path(output_dir, f"{mode}_log.md")
+            filename=Path(output_dir, f"{mode}_log.md"),
+            overwrite=overwrite
             )
 
-    return val_dict
+    return val_or_test_dict
 
 
 #############################################
@@ -439,7 +441,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     - main_loader : torch data.DataLoader
         Main Torch dataloader to use for model training, or evaluation 
         if "test" key is a provided in reload_kwargs.
-    - model : nn.Module
+    - model : torch nn.Module or nn.DataParallel
         Dense CPC (DPC) or linear classification (LC) model to train.
     - optimizer : torch.optim object
         Torch optimizer.
@@ -457,7 +459,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         identified.
     - topk : list (default=TOPK)
         The top k accuracies to record (e.g., [1, 3, 5] for top 1, 3 and 5).
-    - scheduler : optim.lr_scheduler object (default=None)
+    - scheduler : torch optim.lr_scheduler object (default=None)
         Torch learning rate scheduler.
     - device : int (default="cpu")
         Device on which to train the model.
@@ -485,7 +487,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     """
 
     dataset = misc_utils.normalize_dataset_name(dataset)
-    is_gabors = gabor_stimuli.check_if_is_gabors(main_loader.dataset)
+    is_gabor = gabor_stimuli.check_if_is_gabor(main_loader.dataset)
     
     topk = loss_utils.check_topk(
         topk, num_classes=training_utils.get_num_classes_sup(model)[0]
@@ -496,7 +498,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     log_idx, best_acc, start_epoch_n = \
         checkpoint_utils.load_checkpoint(model, optimizer, **reload_kwargs)
     num_classes, supervised = training_utils.get_num_classes_sup(model)
-    if is_gabors and supervised:
+    if is_gabor and supervised:
         gabor_utils.warn_supervised(main_loader.dataset)
 
     loss_weight = training_utils.class_weights(dataset, supervised)
@@ -529,7 +531,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             save_by_batch=save_by_batch
             )
         
-        if save_by_batch and is_gabors:
+        if save_by_batch and is_gabor:
             for key in loss_dict.keys():
                 loader = main_loader if key == "train" else val_loader
                 gabor_dict = gabor_utils.init_gabor_records(loader.dataset)[0]

@@ -1090,7 +1090,7 @@ def neq_load_customized(model, pretrained_dict):
 
     Required args
     -------------
-    - model : nn.Module
+    - model : torch nn.Module or nn.DataParallel
         Model into which to load the recorded parameters.
     - pretrained_dict : dict
         Pretrained model state dictionary in which pretrained model parameters 

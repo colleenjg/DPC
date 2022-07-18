@@ -82,7 +82,7 @@ class DPC_RNN(torch.nn.Module):
         - pred_step : int (default=3)
             Number of steps ahead to predict.
         - network : str (default="ResNet50")
-            Backbone network on which to build LC_RNN.
+            Backbone network on which to build the DPC_RNN object.
             
         Optional args
         -------------
@@ -443,7 +443,7 @@ class LC_RNN(torch.nn.Module):
         Optional args
         -------------
         - network : str (default="ResNet18")
-            Backbone network on which to build LC_RNN.
+            Backbone network on which to build the LC_RNN object.
         - dropout : float (default=0.5)
             Dropout proportion for the dropout layer in the final fully 
             connected layer.

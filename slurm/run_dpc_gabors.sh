@@ -6,7 +6,7 @@
 #SBATCH --array=0-23
 #SBATCH --time=5:00:00
 #SBATCH --job-name=dpc_gab
-#SBATCH --output=/home/mila/g/gillonco/scratch/dpc_gabors_%A_%a.txt
+#SBATCH --output=/home/mila/g/gillonco/scratch/dpc_gabors_%A_%a.out
 
 
 # 1. Load modules

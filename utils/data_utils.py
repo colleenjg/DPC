@@ -189,7 +189,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
     - transform : torch Transform or None (default=None)
         torch Transforms for the dataset
     - dataset : str (default="UCF101")
-        Dataset naes
+        Dataset name.
     - mode : str (default="train")
         Dataset mode (i.e., "train", "val" or "test").
     - eye : str (default="both")

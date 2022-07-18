@@ -26,9 +26,10 @@ def check_adjust_args(args):
     - Normalizes dataset name
     - Sets arguments:
         - args.supervised from args.model
+        - args.use_scheduler from args.supervised
     - Checks that values are accepted and inter-compatible for:
         - args.model
-        - args.train_what, given args.model
+        - args.train_what
         - args.test, given args.supervised
     - Sets opposite arguments:
         - args.same_possizes from args.diff_possizes
@@ -84,14 +85,10 @@ def check_adjust_args(args):
         raise ValueError(f"{args.model} not recognized.")
 
     # check train_what argument
-    if (args.train_what == "all" or 
-        (args.supervised and args.train_what in ["ft", "last"])
-        ):
-        pass
-    else:
+    if args.train_what not in ["all", "ft", "last"]:
         raise ValueError(
-            f"'{args.train_what}' value for train_what is not recognized "
-            f"for {args.model} model."
+            "args.train_what must be 'all', 'ft' or 'last', but found "
+            f"{args.train_what}'."
             )
 
     # set weight decay, if needed
@@ -100,6 +97,12 @@ def check_adjust_args(args):
             args.wd = 1e-3
         else:
             args.wd = 1e-5
+
+    # set whether to use scheduler
+    if args.supervised:
+        args.use_scheduler = True
+    else:
+        args.use_scheduler = False
 
     # adjust if test is True
     if args.test:
@@ -119,10 +122,11 @@ def get_output_directory(args):
     """
     get_output_directory(args)
 
-    If training a new model, optionally from a pretrained one, creates a 
-    directory in which the model and associated results are stored. If resuming 
-    from or testing a model, verifies the the directory exists, and raises an 
-    error if it doesn't.
+    Returns the path to the directory in which output data will be stored.
+
+    If training a new model, optionally from a pretrained one, creates the 
+    directory and returns its path. If resuming from or testing a model, 
+    verifies that the directory exists, and raises an error if it doesn't.
 
     Required args
     -------------
@@ -201,15 +205,23 @@ def get_dataloaders(args):
     """
     get_dataloaders(args)
 
+    Retrieves the main dataloader, and optionally the validation dataloader, 
+    based on the arguments detailing dataset and dataloader parameters.
 
     Required args
     -------------
     - args : argparse.Namespace
+        Argparse namespace containing arguments needed to initialize datasets 
+        and their dataloaders.
 
     Returns
     -------
     - main_loader : torch data.DataLoader
-    - val_loader : torch data.DataLoader
+        The main dataloader to be run 
+        (to be used for training, or testing , if applicable).
+    - val_loader : torch data.DataLoader or None
+        Additional dataloader for validation. or None if args.save_best is 
+        False.
     """
 
     dataset = misc_utils.normalize_dataset_name(args.dataset)
@@ -267,15 +279,17 @@ def get_dataloaders(args):
 
 
 #############################################
-def run_training(args):
+def run_training_or_test(args):
     """
-    run_training(args)
+    run_training_or_test(args)
 
+    Runs the model training or testing, as applicable.
 
     Required args
     -------------
     - args : argparse.Namespace
-
+        Argparse namespace containing arguments needed to run the model 
+        training or testing.
     """
 
     args = copy.deepcopy(args)
@@ -312,7 +326,8 @@ def run_training(args):
     optimizer, scheduler = training_utils.init_optimizer(
         model, lr=args.lr, wd=args.wd, dataset=args.dataset, 
         img_dim=args.img_dim, supervised=args.supervised, 
-        train_what=args.train_what, test=args.test
+        use_scheduler=args.use_scheduler, train_what=args.train_what, 
+        test=args.test
     )
 
     # get whether to save by batch
@@ -351,12 +366,13 @@ def main(args):
     """
     main(args)
 
-
+    Runs the main code for model training and testing.
 
     Required args
     -------------
     - args : argparse.Namespace
-
+        Argparse namespace containing the arguments passed as input to the 
+        script.
     """
 
     args = copy.deepcopy(args)
@@ -372,7 +388,7 @@ def main(args):
 
     misc_utils.get_logger_with_basic_format(level=args.log_level)
 
-    run_training(args)
+    run_training_or_test(args)
 
 
 #############################################
@@ -471,7 +487,7 @@ if __name__ == "__main__":
     # supervised only
     parser.add_argument("--dropout", default=0.5, type=float, 
         help="dropout proportion for the final dropout layer")
-    parser.add_argument("--test", default=False, 
+    parser.add_argument("--test", default="", 
         help=("if not False, must be 'random' or the path to a saved model, "
             "and supervised network will be run in test mode"))
 

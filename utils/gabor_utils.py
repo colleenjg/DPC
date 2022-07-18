@@ -919,7 +919,7 @@ def update_unexp(main_loader, val_loader=None, epoch_n=0, unexp_epoch=0):
     update_unexp(main_loader)
 
     Checks whether Gabor dataset unexpected attribute should be updates. If so, 
-    updates it and logs the change.
+    updates it and logs the change at the INFO level.
     
     Required args
     -------------
