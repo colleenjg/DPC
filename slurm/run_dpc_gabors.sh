@@ -25,7 +25,7 @@ FIXED_AUGM_ARG="--no_augm"
 FIXED_BATCH_SIZE=32
 FIXED_TRAIN_LEN=500
 FIXED_GAB_IMG_LEN=3
-FIXED_U_PROB=0.1
+FIXED_U_PROB=0.08
 FIXED_NUM_WORKERS=8
 
 echo -e "\nFIXED HYPERPARAMETERS\n"\
@@ -88,10 +88,10 @@ MODEL=${MODELS[$MODELS_IDX]}
 # Set the pretrain path, if applicable
 if [[ $PRETRAINED == yes ]]; then
     PRETRAINED_ARG="--pretrained "$SCRATCH"/dpc/pretrained/mousesim_left-128_r18_dpc-rnn/model/model_best_epoch715.pth.tar"
-    UNEXP_EPOCH=20
+    UNEXP_EPOCH=30
 else
     PRETRAINED_ARG=""
-    UNEXP_EPOCH=30
+    UNEXP_EPOCH=50
 fi
 
 # Set the sequence parameters

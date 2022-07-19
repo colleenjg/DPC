@@ -2,6 +2,7 @@
 
 import argparse
 from collections import deque
+import copy
 import json
 import logging
 from pathlib import Path
@@ -1197,14 +1198,19 @@ def get_best_acc(best_acc=None, save_best=True):
 
 
 ##############################################
-def init_loss_dict(direc=".", ks=[1, 3, 5], val=True, supervised=False, 
-                   save_by_batch=False, is_gabor=False, light=True):
+def init_loss_dict(dataset, direc=".", ks=[1, 3, 5], val=True, 
+                   supervised=False, save_by_batch=False, light=True):
     """
     init_loss_dict()
 
     Initializes a loss dictionary, either from an existing file or from 
     scratch.
 
+    Required args
+    -------------
+    - dataset : torch data.Dataset object
+        Torch dataset object.
+  
     Optional args
     -------------
     - direc : str or path (default=".")
@@ -1242,9 +1248,9 @@ def init_loss_dict(direc=".", ks=[1, 3, 5], val=True, supervised=False,
                 'target_by_batch': for target values for each batch
             
             if is_gabor:
-            'gabor_loss_dict': for gabor loss dictionaries 
+            'gabor_loss_dict': for gabor loss keys 
                                (see gabor_utils.init_gabor_records()).
-            'gabor_acc_dict' : for gabor accuracy dictionaries 
+            'gabor_acc_dict' : for gabor accuracy keys 
                                (see gabor_utils.init_gabor_records()).
         
         if val:
@@ -1267,7 +1273,6 @@ def init_loss_dict(direc=".", ks=[1, 3, 5], val=True, supervised=False,
     shared_keys = ["epoch_n", "loss", "acc"] + topk_keys
 
     batch_keys = []
-    dataset_keys = []
     if save_by_batch:
         batch_keys = [
             "batch_epoch_n", "avg_loss_by_batch", "loss_by_item", 
@@ -1275,7 +1280,14 @@ def init_loss_dict(direc=".", ks=[1, 3, 5], val=True, supervised=False,
             ]
         if not light:
             batch_keys.extend(["output_by_batch", "target_by_batch"])
+
+    dataset_keys = []
+    is_gabor = hasattr(dataset, "num_gabors")
     if is_gabor:
+        from utils.gabor_utils import init_gabor_records
+        gabor_loss_dict, gabor_acc_dict, _ = init_gabor_records(
+            dataset, init_conf_mat=False
+            )
         dataset_keys = ["gabor_loss_dict", "gabor_acc_dict"]
 
     for main_key in main_keys:
@@ -1286,7 +1298,12 @@ def init_loss_dict(direc=".", ks=[1, 3, 5], val=True, supervised=False,
             sub_keys = sub_keys + ["confusion_matrix"]
         for key in sub_keys:
             if key not in loss_dict[main_key].keys():
-                loss_dict[main_key][key] = list()
+                if key == "gabor_loss_dict":
+                    loss_dict[main_key][key] = copy.deepcopy(gabor_loss_dict)
+                elif key == "gabor_acc_dict":
+                    loss_dict[main_key][key] = copy.deepcopy(gabor_acc_dict)
+                else:
+                    loss_dict[main_key][key] = list()
     
     return loss_dict
 
@@ -1330,16 +1347,13 @@ def populate_loss_dict(src_dict, target_dict, append_confusion_matrices=True,
          # append the full dictionary, only if it's the confusion matrix
         if key == conf_matrix_key or not isinstance(value, dict):
             target_dict[key].append(src_dict[key])  
-        elif isinstance(value, dict):
-            if key in ["gabor_loss_dict", "gabor_acc_dict"]:
-                target_dict[key].append(src_dict[key])
-            else:
-                if not isinstance(target_dict[key], dict):
-                    raise ValueError(
-                        "'src_dict' and 'target_dict' structures "
-                        "do not match."
-                        )
-                populate_loss_dict(value, target_dict[key])
+        else:
+            if not isinstance(target_dict[key], dict):
+                raise ValueError(
+                    "'src_dict' and 'target_dict' structures "
+                    "do not match."
+                    )
+            populate_loss_dict(value, target_dict[key])
 
     # if not appending, check if it should be replaced
     if conf_matrix_key in src_dict:
@@ -1380,17 +1394,19 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
             if Gabor dataset).
         
         if Gabor dataset:
-        'gabor_loss_dict' (list):  Gabor loss dictionaries for each epoch, 
-                                   with keys
-            '{image_type}' (list)       : image type loss, for each batch
-            '{mean ori}' (list)         : orientation loss, for each batch
-            'image_types_overall' (list): overall image type loss, for each 
-                                          batch
-            'mean_oris_overall'   (list): overall mean ori loss, for each batch
-            'overall'             (list): overall loss, for each batch
-        'gabor_acc_dict' (list) : Gabor top 1 accuracy dictionaries for each 
-                                  epoch, with the same keys as 
-                                  'gabor_loss_dict'.
+        'gabor_loss_dict' (list):  Gabor loss dictionary, with keys
+            '{image_type}' (list)       : image type loss, with dims 
+                                          epochs x batchs
+            '{mean ori}' (list)         : orientation loss, with dims 
+                                          epochs x batchs
+            'image_types_overall' (list): overall image type loss, with dims 
+                                          epochs x batchs
+            'mean_oris_overall'   (list): overall mean ori loss, with dims 
+                                          epochs x batchs
+            'overall'             (list): overall loss, with dims 
+                                          epochs x batchs
+        'gabor_acc_dict' (list) : Gabor top 1 accuracy dictionary, with the 
+                                  same keys as 'gabor_loss_dict'.
 
     Optional args
     -------------
@@ -1470,17 +1486,19 @@ def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
             if Gabor dataset).
         
         if Gabor dataset:
-        'gabor_loss_dict' (list):  Gabor loss dictionaries for each epoch, 
-                                   with keys
-            '{image_type}' (list)       : image type loss, for each batch
-            '{mean ori}' (list)         : orientation loss, for each batch
-            'image_types_overall' (list): overall image type loss, for each 
-                                          batch
-            'mean_oris_overall'   (list): overall mean ori loss, for each batch
-            'overall'             (list): overall loss, for each batch
-        'gabor_acc_dict' (list) : Gabor top 1 accuracy dictionaries for each 
-                                  epoch, with the same keys as 
-                                  'gabor_loss_dict'.
+        'gabor_loss_dict' (list):  Gabor loss dictionary, with keys
+            '{image_type}' (list)       : image type loss, with dims 
+                                          epochs x batchs
+            '{mean ori}' (list)         : orientation loss, with dims 
+                                          epochs x batchs
+            'image_types_overall' (list): overall image type loss, with dims 
+                                          epochs x batchs
+            'mean_oris_overall'   (list): overall mean ori loss, with dims 
+                                          epochs x batchs
+            'overall'             (list): overall loss, with dims 
+                                          epochs x batchs
+        'gabor_acc_dict' (list) : Gabor top 1 accuracy dictionary, with the 
+                                  same keys as 'gabor_loss_dict'.
 
     Optional args
     -------------
@@ -1872,17 +1890,19 @@ def load_loss_hyperparameters(model_direc, suffix=None):
             if Gabor dataset).
         
         if Gabor dataset:
-        'gabor_loss_dict' (list):  Gabor loss dictionaries for each epoch, 
-                                   with keys
-            '{image_type}' (list)       : image type loss, for each batch
-            '{mean ori}' (list)         : orientation loss, for each batch
-            'image_types_overall' (list): overall image type loss, for each 
-                                          batch
-            'mean_oris_overall'   (list): overall mean ori loss, for each batch
-            'overall'             (list): overall loss, for each batch
-        'gabor_acc_dict' (list) : Gabor top 1 accuracy dictionaries for each 
-                                  epoch, with the same keys as 
-                                  'gabor_loss_dict'.
+        'gabor_loss_dict' (list):  Gabor loss dictionary, with keys
+            '{image_type}' (list)       : image type loss, with dims 
+                                          epochs x batchs
+            '{mean ori}' (list)         : orientation loss, with dims 
+                                          epochs x batchs
+            'image_types_overall' (list): overall image type loss, with dims 
+                                          epochs x batchs
+            'mean_oris_overall'   (list): overall mean ori loss, with dims 
+                                          epochs x batchs
+            'overall'             (list): overall loss, with dims 
+                                          epochs x batchs
+        'gabor_acc_dict' (list) : Gabor top 1 accuracy dictionary, with the 
+                                  same keys as 'gabor_loss_dict'.
     
     - hp_dict : dict
         Nested hyperparameters dictionary.

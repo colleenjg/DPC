@@ -176,17 +176,19 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
             if Gabor dataset).
         
         if Gabor dataset:
-        'gabor_loss_dict' (list):  Gabor loss dictionaries for each epoch, 
-                                   with keys
-            '{image_type}' (list)       : image type loss, for each batch
-            '{mean ori}' (list)         : orientation loss, for each batch
-            'image_types_overall' (list): overall image type loss, for each 
-                                          batch
-            'mean_oris_overall'   (list): overall mean ori loss, for each batch
-            'overall'             (list): overall loss, for each batch
-        'gabor_acc_dict' (list) : Gabor top 1 accuracy dictionaries for each 
-                                  epoch, with the same keys as 
-                                  'gabor_loss_dict'.
+        'gabor_loss_dict' (list):  Gabor loss dictionary, with keys
+            '{image_type}' (list)       : image type loss, with dims 
+                                          epochs x batchs
+            '{mean ori}' (list)         : orientation loss, with dims 
+                                          epochs x batchs
+            'image_types_overall' (list): overall image type loss, with dims 
+                                          epochs x batchs
+            'mean_oris_overall'   (list): overall mean ori loss, with dims 
+                                          epochs x batchs
+            'overall'             (list): overall loss, with dims 
+                                          epochs x batchs
+        'gabor_acc_dict' (list) : Gabor top 1 accuracy dictionary, with the 
+                                  same keys as 'gabor_loss_dict'.
 
     Optional args
     -------------

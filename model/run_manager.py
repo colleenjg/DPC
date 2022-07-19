@@ -114,8 +114,8 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     _, supervised = training_utils.get_num_classes_sup(model)
 
     train_dict = loss_utils.init_loss_dict(
-        ks=topk, val=False, supervised=supervised, save_by_batch=save_by_batch, 
-        is_gabor=is_gabor
+        dataloader.dataset, ks=topk, val=False, supervised=supervised, 
+        save_by_batch=save_by_batch, 
         )["train"]
     train_dict["epoch_n"] = epoch_n
 
@@ -341,8 +341,8 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
 
     mode = "test" if test else "val"
     val_or_test_dict = loss_utils.init_loss_dict(
-        ks=topk, val=True, supervised=supervised, save_by_batch=save_by_batch,
-        is_gabor=is_gabor
+        dataloader.dataset, ks=topk, val=True, supervised=supervised, 
+        save_by_batch=save_by_batch,
         )["val"]
     val_or_test_dict["epoch_n"] = epoch_n
 
@@ -596,8 +596,8 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
 
         # initialize loss dictionary or load, if it exists
         loss_dict = loss_utils.init_loss_dict(
-            output_dir, ks=topk, val=save_best, supervised=supervised, 
-            save_by_batch=save_by_batch, is_gabor=is_gabor
+            main_loader.dataset, output_dir, ks=topk, val=save_best, 
+            supervised=supervised, save_by_batch=save_by_batch, 
             )
         
         if save_by_batch and is_gabor:

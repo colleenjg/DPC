@@ -172,6 +172,13 @@ def get_output_directory(args):
         ds_str = ""
         if dataset_str in ["UCF101", "HMDB51"]:
             ds_str = f"_ds{args.ucf_hmdb_ms_ds}"
+        elif dataset_str in ["MouseSim"]:
+            if args.batch_size < 10:
+                logger.warning(
+                    "Increasing args.batch_size to 10 to ensure all videos "
+                    "are included in each batch."
+                    )
+                args.batch_size = 10
 
         pred_str = ""
         if not args.supervised:
@@ -479,7 +486,7 @@ if __name__ == "__main__":
         help="if True, sequences starting images are rolled")
     parser.add_argument("--unexp_epoch", default=5, type=int,
         help="epoch at which to introduce unexpected U images")
-    parser.add_argument("--U_prob", default=0.1, type=float,
+    parser.add_argument("--U_prob", default=0.08, type=float,
         help="frequency at which to include unexpected U images")
     parser.add_argument("--diff_U_possizes", action="store_true", 
         help="if True, U positions/sizes are different from D ones")
