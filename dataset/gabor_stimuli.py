@@ -204,7 +204,7 @@ class GaborSequenceGenerator(data.Dataset):
         roll=False, 
         shift_frames=False,
         unexp=True,
-        U_prob=0.1, 
+        U_prob=0.08, 
         diff_U_possizes=False, 
         size_ran=[10, 20],
         deg_width=120,
@@ -259,7 +259,7 @@ class GaborSequenceGenerator(data.Dataset):
             point of a sequence down to the level of repeated frames.
         - unexp : bool (default=True)
             If True, dataset is set to produce unexpected sequences
-        - U_prob : float (default=0.1)
+        - U_prob : float (default=0.08)
             Probability of replacing each individual D with a U frame, if 
             unexp is True. 
         - diff_U_possizes : bool (default=False)
@@ -339,7 +339,7 @@ class GaborSequenceGenerator(data.Dataset):
         self.return_label = return_label
 
 
-    def _set_U_prob(self, U_prob=0.1):
+    def _set_U_prob(self, U_prob=0.08):
         """
         self._set_U_prob()
 
@@ -347,7 +347,7 @@ class GaborSequenceGenerator(data.Dataset):
 
         Optional args
         -------------
-        - U_prob : float (default=0.1)
+        - U_prob : float (default=0.08)
             Probability of replacing an individual D image with a U image.
         """
 

@@ -53,6 +53,60 @@ def get_device(num_workers=None, cpu_only=False):
 
 
 #############################################
+def check_batch_size(batch_size=32, device_type="cpu", resume=False, 
+                     dataset="UCF101", save_by_batch=False):
+    """
+    check_batch_size()
+
+    Verifies whether the batch size is compatible with splitting data across 
+    GPUs, and updates it to an acceptable value.
+
+    NOTE: If batch_size is 1, it is not changed.
+
+    Optional args
+    -------------
+    - batch_size : int (default=32)
+    - device_type : str (default="cpu")
+    - resume : bool
+
+    Returns
+    -------
+    - batch_size : int
+        Batch size updated based on the number of available devices.
+    """
+
+    if batch_size == 1:
+        return batch_size
+
+    if device_type == "cuda":        
+        num_devices = torch.cuda.device_count()
+        per_GPU = batch_size / num_devices
+        if int(per_GPU) != per_GPU:
+            new_batch_size = int(np.ceil(per_GPU)) * num_devices
+            
+            dataset = misc_utils.normalize_dataset_name(dataset)
+            resume_str = ""
+            if resume and (save_by_batch or dataset == "Gabors"):
+                resume_str = (
+                    "\nNote that resuming model training with a different "
+                    "batch size (e.g., incremented due to a change in the "
+                    "number of devices available for training) may create "
+                    "errors if this has resulted in a change in the number of "
+                    "batches per epoch, as batch-wise information is being "
+                    "recorded."
+                )
+
+            logger.warning(
+                "To enable equal batch distribution across GPUs, incrementing"
+                f" batch size from {batch_size} to {new_batch_size}."
+                f"{resume_str}"
+                )
+            batch_size = new_batch_size
+
+    return batch_size
+
+
+#############################################
 def allow_data_parallel(dataloader, device, supervised=False):
     """
     allow_data_parallel(dataloader, device)
@@ -1046,10 +1100,10 @@ def log_epoch(stats_str, duration=None, epoch_n=0, num_epochs=50, val=False,
     """
 
     if test:
-        epoch_str = f"Epoch [{epoch_n}] [test]"
+        epoch_str = f"Epoch: [{epoch_n}] [test]"
         space_batch = " "
     elif val:
-        epoch_str = f"Epoch [{epoch_n}/{num_epochs}] [val]"
+        epoch_str = f"Epoch: [{epoch_n}/{num_epochs}] [val]"
         space_batch = " "
     else:
         epoch_str = f"Epoch: [{epoch_n}/{num_epochs}]"
@@ -1075,7 +1129,7 @@ def log_epoch(stats_str, duration=None, epoch_n=0, num_epochs=50, val=False,
 
 
 #############################################
-def write_log(stats_str, epoch_n, filename, overwrite=False):
+def write_log(stats_str, epoch_n, filename, output_dir=".", overwrite=False):
     """
     write_log(stats_str, epoch_n, filename)
 
@@ -1093,12 +1147,14 @@ def write_log(stats_str, epoch_n, filename, overwrite=False):
     
     Optional args
     -------------
+    - output_dir : str or path (default=".")
+        Directory in which to save the log file.
     - overwrite : bool (default=False)
         If True, and filename exists, the file is overwritten. Otherwise, it is 
         appended to.
     """
     
-    filename = Path(filename)
+    filename = Path(output_dir, filename)
     filename.parent.mkdir(exist_ok=True, parents=True)
 
     open_mode = "w"

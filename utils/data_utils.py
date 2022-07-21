@@ -185,7 +185,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
     Optional args
     -------------
     - data_path_dir : str or path (default="process_data")
-        Directory where the data is stored (only needd if dataset is not Gabors)
+        Directory where the data is stored (only needed if dataset is not Gabors)
     - transform : torch Transform or None (default=None)
         torch Transforms for the dataset
     - dataset : str (default="UCF101")

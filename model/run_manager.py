@@ -120,10 +120,9 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     train_dict["epoch_n"] = epoch_n
 
     if is_gabor and save_by_batch:
-        gabor_loss_dict, gabor_acc_dict, gabor_conf_mat = \
-            gabor_utils.init_gabor_records(
-                dataloader.dataset, init_conf_mat=(output_dir is not None)
-                )
+        gabor_conf_mat = None     
+        if output_dir is not None:
+            gabor_conf_mat = gabor_utils.init_gabor_conf_mat(dataloader.dataset)
         
     criterion, criterion_no_reduction = loss_utils.get_criteria(
         loss_weights=loss_weights, device=device
@@ -186,8 +185,8 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
             if is_gabor:
                 gabor_utils.update_records(
                     dataloader.dataset,
-                    gabor_loss_dict, 
-                    gabor_acc_dict,
+                    train_dict["gabor_loss_dict"], 
+                    train_dict["gabor_acc_dict"],
                     output=output_flattened.detach().cpu(),
                     sup_target=sup_target.detach().cpu(),
                     batch_loss=batch_loss.detach().cpu(),
@@ -231,25 +230,19 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     for i, k in enumerate(topk):
         train_dict[f"top{k}"] = topk_meters[i].local_avg
 
-    if is_gabor and save_by_batch:
-        train_dict["gabor_loss_dict"] = gabor_loss_dict
-        train_dict["gabor_acc_dict"] = gabor_acc_dict
-
-        if gabor_conf_mat is not None:
-            gabor_utils.plot_save_gabor_conf_mat(
-                gabor_conf_mat, mode="train", epoch_n=epoch_n, 
-                unexp=dataloader.dataset.unexp, 
-                U_prob=dataloader.dataset.U_prob, 
-                output_dir=output_dir
-            ) 
+    if is_gabor and gabor_conf_mat is not None:
+        gabor_utils.plot_save_gabor_conf_mat(
+            gabor_conf_mat, mode="train", epoch_n=epoch_n, 
+            output_dir=output_dir
+        ) 
 
     return train_dict, log_idx
 
 
 #############################################
 def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50, 
-                      topk=TOPK, loss_weights=None, device="cpu", test=False, 
-                      output_dir=None, save_by_batch=False):
+                      topk=TOPK, loss_weights=None, device="cpu", 
+                      test_suffix=False, output_dir=None, save_by_batch=False):
     """
     val_or_test_epoch(dataloader, model)
 
@@ -282,8 +275,9 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
         Class weights to provide to the loss function.
     - device : torch.device or str (default="cpu")
         Device on which to train the model.
-    - test : bool (default=False)
-        If True, mode is test instead of validation. Used for logging.
+    - test_suffix : str (default=None)
+        Suffix to use for test logs. Must be provided if mode is test. Also 
+        used for logging.
     - output_dir : str or path (default=None)
         Output directory in which to save confusion matrices, if applicable. 
         If None, confusion matrices are not generated.
@@ -311,7 +305,7 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
             dataset).
         
         if output_dir is not None:
-        'confusion_matrix' (dict): confusion matrix storage dictionary for the 
+        'confusion_mat' (dict): confusion matrix storage dictionary for the 
                                    epoch
 
         if Gabor dataset:
@@ -339,18 +333,22 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
     confusion_mat = None
     num_classes, supervised = training_utils.get_num_classes_sup(model)
 
+    test = test_suffix is not None
+    test_suffix = misc_utils.format_addendum(test_suffix, is_suffix=True)
     mode = "test" if test else "val"
+    
     val_or_test_dict = loss_utils.init_loss_dict(
         dataloader.dataset, ks=topk, val=True, supervised=supervised, 
         save_by_batch=save_by_batch,
         )["val"]
     val_or_test_dict["epoch_n"] = epoch_n
 
-    if is_gabor and save_by_batch:
-        gabor_loss_dict, gabor_acc_dict, gabor_conf_mat = \
-            gabor_utils.init_gabor_records(
-                dataloader.dataset, init_conf_mat=(output_dir is not None)
-                )
+    gab_unexp_str = ""
+    if is_gabor:
+        gab_unexp_str = "_unexp" if dataloader.dataset.unexp else ""
+        gabor_conf_mat = None     
+        if save_by_batch and output_dir is not None:
+            gabor_conf_mat = gabor_utils.init_gabor_conf_mat(dataloader.dataset)
 
     if supervised and output_dir is not None:
         if is_gabor:
@@ -430,8 +428,8 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
                 if is_gabor:
                     gabor_utils.update_records(
                         dataloader.dataset,
-                        gabor_loss_dict, 
-                        gabor_acc_dict,
+                        val_or_test_dict["gabor_loss_dict"], 
+                        val_or_test_dict["gabor_acc_dict"],
                         output=output_flattened.detach().cpu(),
                         sup_target=sup_target.detach().cpu(),
                         batch_loss=batch_loss.detach().cpu(),
@@ -461,30 +459,27 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
         val_or_test_dict[f"top{k}"] = topk_meters[i].avg
     
     if confusion_mat is not None:
+        savename = f"{mode}_confusion_mat{test_suffix}{gab_unexp_str}.svg"
         confusion_mat.plot_mat(
-            Path(output_dir, f"{mode}_confusion_matrix.svg"), 
+            Path(output_dir, savename), 
             title=f"Epoch {epoch_n} ({mode})",
             **plot_mat_kwargs
             )
-        val_or_test_dict["confusion_matrix"] = confusion_mat.get_storage_dict()
+        val_or_test_dict["confusion_mat"] = confusion_mat.get_storage_dict()
 
-    if is_gabor and save_by_batch:
-        val_or_test_dict["gabor_loss_dict"] = gabor_loss_dict
-        val_or_test_dict["gabor_acc_dict"] = gabor_acc_dict
-        if gabor_conf_mat is not None:
-            gabor_utils.plot_save_gabor_conf_mat(
-                gabor_conf_mat, mode=mode, epoch_n=epoch_n, 
-                unexp=dataloader.dataset.unexp, 
-                U_prob=dataloader.dataset.U_prob, 
-                output_dir=output_dir
-            ) 
+    if is_gabor and gabor_conf_mat is not None:
+        gabor_utils.plot_save_gabor_conf_mat(
+            gabor_conf_mat, mode=mode, epoch_n=epoch_n, 
+            output_dir=output_dir
+        ) 
 
     if output_dir is not None:
         overwrite = True if test else False
         training_utils.write_log(
             stats_str=stats_str,
             epoch_n=epoch_n,
-            filename=Path(output_dir, f"{mode}_log.md"),
+            output_dir=output_dir,
+            filename=f"{mode}_log{test_suffix}{gab_unexp_str}.md",
             overwrite=overwrite
             )
 
@@ -564,9 +559,11 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
 
     model = model.to(device)
 
-    log_idx, best_acc, start_epoch_n = \
+    log_idx, best_acc, start_epoch_n, test_suffix, gabor_unexp = \
         checkpoint_utils.load_checkpoint(model, optimizer, **reload_kwargs)
+
     num_classes, supervised = training_utils.get_num_classes_sup(model)
+    
     if is_gabor and supervised:
         gabor_utils.warn_supervised(main_loader.dataset)
 
@@ -583,7 +580,11 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     else:
         save_best = False if val_loader is None else True
         is_best = False
-        best_acc = loss_utils.get_best_acc(best_acc, save_best=save_best)
+        if is_gabor:
+            best_accs = gabor_utils.get_best_acc(best_acc, save_best)
+            del best_acc
+        else:
+            best_acc = loss_utils.get_best_acc(best_acc, save_best)
 
         if use_tb: 
             writer_train, writer_val = misc_utils.init_tb_writers(
@@ -599,24 +600,22 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             main_loader.dataset, output_dir, ks=topk, val=save_best, 
             supervised=supervised, save_by_batch=save_by_batch, 
             )
-        
-        if save_by_batch and is_gabor:
-            for key in loss_dict.keys():
-                loader = main_loader if key == "train" else val_loader
-                gabor_dict = gabor_utils.init_gabor_records(loader.dataset)[0]
-                for gabor_key, sub_dict in gabor_dict.items():
-                    loss_dict[key][gabor_key] = sub_dict
 
     ### main loop ###
     data_seed = seed
+    gab_unexp_str = ""
     for epoch_n in range(start_epoch_n, num_epochs + 1):
         start_time = time.perf_counter()
 
-        if dataset == "Gabors":
+        if is_gabor:
             data_seed = gabor_utils.update_gabors(
                 main_loader, val_loader, seed=data_seed, epoch_n=epoch_n, 
                 unexp_epoch=unexp_epoch
                 )
+            gabor_unexp = main_loader.dataset.unexp
+            gab_unexp_str = "_unexp" if gabor_unexp else ""
+            if not test:
+                best_acc = best_accs[int(gabor_unexp)]
         
         if not test:
             train_dict, log_idx = train_epoch(
@@ -649,26 +648,32 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 loss_weights=loss_weights,
                 device=device,
                 output_dir=output_dir,
-                test=test,
+                test_suffix=test_suffix,
                 save_by_batch=save_by_batch,
                 )
             
             if test:
+                conf_mat_suffix = f"{test_suffix}{gab_unexp_str}"
                 # store confusion matrix data, if applicable, then all done
-                if "confusion_matrix" in val_dict.keys():
-                    loss_utils.save_confusion_mat_dict(
-                        val_dict["confusion_matrix"], prefix="test", 
-                        output_dir=output_dir, overwrite=True
+                if "confusion_mat" in val_dict.keys():
+                    loss_utils.save_conf_mat_dict(
+                        val_dict["confusion_mat"], prefix="test", 
+                        suffix=conf_mat_suffix, output_dir=output_dir, 
+                        overwrite=True
                         )
                 return
 
             if save_best:
                 is_best = val_dict["acc"] > best_acc
                 best_acc = max(val_dict["acc"], best_acc)
-                if is_best and "confusion_matrix" in val_dict.keys():
+                if is_gabor:
+                    best_accs[int(gabor_unexp)] = best_acc
+
+                if is_best and "confusion_mat" in val_dict.keys():
                     # plot best confusion matrix
                     loss_utils.load_plot_conf_mat(
-                        val_dict["confusion_matrix"], mode="val", suffix="best",
+                        val_dict["confusion_mat"], mode="val", 
+                        suffix=f"best{gab_unexp_str}",
                         omit_class_names=True, epoch_n=epoch_n, 
                         output_dir=output_dir
                         )
@@ -676,8 +681,9 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             loss_utils.populate_loss_dict(
                 src_dict=val_dict, 
                 target_dict=loss_dict["val"],
-                append_confusion_matrices=True,
-                is_best=is_best
+                append_conf_matrices=True,
+                is_best=is_best,
+                gabor_unexp=gabor_unexp,
                 )
 
 
@@ -701,18 +707,23 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             logger.debug(f"Epoch val loss: {val_dict['loss']}")
 
         # save checkpoint
-        checkpoint_utils.save_checkpoint(
-            {
+        state_dict = {
             "epoch_n": epoch_n,
             "net": net_name,
             "state_dict": model.state_dict(),
             "best_acc": best_acc,
             "optimizer": optimizer.state_dict(),
-            "log_idx": log_idx
-            }, 
-            is_best, 
-            filename=Path(model_direc, f"epoch{epoch_n}.pth.tar"), 
-            keep_all=False
+            "log_idx": log_idx            
+        }
+        if is_gabor:
+            state_dict["best_acc"] = best_accs
+
+        checkpoint_utils.save_checkpoint(
+            state_dict, is_best, 
+            output_dir=model_direc,
+            epoch_n=epoch_n,
+            gabor_unexp=gabor_unexp,
+            keep_all=False,
         )
 
         stop_time = time.perf_counter()
@@ -727,14 +738,10 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         plt.close("all")
  
     # replot the best confusion matrix, with class names (can take a long time)
-    if "confusion_matrix_best" in loss_dict["val"].keys():
-        best_idx = np.argmax(loss_dict["val"]["acc"])
-        best_epoch_n = loss_dict["val"]["epoch_n"][best_idx]
-        loss_utils.load_plot_conf_mat(
-            loss_dict["val"]["confusion_matrix_best"], mode="val", 
-            suffix="best", omit_class_names=False, epoch_n=best_epoch_n, 
-            output_dir=output_dir
-            )
+    loss_utils.plot_best_conf_mat(
+        loss_dict["val"], mode="val", omit_class_names=False, 
+        output_dir=output_dir
+        )
 
     logger.info(
         f"Training from epoch {start_epoch_n} to {num_epochs} finished."

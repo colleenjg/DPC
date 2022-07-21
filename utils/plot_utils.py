@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import logging
+import warnings
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -12,11 +13,40 @@ from utils import misc_utils
 logger = logging.getLogger(__name__)
 
 TAB = "    "
+DEG = u"\u00b0"
 
 
 #############################################
-def plot_acc(sub_ax, data_dict, epoch_ns, chance=None, color="k", ls=None, 
-             data_label="train"):
+def get_cmap_colors(cmap_name="Blues", n_vals=5, min_n=5):
+    """
+    get_cmap_colors()
+
+    Returns colors sampled evenly, with a dark bias, from the specified 
+    colormap.
+
+    Optional args
+    -------------
+    - cmap_name : str (default="Blues")
+        Colormap name.
+    - n_vals : int (default=5)
+        Number of values to sample from the colormap.
+
+    Returns
+    -------
+    - colors : list
+        List of colors sampled from the colormap.
+    """
+
+    cmap = mpl.cm.get_cmap(cmap_name)
+    samples = np.linspace(1.0, 0.3, max(min_n, n_vals))
+    colors = [cmap(s) for s in samples]
+
+    return colors
+
+
+#############################################
+def plot_acc(sub_ax, data_dict, epoch_ns, chance=None, cmap_name="Blues", 
+             ls=None, data_label="train"):
     """
     plot_acc(sub_ax, data_dict, epoch_ns)
 
@@ -53,23 +83,25 @@ def plot_acc(sub_ax, data_dict, epoch_ns, chance=None, color="k", ls=None,
         data_label = f"{data_label} "
 
     acc_keys = sorted([key for key in data_dict.keys() if "top" in str(key)])
+    colors = get_cmap_colors(cmap_name, n_vals=len(acc_keys))
     if chance is not None:
         sub_ax.axhline(100 * chance, color="k", ls="dashed", alpha=0.8)
+
+    lab_a = len(acc_keys) // 2
     for a, acc_key in enumerate(acc_keys):
         accuracies = 100 * np.asarray(data_dict[acc_key])
-        alpha = 0.7 ** a
         label = None
-        if a == 0:
+        if a == lab_a:
             label = f"{data_label}{', '.join(acc_keys)}"
         sub_ax.plot(
-            epoch_ns, accuracies, color=color, ls=ls, alpha=alpha, 
+            epoch_ns, accuracies, color=colors[a], ls=ls, alpha=0.8, 
             label=label
             )
 
 
 #############################################
 def plot_batches(batch_ax, data_dict, U_ax=None, data_label="train", 
-                 colors="Blues"):
+                 cmap_name="Blues"):
     """
     plot_batches(batch_ax, loss_dict)
 
@@ -97,7 +129,7 @@ def plot_batches(batch_ax, data_dict, U_ax=None, data_label="train",
         dataset, if applicable.
     - data_label : str (default="train")
         Data name to use in labelling the data in the plots.
-    - colors : str (default="Blues")
+    - cmap_name : str (default="Blues")
         Name of the colormap to use to determine batch colors.
     """
     
@@ -106,30 +138,37 @@ def plot_batches(batch_ax, data_dict, U_ax=None, data_label="train",
     epoch_ns = np.asarray(data_dict["batch_epoch_n"]).T
 
     num_batches = len(avg_loss_by_batch)
-    batch_cmap = mpl.cm.get_cmap(colors)
-    cmap_samples = np.linspace(1.0, 0.3, num_batches)
+    colors = get_cmap_colors(cmap_name, n_vals=num_batches)
 
     if U_ax is not None:
         target_key = "sup_target_by_batch"
-        freqs = []
-        for image_type in ["U", "D"]:
-            # num_epochs x num_batches x B x N x SL x (image type, ori)
-            freqs.append((
-                np.asarray(data_dict[target_key])[:, :, ..., 0] == image_type
-                ).astype(float).mean(axis=(2, 3, 4)).T)
-        U_freqs_over_DU = freqs[0] / (freqs[0] + freqs[1]) * 100
 
+        # num batches x num epochs
+        U_freqs_over_DU = np.empty_like(epoch_ns)
+
+        # for loop duration ~= duration i first converting data to np.array
+        for e, epoch_data in enumerate(data_dict[target_key]):
+            for b, batch_data in enumerate(epoch_data):
+                # B x N x SL x (image type, ori)
+                batch_data = np.asarray(batch_data)[..., 0].reshape(-1)
+                freqs = []
+                for image_type in ["U", "D"]:
+                    freqs.append(
+                        (batch_data == image_type).astype(float).mean()
+                        )
+                U_freqs_over_DU[b, e] = (freqs[0] / (freqs[0] + freqs[1]) * 100)
+
+    lab_b = len(avg_loss_by_batch) // 2
     for b, batch_losses in enumerate(avg_loss_by_batch):
-        batch_color = batch_cmap(cmap_samples[b])
-        label = data_label if b == 0 and len(data_label) else None
+        label = data_label if b == lab_b and len(data_label) else None
         batch_ax.plot(
-            epoch_ns[b], batch_losses, color=batch_color, alpha=0.8, 
+            epoch_ns[b], batch_losses, color=colors[b], alpha=0.8, 
             label=label
             )
         if U_ax is not None:
-            label = data_label if b == 0 and len(data_label) else None
+            label = data_label if b == lab_b and len(data_label) else None
             U_ax.plot(
-                epoch_ns[b], U_freqs_over_DU[b], color=batch_color, 
+                epoch_ns[b], U_freqs_over_DU[b], color=colors[b], 
                 alpha=0.8, label=label, marker="."
             )
     
@@ -146,8 +185,153 @@ def plot_batches(batch_ax, data_dict, U_ax=None, data_label="train",
 
 
 #############################################
+def plot_gabor_data(sub_ax, data_dict, epoch_ns, datatype="image_types", 
+                    data_label="train", cmap_name="Blues", is_accuracy=False, 
+                    loss_max=None):
+    """
+    plot_gabor_data(sub_ax, data_dict, epoch_ns)
+
+    Plot Gabor loss or accuracy data by class values.
+
+    Required args
+    -------------
+    - sub_ax : plt subplot
+        Subplot on which to plot accuracy data.
+    - data_dict : dict
+        Gabor loss or accuracy data dictionary, with keys:
+        '{image_type}' (list)       : image type loss, with dims 
+                                        epochs x batchs
+        '{mean ori}' (list)         : orientation loss, with dims 
+                                        epochs x batchs
+        'image_types_overall' (list): overall image type loss, with dims 
+                                        epochs x batchs
+        'mean_oris_overall'   (list): overall mean ori loss, with dims 
+                                        epochs x batchs
+        'overall'             (list): overall loss, with dims 
+                                        epochs x batchs
+    - epoch_ns : array-like
+        Epoch numbers to use for accuracy data x axis.
+
+
+    Optional args
+    -------------
+    - datatype : str (default="image_types")
+        Type of Gabor data to plot by class.
+    - data_label : str (default="train")
+        Data name to use in labelling the data in the plots.
+    - cmap_name : str (default="Blues")
+        Name of the colormap to use to determine datatype colors.
+    - is_accuracy : bool (default=False)
+        If True, the data provided is accuracy data. Otherwise, it is loss 
+        data.
+    - loss_max : float (default=None)
+        If provided, maximum value to use when normalizing data, if it is loss 
+        data.
+
+    Returns
+    -------
+    - y_max : float
+        Maximum y value used to normalize the data for stacked plotting.
+    """
+
+    if datatype not in ["image_types", "mean_oris"]:
+        raise ValueError("'datatype' must be 'image_types' or 'mean_oris'.")
+
+    plot_keys = []
+    add_NA = False
+    for key in data_dict.keys():
+        if "overall" in str(key):
+            pass
+        elif "." in str(key) or str(key).isdigit():
+            if datatype == "mean_oris":
+                plot_keys.append(key)
+        elif str(key) == "N/A":
+            if datatype == "mean_oris":
+                add_NA = True
+        elif datatype == "image_types":
+            plot_keys.append(key)
+
+    if datatype == "mean_oris":
+        sort_order = np.argsort([float(key) for key in plot_keys])
+        plot_keys = [plot_keys[s] for s in sort_order]
+    else:       
+        plot_keys = sorted(plot_keys)
+    if add_NA:
+        plot_keys.append("N/A")
+    plot_keys.insert(0, f"{datatype}_overall")
+    plot_keys = plot_keys[::-1]
+
+    colors = get_cmap_colors(cmap_name, n_vals=len(plot_keys) + 1)
+    mult = 100 if is_accuracy else 1
+
+    all_data = []
+    for key in plot_keys:
+        # nan_mean across batches for each epoch
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", "Mean of empty slice", RuntimeWarning
+                )
+            data = np.nanmean(np.asarray(data_dict[key]), axis=1) * mult
+        all_data.append(data)
+    all_data = np.asarray(all_data)
+
+    y_max = loss_max
+    if is_accuracy:
+        y_max = 90
+    elif loss_max is None:
+        y_max = np.ceil(np.nanpercentile(all_data, 95) * 1.05) # allow some overlap
+
+    incr = np.arange(len(plot_keys)).reshape(-1, 1)
+    all_data = all_data / y_max + incr
+
+    ytick_labels = []
+    lab_k = len(plot_keys) // 2
+    for k, key in enumerate(plot_keys):
+        key_label = str(key)
+        plot_kwargs = dict()
+        if key_label.endswith("overall"):
+            key_label = "overall"
+            plot_kwargs = {"lw": 2.5}
+        elif datatype == "mean_oris" and key_label != "N/A":
+            key_label = float(key_label)
+            if key_label == int(key_label):
+                key_label = str(int(key_label))
+            key_label = u"{}{}".format(key_label, DEG)
+        
+        ytick_labels.append(key_label)
+
+        label = None
+        if k == lab_k and len(data_label):
+            label = data_label
+
+        sub_ax.plot(
+            epoch_ns, all_data[k], color=colors[k], alpha=0.8, 
+            label=label, **plot_kwargs
+            )
+
+    # mark edges of each category
+    edges = np.arange(len(plot_keys) + 1)
+    for i, edge in enumerate(edges[:-1]):
+        if i % 2 == 0:
+            sub_ax.axhspan(
+                edge, edges[i + 1], color="k", alpha=0.05, lw=0, zorder=-13
+                )
+
+    # label between edges
+    label_pos = edges[:-1] + 0.5 # mid-way for each key
+    sub_ax.set_yticks(label_pos)
+    sub_ax.set_yticklabels(ytick_labels)
+
+    # remove minor ticks
+    sub_ax.tick_params("y", which="major", length=0, pad=5)
+
+    return y_max
+
+
+
+#############################################
 def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101", 
-                        unexp_epoch=10, by_batch=False):
+                        unexp_epoch=10, plot_what="main"):
     """
     plot_from_loss_dict(loss_dict)
 
@@ -199,8 +383,9 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
     - unexp_epoch : int (default=10)
         Epoch as of which unexpected sequences are introduced, if the dataset 
         is a Gabors dataset.
-    - by_batch : bool (default=False)
-        If True, loss and accuracy data is plotted by batch.
+    - plot_what : str (default="main")
+        What to plot, i.e. the main loss and accuracy data ("main"), data by 
+        batch ("by_batch") or data by Gabor split ("by_gabor").
 
     Returns
     -------
@@ -219,30 +404,70 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
     chance = None if num_classes is None else 1 / num_classes
 
     dataset = misc_utils.normalize_dataset_name(dataset)
-    plot_seq = by_batch and (dataset == "Gabors")
-    nrows = 1 + int(plot_seq) if by_batch else 2
-    ncols = len(modes) if by_batch else 1
+    if plot_what == "main":
+        nrows, ncols = 2, 1
+    elif plot_what == "by_batch":
+        nrows = 1 + int(dataset == "Gabors")
+        ncols = len(modes)
+    elif plot_what == "by_gabor":
+        nrows, ncols = 2, 2
+        if dataset != "Gabors":
+            raise ValueError(
+                "'plot_what' can only be 'by_gabor' if the dataset is a "
+                "'Gabors' dataset."
+                )
+    else:
+        raise ValueError(
+            "Accepted values for 'plot_what' are 'main', 'by_batch', and "
+            "'by_gabor'."
+            ) 
+
+    row_height = 6 if plot_what == "by_gabor" else 3.25 
     fig, ax = plt.subplots(
-        nrows, ncols, figsize=[8.5 * ncols, 3.25 * nrows], sharex=True, 
+        nrows, ncols, figsize=[8.5 * ncols, row_height * nrows], sharex=True, 
         squeeze=False
         )
     ax = ax.reshape(nrows, ncols)
 
+    gab_loss_maxes = [None, None]
+    add_leg = []
+    lab_best = 1
     for m, mode in enumerate(modes):
-        epoch_ns = loss_dict[mode]["epoch_n"]  
+        epoch_ns = loss_dict[mode]["epoch_n"]
+        cmap_name = f"{colors[m].capitalize()}s"
 
-        data_label = f"{mode} "
-        if ncols == len(modes):
+        if ncols == len(modes) and plot_what != "gabors":
             ax[0, m].set_title(mode.capitalize())
-            data_label = ""
 
-        if by_batch:
-            U_ax = ax[1, m] if plot_seq else None
+        if plot_what == "by_batch":
+            U_ax = ax[1, m] if nrows == 2 else None
             plot_batches(
                 ax[0, m], loss_dict[mode], U_ax=U_ax, data_label="", 
-                colors=f"{colors[m].capitalize()}s"
+                cmap_name=cmap_name
                 )
+        elif plot_what == "by_gabor":
+            add_leg.extend([0])
+            lab_best = 2
+            for d, datatype in enumerate(["image_types", "mean_oris"]):
+                ax[0, d].set_title(f"By {datatype[:-1].replace('_', ' ')}")
+                for k, key in enumerate(["gabor_loss_dict", "gabor_acc_dict"]):
+                    data_label = mode if d == 0 and k == 0 else ""
+                    is_accuracy = (key == "gabor_acc_dict")
+                    loss_max = plot_gabor_data(
+                        ax[k, d], loss_dict[mode][key], epoch_ns, 
+                        datatype=datatype, data_label=data_label, 
+                        cmap_name=cmap_name, is_accuracy=is_accuracy, 
+                        loss_max=gab_loss_maxes[d]
+                    )
+                    if not is_accuracy:
+                        gab_loss_maxes[d] = loss_max
         else:
+            if ncols == len(modes):
+                data_label = ""
+            else:
+                data_label = f"{mode} "
+                add_leg.extend([0, 1])
+
             ax[0, 0].plot(
                 epoch_ns, loss_dict[mode]["loss"], color=colors[m], 
                 ls=ls[m], label=f"{data_label}loss"
@@ -250,7 +475,7 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
 
             plot_acc(
                 ax[1, 0], loss_dict[mode], epoch_ns, chance=chance, 
-                color=colors[m], ls=ls[m], data_label=data_label
+                cmap_name=cmap_name, ls=ls[m], data_label=data_label
                 )
 
         if mode == "val":
@@ -258,30 +483,32 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
             best_epoch_n = epoch_ns[best_idx]
             for s, sub_ax in enumerate(ax.reshape(-1)):
                 label = None
-                if s == 1:
+                if s == lab_best:
                     best_acc = 100 * loss_dict[mode]["acc"][best_idx]
                     label = f"ep {best_epoch_n}: {best_acc:.2f}%"
+                    add_leg.extend([lab_best])
                 sub_ax.axvline(
                     best_epoch_n, color="k", ls="dashed", alpha=0.8, 
                     label=label
                     )
 
     min_x, max_x = ax[0, 0].get_xlim()
-    for sub_ax in ax.reshape(-1):
-        if not by_batch:
-            sub_ax.legend(fontsize="small")
+    for s, sub_ax in enumerate(ax.reshape(-1)):
+        if s in add_leg:
+            sub_ax.legend(fontsize="small", loc="upper left")
         sub_ax.spines["right"].set_visible(False)
         sub_ax.spines["top"].set_visible(False)
         if dataset == "Gabors" and unexp_epoch < max(epoch_ns):
             sub_ax.axvspan(
-                unexp_epoch, max(epoch_ns), color="k", alpha=0.1, lw=0
+                unexp_epoch, max(epoch_ns), color="red", alpha=0.08, lw=0, 
+                zorder=-12
                 )
         sub_ax.set_xlim(min_x, max_x)
 
     ax[0, 0].set_ylabel("Loss")
     for c in range(ncols):
         ax[-1, c].set_xlabel("Epoch")
-    if by_batch and nrows == 2:
+    if (plot_what == "by_batch") and nrows == 2:
         ax[1, 0].set_ylabel("U/(D+U) frequency (%)")        
     else:
         ax[1, 0].set_ylabel("Accuracy (%)")

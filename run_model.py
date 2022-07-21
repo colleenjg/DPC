@@ -32,6 +32,7 @@ def check_adjust_args(args):
         - args.train_what
         - args.test, given args.supervised
     - Sets opposite arguments:
+        - args.not_save_best
         - args.same_possizes from args.diff_possizes
         - args.gray from args.not_gray
     - If needed, sets default values for:
@@ -40,7 +41,6 @@ def check_adjust_args(args):
         - args.num_epochs = 0
         - args.batch_size = 1
         - args.save_best = False
-
 
     Required args
     -------------
@@ -57,10 +57,18 @@ def check_adjust_args(args):
 
     args = copy.deepcopy(args)
 
+    num_reload = bool(args.resume) + bool(args.pretrained) + bool(args.test)
+    if num_reload > 1:
+        raise ValueError(
+            "Only one of the following can be provided at a time: "
+            "'args.resume', 'args.pretrained' or 'args.test'."
+            )
+
     # normalize the dataset name
     args.dataset = misc_utils.normalize_dataset_name(args.dataset, short=False)
 
-    # adjust Gabor arguments
+    # adjust opposite arguments
+    args.save_best = not(args.not_save_best)
     args.same_possizes = not(args.diff_possizes)
     args.gray = not(args.no_gray)
 
@@ -91,13 +99,6 @@ def check_adjust_args(args):
             f"{args.train_what}'."
             )
 
-    # set weight decay, if needed
-    if args.wd is None:
-        if args.supervised:
-            args.wd = 1e-3
-        else:
-            args.wd = 1e-5
-
     # set whether to use scheduler
     if args.supervised:
         args.use_scheduler = True
@@ -114,6 +115,17 @@ def check_adjust_args(args):
         else:
             raise ValueError("Test can only be done in the supervised setting.")
     
+    # try to update arguments, if resuming from an existing model
+    if args.resume:
+        args = misc_utils.update_resume_args(args, args.resume)
+
+    # set weight decay, if needed (after args.resume updates)
+    if args.wd is None:
+        if args.supervised:
+            args.wd = 1e-3
+        else:
+            args.wd = 1e-5
+
     return args
 
 
@@ -149,7 +161,7 @@ def get_output_directory(args):
         if not Path(use_path).exists():
             raise OSError(f"{use_path} does not exist.")
         elif not Path(use_path).is_file():
-            raise OSError(f"{use_path} is not a file.")
+            raise OSError(f"{use_path} is not a file.")        
         output_dir = Path(use_path).parent
         if output_dir.stem == "model":
             output_dir = Path(output_dir).parent            
@@ -184,11 +196,7 @@ def get_output_directory(args):
         if not args.supervised:
             pred_str = f"_pred{args.pred_step}"
 
-        suffix_str = ""
-        if len(args.suffix):
-            suffix_str = args.suffix
-            if suffix_str[0] != "_":
-                suffix_str = f"_{args.suffix}"
+        suffix_str = misc_utils.format_addendum(args.suffix, is_suffix=True)
 
         save_name = (
             f"{dataset_str}-{args.img_dim}_r{args.net[6:]}_{args.model}_"
@@ -307,12 +315,23 @@ def run_training_or_test(args):
 
     args.output_dir = get_output_directory(args)
 
+    # get whether to save by batch
+    args.dataset = misc_utils.normalize_dataset_name(args.dataset)
+    args.save_by_batch = (args.dataset == "Gabors")
+
     # get device and dataloaders
     device, args.num_workers = training_utils.get_device(
         args.num_workers, args.cpu_only
         )
     args.device_type = str(device.type)
 
+    # check, and if needed, update batch size
+    args.batch_size = training_utils.check_batch_size(
+        args.batch_size, args.device_type, resume=args.resume, 
+        dataset=args.dataset, save_by_batch=args.save_by_batch
+    )
+
+    # get data
     main_loader, val_loader = get_dataloaders(args)
 
     # get model
@@ -338,10 +357,6 @@ def run_training_or_test(args):
         use_scheduler=args.use_scheduler, train_what=args.train_what, 
         test=args.test
     )
-
-    # get whether to save by batch
-    args.dataset = misc_utils.normalize_dataset_name(args.dataset)
-    args.save_by_batch = (args.dataset == "Gabors")
 
     # save hyperparameters
     misc_utils.save_hyperparameters(args.__dict__)
@@ -385,8 +400,6 @@ def main(args):
     """
 
     args = copy.deepcopy(args)
-
-    args.save_best = not(args.not_save_best)
 
     plt.switch_backend(args.plt_bkend)
 
@@ -444,7 +457,8 @@ if __name__ == "__main__":
     
     # pretrained/resuming parameters
     parser.add_argument("--resume", default="", 
-        help="path of model to resume from")
+        help=("path to model directory to resume from (last epoch recorded) "
+            "or to model itself."))
     parser.add_argument("--reset_lr", action="store_true", 
         help="if True, learning rate is reset when resuming training")
     parser.add_argument("--pretrained", default="", 

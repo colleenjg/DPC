@@ -7,6 +7,7 @@ import random
 import shutil
 import sys
 import time
+import warnings
 import yaml
 
 import numpy as np
@@ -109,6 +110,39 @@ class BasicLogFormatter(logging.Formatter):
         self._style._fmt = format_orig
 
         return formatted_log
+
+
+#############################################
+def format_addendum(text=None, is_suffix=True):
+    """
+    format_addendum()
+
+    Formats text to be used as a prefix or a suffix.
+
+    Optional args
+    -------------
+    - text : str (default=None)
+        Text to be formatted. If None or "", an empty string is returned.
+    - is_suffix : bool (default=True)
+        If True, text will be formatted as a suffix. Otherwise, it will be 
+        formatted as a prefix.
+
+    Returns
+    -------
+    - text : str
+        Text, formatted as a suffix or prefix.
+    """
+
+    if text is None or len(text) == 0:
+        text = ""
+    
+    elif is_suffix and text[0] != "_":
+        text = f"_{text}" 
+
+    elif not is_suffix and text[-1] != "_":
+        text = f"{text}_"
+    
+    return text
 
 
 #############################################
@@ -535,7 +569,7 @@ def normalize_dataset_name(dataset_name="UCF101", short=False, eye="left"):
         dataset_name = "HMDB51"
     elif dataset_name.lower() in ["kinetics400", "k400"]:
         dataset_name = "k400" if short else "Kinetics400"
-    elif dataset_name.lower() == "gabors":
+    elif dataset_name.lower() in ["gabors", "gabor"]:
         dataset_name = "Gabors"
     elif dataset_name.lower() == "mousesim":
         dataset_name = "MouseSim"
@@ -572,7 +606,7 @@ def get_num_classes(dataset="UCF101"):
     """
 
     if isinstance(dataset, str):
-        dataset_name = normalize_dataset_name(dataset_name)
+        dataset_name = normalize_dataset_name(dataset)
 
         if dataset_name == "UCF101":
             num_classes = 101
@@ -902,6 +936,7 @@ def get_model_hyperparams(supervised=False, resume=False, test=False):
 
     training_params = ["lr", "num_epochs", "train_what", "use_scheduler", "wd"]
     if test:
+        model_params.append("test")
         ignore_params.extend(training_params)
         ignore_params.extend(
             ["dropout", "pred_step", "pretrained", "resume", "reset_lr"]
@@ -911,17 +946,22 @@ def get_model_hyperparams(supervised=False, resume=False, test=False):
         ignore_params.append("test")
         if resume:
             model_params.extend(["reset_lr", "resume"])
-            ignore_params.append("pretrained")
+            ignore_params.extend(["pretrained", "pred_step"])
         else:
             model_params.append("pretrained")
             ignore_params.extend(["reset_lr", "resume"])
+            if supervised:
+                ignore_params.append("pred_step")
+            else:
+                model_params.append("pred_step")
+
         if supervised:
             model_params.append("dropout")
-            ignore_params.append("pred_step")
         else:
-            model_params.append("pred_step")
             ignore_params.append("dropout")
-    
+
+
+
     return model_params, ignore_params
 
 
@@ -1151,16 +1191,23 @@ def save_hyperparameters(hyperparams, direc=None):
 
 
     # save hyperparameters (as yaml for legibility, as the file is light-weight)
-    base_name = "hyperparameters.yaml"
+    base_name = "hyperparameters"
     if test:
-        base_name = f"test_{base_name}"
+        gab_unexp_str = ""
+        dataset_dict = hyperparam_dict["dataset"]
+        if "unexp" in dataset_dict.keys():
+            gab_unexp_str = "_unexp" if dataset_dict["unexp"] else ""
+        test_suffix = get_test_suffix(test)
+
+        base_name = f"test_{base_name}_{test_suffix}{gab_unexp_str}"
         overwrite = True
     if resume:
         base_name = f"resume_{base_name}"
         overwrite = False
 
     hyperparams_path = get_unique_filename(
-        Path(direc, base_name), overwrite=overwrite
+        Path(direc, f"{base_name}.yaml"), 
+        overwrite=overwrite
         )
 
     Path(hyperparams_path).parent.mkdir(exist_ok=True, parents=True)
@@ -1168,4 +1215,200 @@ def save_hyperparameters(hyperparams, direc=None):
     with open(hyperparams_path, "w") as f:
         yaml.dump(hyperparam_dict, f)
 
+
+#############################################
+def load_hyperparameters(model_direc, prefix=None, suffix=None):
+    """
+    load_hyperparameters(model_direc)
+
+    Loads hyperparameter dictionaries.
+
+    Required args
+    -------------
+    - model_direc : str or Path
+        Model directory from which to retrieve hyperparameters.
+    
+    Optional args
+    -------------
+    - prefix : str (default=None)
+        Prefix with which to start the hyperparameters file, if applicable.
+    - suffix : str (default=None)
+        Suffix with which to end the hyperparameters file, if applicable.
+
+    Returns
+    -------
+    - hp_dict : dict
+        Nested hyperparameters dictionary.
+    """
+
+    if not Path(model_direc).is_dir():
+        raise OSError(f"{model_direc} is not a directory")
+
+    prefix_str = format_addendum(prefix, is_suffix=False)
+    suffix_str = format_addendum(suffix, is_suffix=True)
+    save_name = f"{prefix_str}hyperparameters{suffix_str}"
+
+    hp_dict_path = Path(model_direc, f"{save_name}.yaml")
+
+    if not hp_dict_path.is_file():
+        raise OSError(f"{hp_dict_path} does not exist.")
+
+    with open(hp_dict_path, "r") as f:
+        hp_dict = yaml.safe_load(f)
+    
+    return hp_dict
+
+
+#############################################
+def get_test_suffix(test_path):
+    """
+    get_test_suffix(test_path)
+
+    Returns a suffix to use to identify the model on which a test was run.
+
+    Required args
+    -------------
+    - test_path : str or path
+        Path to the model being tested.
+
+    Returns
+    -------
+    - test_suffix : str
+        Suffix to use to identify the model on which a test was run.
+    """
+    
+    if test_path == "random":
+        test_suffix = "random"
+    else:
+        test_suffix = Path(test_path).stem.split(".")[0]
+
+    return test_suffix
+
+
+#############################################
+def update_resume_args(args, resume_dir):
+    """
+    update_resume_args(args, resume_dir)
+
+    Identifies the checkpoint to resume from (last checkpoint recorded is best 
+    for avoiding bugs, and ensuring consistency). 
+    
+    If possible, reverts certain args values based on the associated 
+    hyperparameters file. Logs to the console the parameters that have been 
+    reverted, and those that have been updated. 
+    
+    Parameters irrelevant to resuming training, and technical parameters, are 
+    left as is.
+
+    Required args
+    -------------
+    - args : argparse.Namespace
+        Argparse namespace containing arguments used to set hyperparameters.
+    - resume_dir : str or path
+        Directory in which to search recursively for a model to resume from or
+        path to the model to reload.
+
+    Returns
+    -------
+    - args : argparse.Namespace
+        Argparse namespace updated based on recorded hyperparameters.
+    """
+
+    args = copy.deepcopy(args)
+
+    resume_dir = Path(resume_dir)
+    if resume_dir.is_file():
+        args.resume = resume_dir
+        resume_dir = resume_dir.parent
+        if resume_dir.stem == "model":
+            resume_dir = resume_dir.parent
+
+        if Path(resume_dir, "loss_data.json").is_file():
+            raise OSError(
+                "If resuming from a specific model, reloading from the loss "
+                "data dictionary in the main directory will cause errors if "
+                "the last recorded model is not reloaded.\nEither (1) specify "
+                "the main model directory only, or (2) to resume specifically "
+                "from this model, either place it in a new directory "
+                "(optionally with the associated hyperparameters.json file), "
+                "or use the 'pretrained' mode, instead of the 'resume' mode."
+                )
+    else:
+        from utils.checkpoint_utils import find_last_checkpoint
+        args.resume = find_last_checkpoint(resume_dir, raise_none=True)
+
+    try:
+        hp_dict = load_hyperparameters(args.resume.parent.parent)
+    except OSError as err:
+        warnings.warn(
+            "The following error occurred will attempting to reload the "
+            f"training hyperparameters to resume training: {err}\nTraining "
+            "will be resumed without reloading. However, note that this can "
+            "lead to bugs if the new parameters are not compatible with the "
+            "original parameters used to initialize the model and associated "
+            "files. The 'pretrained' mode may be preferred."
+        )
+        return args
+
+    args_keys = args.__dict__.keys()
+
+    # identify values to update or revert
+    update_vals = []
+    revert_vals = []
+    for key, sub_dict in hp_dict.items():
+
+        # technical: ignore all keys but "seed"
+        if key == "technical" and "seed" in sub_dict.keys():
+            if sub_dict["seed"] != args.seed: # update
+                update_vals.append(("seed", sub_dict["seed"], args.seed))
+
+        # dataset and model: go through all keys
+        elif key in ["dataset", "model"]: # go through all
+            update_keys = [
+                "dropout", "lr", "num_epochs", "wd", "U_prob", "unexp_epoch"
+                ]
+            for subkey, item in sub_dict.items():
+                if subkey in update_keys:
+                    args_val = getattr(args, subkey)
+                    if subkey == "wd" and args_val is None:
+                        revert_vals.append([subkey, args_val, item])
+                    elif item != args_val:
+                        update_vals.append((subkey, item, args_val))
+
+                elif subkey != "pretrained":
+                    if subkey in args_keys:
+                        args_val = getattr(args, subkey)
+                        if item != args_val:
+                            revert_vals.append((subkey, args_val, item))
+                    setattr(args, subkey, item)
+
+        # general: ignore some keys, reset some, and keep "save_best"
+        elif key == "general":
+            for subkey, item in sub_dict.items():
+                if subkey == "save_best": # reinstate
+                    if item != args.save_best:
+                        revert_vals.append(("save_best", args.save_best, item))
+                        args.save_best = item
+
+    # log relevant changes
+    log_str = ""
+    changes_types = [
+        "updated from their original settings to the newly specified ones", 
+        "reverted back to their original settings"
+        ]
+    for change_type, vals in zip(changes_types, [update_vals, revert_vals]):
+        if len(vals):
+            log_str = f"{log_str}\n" if len(log_str) else log_str
+            vals_str = f"\n{TAB}".join(
+                [f"{key}: from {st} to {end}" for key, st, end in vals]
+                )
+            log_str = (
+                f"{log_str}\nBased on the stored hyperparameters.json file, "
+                f"the following values have been {change_type}:"
+                f"\n{TAB}{vals_str}"
+            )
+    if len(log_str):
+        logger.warning(log_str, extra={"spacing": "\n"})
+
+    return args
 

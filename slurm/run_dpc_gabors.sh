@@ -3,7 +3,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:rtx8000:2
 #SBATCH --mem=48GB
-#SBATCH --array=0-23
+#SBATCH --array=0-15
 #SBATCH --time=5:00:00
 #SBATCH --job-name=dpc_gab
 #SBATCH --output=/home/mila/g/gillonco/scratch/dpc_gabors_%A_%a.out
@@ -22,11 +22,13 @@ FIXED_NET=resnet18
 FIXED_TRAIN_WHAT=all
 FIXED_IMG_DIM=128
 FIXED_AUGM_ARG="--no_augm"
-FIXED_BATCH_SIZE=32
-FIXED_TRAIN_LEN=500
+FIXED_BATCH_SIZE=15
+FIXED_TRAIN_LEN=900
 FIXED_GAB_IMG_LEN=3
+FIX_SEQ_LEN=$FIXED_GAB_IMG_LEN
 FIXED_U_PROB=0.08
 FIXED_NUM_WORKERS=8
+
 
 echo -e "\nFIXED HYPERPARAMETERS\n"\
 "dataset: $FIXED_DATASET\n"\
@@ -37,6 +39,7 @@ echo -e "\nFIXED HYPERPARAMETERS\n"\
 "batch size: $FIXED_BATCH_SIZE\n"\
 "training dataset length: $FIXED_TRAIN_LEN\n"\
 "Gabor image length: $FIXED_GAB_IMG_LEN\n"\
+"sequence length: $FIX_SEQ_LEN\n"\
 "U probability: $FIXED_U_PROB\n"\
 "number of workers: $FIXED_NUM_WORKERS\n"\
 
@@ -53,9 +56,9 @@ echo -e "EXTERNALLY SET HYPERPARAMETERS\n"\
 
 
 # 4. Array ID hyperparameters
-PRETRAINEDS=( no yes ) # 2
+PRETRAINEDS=( yes no ) # 2
 
-SIMPLES=( no semi full ) # 3
+SIMPLES=( no yes ) # 2
 
 U_POSSIZE_ARGS=( "" "--diff_U_possizes" ) # 2
 SUFFIX_ARGS=( "" "--suffix diff_U_possizes" )
@@ -87,7 +90,7 @@ MODEL=${MODELS[$MODELS_IDX]}
 
 # Set the pretrain path, if applicable
 if [[ $PRETRAINED == yes ]]; then
-    PRETRAINED_ARG="--pretrained "$SCRATCH"/dpc/pretrained/mousesim_left-128_r18_dpc-rnn/model/model_best_epoch715.pth.tar"
+    PRETRAINED_ARG="--pretrained "$SCRATCH"/dpc/pretrained/mousesim_left-128_r18_dpc-rnn/model/model_best_epoch946.pth.tar"
     UNEXP_EPOCH=30
 else
     PRETRAINED_ARG=""
@@ -95,21 +98,13 @@ else
 fi
 
 # Set the sequence parameters
-if [[ $SIMPLE == full ]]; then
-    SEQ_LEN=$FIXED_GAB_IMG_LEN
-    PRED_STEP=1
+if [[ $SIMPLE == yes ]]; then
+    PRED_STEP=1 # predict D/U only
     NUM_SEQ=4 # gray will never appear
     ROLL_ARG=""
 else
-    if [[ $SIMPLE == semi ]]; then
-        SEQ_LEN=$FIXED_GAB_IMG_LEN
-        PRED_STEP=1
-    else
-        SEQ_LEN=6
-        PRED_STEP=3 
-    fi
-
-    NUM_SEQ=$(expr $PRED_STEP + 5)
+    PRED_STEP=2
+    NUM_SEQ=5
     ROLL_ARG="--roll"
 fi
 
@@ -128,7 +123,6 @@ echo -e "\nARRAY ID HYPERPARAMETERS\n"\
 "model: $MODEL\n"\
 "U position/size argument: $U_POSSIZE_ARG\n"\
 "unexpected epoch: $UNEXP_EPOCH\n"\
-"sequence length: $SEQ_LEN\n"\
 "number of steps to predict: $PRED_STEP\n"\
 "number of consecutive sequences per batch item: $NUM_SEQ\n"\
 "roll argument: $ROLL_ARG\n"\
@@ -143,7 +137,7 @@ EXIT=0
 set -x # echo commands to console
 
 python run_model.py \
-    --output_dir $SCRATCH/dpc/models \
+    --output_dir $SCRATCH/dpc/gabor_models \
     --dataset $FIXED_DATASET \
     --net $FIXED_NET \
     --train_what $FIXED_TRAIN_WHAT \
@@ -158,7 +152,7 @@ python run_model.py \
     --model $MODEL \
     $U_POSSIZE_ARG \
     --unexp_epoch $UNEXP_EPOCH \
-    --seq_len $SEQ_LEN \
+    --seq_len $FIX_SEQ_LEN \
     --pred_step $PRED_STEP \
     --num_seq $NUM_SEQ \
     $ROLL_ARG \
@@ -176,15 +170,15 @@ set +x # stop echoing commands to console
 if [[ $MODEL == "lc-rnn" ]]; then
     echo -e "To test the model, run:\n"\
     "python run_model.py"\
-    "--model $MODEL"\
+    "--gabor_model $MODEL"\
     "--dataset $FIXED_DATASET"\
     "--img_dim $FIXED_IMG_DIM"\
     "--train_len $FIXED_TRAIN_LEN"\
     "--gab_img_len $FIXED_GAB_IMG_LEN"\
+    "--seq_len $FIX_SEQ_LEN"\
     "--U_prob $FIXED_U_PROB"\
     "$SEED_ARG"\
     "$U_POSSIZE_ARG"\
-    "--seq_len $SEQ_LEN"\
     "--num_seq $NUM_SEQ"\
     "$ROLL_ARG"\
     "--unexp_epoch 0"\

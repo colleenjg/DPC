@@ -423,7 +423,7 @@ class GeneralDataset(data.Dataset):
         if sample_num_seq:
             n = 1
             # select a start index
-            start_idx = np.random.choice(range(last_poss_start), n)
+            start_idx = np.random.choice(last_poss_start, n)
 
             # identify the start point for each sequence (consecutive)
             seq_start_idx = \

@@ -1,6 +1,7 @@
 import copy
 import glob
 import logging
+import numpy as np
 from pathlib import Path
 import re
 import warnings
@@ -8,7 +9,7 @@ import warnings
 import torch
 
 from model import resnet_2d3d
-from utils import training_utils
+from utils import misc_utils, training_utils
 
 logger = logging.getLogger(__name__)
 
@@ -162,14 +163,20 @@ def load_resume_checkpoint(checkpoint_path, model, optimizer=None,
     -------
     - log_idx : int
         Log index to resume from, for writing to tensorboard.
-    - best_acc : float
-        Best validation accuracy logged for the model.
+    - best_acc : float or list
+        Best validation accuracy logged for the model 
+        (or best validation accuracies for [exp, unexp] models, if trained on 
+        the Gabor dataset).
     - start_epoch_n : int
         Epoch number to resume from.
+    - gabor_unexp : bool
+        Whether the model, if trained on the Gabor dataset, was presented with 
+        unexpected sequences.
     """
 
     log_idx, start_epoch_n = 0, 0
     best_acc = None
+    gabor_unexp = None
 
     # check if the checkpoint exists
     if not Path(checkpoint_path).is_file():
@@ -178,18 +185,21 @@ def load_resume_checkpoint(checkpoint_path, model, optimizer=None,
             raise OSError(err_str)
         else:
             warnings.warn(err_str)
-            return log_idx, best_acc, start_epoch_n
+            return log_idx, best_acc, start_epoch_n, gabor_unexp
 
     # load checkpoint
     old_lr = None
     if "_lr" in str(checkpoint_path):
-        old_lr = float(re.search("_lr(.+?)_", checkpoint_path).group(1))
+        old_lr = float(re.search("_lr(.+?)_", str(checkpoint_path)).group(1))
     checkpoint = torch.load(
         checkpoint_path, map_location=torch.device("cpu")
         )
     checkpoint_epoch_n = load_key_from_checkpoint(
         checkpoint, ["epoch_n", "epoch"]
         )
+    if hasattr(checkpoint, "gabor_unexp"):
+        gabor_unexp = checkpoint["gabor_unexp"]
+
     start_epoch_n = checkpoint_epoch_n + 1
     log_idx = load_key_from_checkpoint(
         checkpoint, ["log_idx", "iteration"]
@@ -229,7 +239,7 @@ def load_resume_checkpoint(checkpoint_path, model, optimizer=None,
         f"(epoch {checkpoint_epoch_n})."
         )
 
-    return log_idx, best_acc, start_epoch_n
+    return log_idx, best_acc, start_epoch_n, gabor_unexp
 
     
 #############################################
@@ -342,10 +352,17 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
     -------
     - log_idx : int
         Log index to start or resume from, for writing to tensorboard.
-    - best_acc : float
-        Best validation accuracy to start or resume with.
+    - best_acc : float or list
+        Best validation accuracy logged for the model 
+        (or best validation accuracies for [exp, unexp] models, if trained on 
+        the Gabor dataset).
     - start_epoch_n : int
         Epoch number to start or resume from.
+    - test_suffix : str
+        Suffix to use to identify the model on which a test was run.
+    - gabor_unexp : bool
+        Whether the model, if trained on the Gabor dataset, was presented with 
+        unexpected sequences.
     """
 
     if bool(resume) + bool(pretrained) + bool(test) > 1:
@@ -353,13 +370,18 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
     
     log_idx, start_epoch_n = 0, 0
     best_acc = None
+    gabor_unexp = None
+    test_suffix = None
 
     if resume:
-        log_idx, best_acc, start_epoch_n = load_resume_checkpoint(
+        log_idx, best_acc, start_epoch_n, gabor_unexp = load_resume_checkpoint(
             resume, model, optimizer, lr=lr, reset_lr=reset_lr, raise_err=True
             )
     elif pretrained or test:
         reload_model = pretrained if pretrained else test
+
+        if test:
+            test_suffix = misc_utils.get_test_suffix(reload_model)
 
         if test and reload_model == "random":
             logger.warning("Loading random weights.")
@@ -369,16 +391,61 @@ def load_checkpoint(model, optimizer=None, resume=False, pretrained=False,
                 reload_model, model, raise_err=True, test=test
             )
     
-    return log_idx, best_acc, start_epoch_n
+    return log_idx, best_acc, start_epoch_n, test_suffix, gabor_unexp
 
 
 #############################################
-def save_checkpoint(state_dict, is_best=False, gap=1, filename=None, 
+def get_epoch_number(model_path):
+    """
+    get_epoch_number(model_path)
+
+    Returns the epoch number based on the model path.
+
+    Required args
+    -------------
+    - model_path : str or path
+        Path to the saved model, expected to take the form 'epochX.pth.tar' or 
+        'epochX_{suffix}.pth.tar'.
+    
+    Returns
+    -------
+    - epoch_n : int
+        Epoch number, extracted from the model path.
+    """
+    
+    nbr_part = Path(model_path).stem.split("_")[0].split(".")[0]
+
+    pre_nbr_part = "epoch"
+    if pre_nbr_part not in nbr_part:
+        raise ValueError(
+            f"'model_path' should have '{pre_nbr_part}' in the stem."
+            )
+    st = nbr_part.index(pre_nbr_part) + len(pre_nbr_part)
+
+    nbr_part = nbr_part[st:]
+
+    if not nbr_part.isdigit():
+        raise NotImplementedError(
+            "Expected model paths following the saved epoch name pattern "
+            "to end in form 'epochX.pth.tar' or 'epochX_{suffix}.pth.tar', "
+            f"but found {nbr_part} instead of a number. Cannot parse epoch "
+            "number from name."
+            )
+    
+    epoch_n = int(nbr_part)
+
+    return epoch_n
+
+
+#############################################
+def save_checkpoint(state_dict, is_best=False, gap=None, filename=None, 
+                    output_dir=".", epoch_n=0, gabor_unexp=None, 
                     keep_all=False):
     """
     save_checkpoint(state_dict)
 
-    Saves checkpoint under specified name, optionally removing previous versions.
+    Saves checkpoint under specified name, optionally removing previous 
+    versions.
 
     Required args
     -------------
@@ -391,32 +458,60 @@ def save_checkpoint(state_dict, is_best=False, gap=1, filename=None,
         If True, the current model is the best model, and additionally saved 
         under the name 'model_best_epoch{epoch_n}.pth.tar", where epoch_n is 
         retrieved from the state dictionary. 
-    - gap : int (default=1)
+    - gap : int (default=None)
         The gap between the current epoch and the previous epoch to remove, 
-        if keep_all is False.
+        if keep_all is False. If None, any previous epoch matching the pattern 
+        is removed.
     - filename : str or path (default=None)
         Filename under which to store checkpoint. If None, a default path name 
         is used.
+    - gabor_unexp : bool (default=None)
+        If not None, the value of the 'unexp' attribute of the Gabor dataset on 
+        which the model was trained. It is added to the model state dictionary, 
+        and to the save name pattern.
     - keep_all : bool (default=False)
         If False, previous epoch checkpoints are removed.
     """
     
-    if filename is None:
-        filename = Path("models", "checkpoint.pth.tar")
-    
-    torch.save(state_dict, filename)
-    
-    prev_epoch_n = state_dict["epoch_n"] - gap
-    last_epoch_path = Path(
-        Path(filename).parent, f"epoch{prev_epoch_n}.pth.tar"
-        )
-    if not keep_all and last_epoch_path.exists():
-        last_epoch_path.unlink() # remove
+    unexp_str = "_unexp" if gabor_unexp else ""
+    if gabor_unexp is not None:
+        state_dict["gabor_unexp"] = gabor_unexp
 
-    if is_best:
-        all_past_best = glob.glob(
-            str(Path(Path(filename).parent, "model_best_*.pth.tar"))
+    if output_dir is None:
+        output_dir = Path("models")
+
+    if filename is None:
+        filename = f"epoch{epoch_n}{unexp_str}.pth.tar"
+    filename = Path(output_dir, filename)
+    model_direc = filename.parent
+
+    # save model
+    torch.save(state_dict, str(filename))    
+
+    # remove previous epochs, if applicable
+    if not keep_all:
+        if gap is None:
+            all_existing = glob.glob(
+                str(Path(model_direc, f"epoch*{unexp_str}.pth.tar"))
             )
+            remove_ns = [get_epoch_number(ep_path) for ep_path in all_existing]
+            for n in remove_ns:
+                remove_path = Path(model_direc, f"epoch{n}{unexp_str}.pth.tar")
+                if remove_path.is_file() and remove_path != filename:
+                    Path(remove_path).unlink() # remove
+        else:
+            prev_epoch_n = state_dict["epoch_n"] - gap
+            last_epoch_path = Path(
+                model_direc, f"epoch{prev_epoch_n}{unexp_str}.pth.tar"
+                )                
+            if last_epoch_path.exists():
+                last_epoch_path.unlink() # remove
+
+
+    # store as best, and replace previous, if applicable
+    if is_best:
+        pattern = Path(model_direc, f"best{unexp_str}_epoch*.pth.tar")
+        all_past_best = glob.glob(str(pattern))
         for past_best in all_past_best:
             if Path(past_best).exists():
                 Path(past_best).unlink() # remove
@@ -424,6 +519,58 @@ def save_checkpoint(state_dict, is_best=False, gap=1, filename=None,
         epoch_n = state_dict["epoch_n"]
         torch.save(
             state_dict, 
-            Path(Path(filename).parent, f"model_best_epoch{epoch_n}.pth.tar")
+            Path(model_direc, f"best{unexp_str}_epoch{epoch_n}.pth.tar")
             )
+
+
+#############################################
+def find_last_checkpoint(output_dir, raise_none=True):
+    """
+    find_last_checkpoint(output_dir)
+
+    Finds the checkpoint for the last epoch recorded, following the pattern 
+    "epoch*.pth.tar" in the specified directory.
+
+    Required args
+    -------------
+    - output_dir : str or path
+        Directory in which to search recursively for a model.
+    
+    Optional args
+    -------------
+    - raise_none : bool (default=True)
+        If True and no model is found, an error is raised. Otherwise, if no 
+        model is found, a warning is thrown, but None is returned.
+
+    Returns
+    -------
+    - model_path : path
+        Path to the model with the last epoch number or
+        None, if none is found, and raise_none if False.
+    """
+
+
+    if not Path(output_dir).exists():
+        raise OSError(f"{output_dir} does not exist.")
+    if not Path(output_dir).is_dir():
+        raise OSError(f"{output_dir} is not a directory.")
+
+    epoch_pattern = "epoch*.pth.tar"
+    all_existing = glob.glob(
+        str(Path(output_dir, "**", epoch_pattern)), recursive=True
+        )
+    if not len(all_existing):
+        msg = (f"No models found recursively in {output_dir} with pattern "
+            f"'{epoch_pattern}'.")
+        if raise_none:
+            raise ValueError(msg)
+        else:
+            warnings.warn(msg)
+            return None
+
+    epoch_ns = [get_epoch_number(full_path) for full_path in all_existing]
+
+    model_path = Path(all_existing[np.argmax(epoch_ns)])
+
+    return model_path
 

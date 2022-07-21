@@ -843,6 +843,7 @@ class ResNet2d3d_full(nn.Module):
                 )
         ]
 
+        # add remaining layers
         self.in_planes = num_planes_out * block_type.expansion
         for i in range(1, num_blocks):
             use_final_relu = True

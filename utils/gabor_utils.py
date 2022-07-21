@@ -5,6 +5,7 @@ import copy
 from pathlib import Path
 import logging
 import sys
+import time
 import warnings
 
 from joblib import delayed, Parallel
@@ -47,6 +48,10 @@ class GaborConfusionMeter(loss_utils.ConfusionMeter):
     - self.unnest_idx : 1D array
         Indices for retrieving class order after nesting frames 
         (i.e., image types).
+    - self.U_prob : float
+        Probability of U frames.
+    - self.unexp : bool
+        Whether unexpected sequences are included.
 
     Methods
     -------
@@ -78,7 +83,7 @@ class GaborConfusionMeter(loss_utils.ConfusionMeter):
         Reinitializes current object with new class names.
     """
 
-    def __init__(self, class_names):
+    def __init__(self, class_names, U_prob=0.08, unexp=False):
         """
         GaborConfusionMeter(class_names)
 
@@ -89,9 +94,17 @@ class GaborConfusionMeter(loss_utils.ConfusionMeter):
         - class_names : array-like
             Ordered class names, where each class name is 
             (image_type, orientation).
+
+        Optional args
+        -------------
+        - U_prob : float (default=0.08)
+            Probability of U frames.
+        - unexp : bool (default=False)
+            Whether unexpected sequences are included.
         """
+
         self._set_properties = []
-        self.reinitialize_values_gabors(class_names)
+        self.reinitialize_values_gabors(class_names, U_prob, unexp)
         super().__init__(class_names)
 
 
@@ -107,7 +120,7 @@ class GaborConfusionMeter(loss_utils.ConfusionMeter):
         self._set_properties = []
 
 
-    def reinitialize_values_gabors(self, class_names):
+    def reinitialize_values_gabors(self, class_names, U_prob=0.08, unexp=False):
         """
         self.reinitialize_values_gabors(class_names)
 
@@ -119,6 +132,13 @@ class GaborConfusionMeter(loss_utils.ConfusionMeter):
         - class_names : array-like
             Ordered class names, where each class name is 
             (image_type, orientation).
+
+        Optional args
+        -------------
+        - U_prob : float (default=0.08)
+            Probability of U frames.
+        - unexp : bool (default=False)
+            Whether unexpected sequences are included.
         """
         
         self.delete_properties()
@@ -126,6 +146,9 @@ class GaborConfusionMeter(loss_utils.ConfusionMeter):
         super().reinitialize_values(class_names=class_names)
 
         image_types, mean_oris = list(zip(*class_names))
+
+        self.U_prob = float(U_prob)
+        self.set_unexp(unexp)
 
         self.image_types = sorted(set(image_types))
         if "N/A" in mean_oris:
@@ -181,6 +204,18 @@ class GaborConfusionMeter(loss_utils.ConfusionMeter):
             self._set_properties.append("_unnest_idx")
         
         return self._unnest_idx
+
+    def set_unexp(self, unexp=False):
+        """
+        self.set_unexp()
+
+        Optional args
+        -------------
+        - unexp : bool (default=False)
+            Whether unexpected sequences are included.
+        """
+
+        self.unexp = bool(unexp)
 
 
     def get_labels(self, nest_frames=False):
@@ -457,9 +492,9 @@ class GaborConfusionMeter(loss_utils.ConfusionMeter):
 
         storage_dict = super().get_storage_dict()
 
-        all_keys = ["image_types", "mean_oris"]
-        all_data = [self.image_types, self.mean_oris]
-        for key, data in zip(all_keys, all_data):
+        all_keys = ["image_types", "mean_oris", "U_prob", "unexp"]
+        for key in all_keys:
+            data = getattr(self, key)
             if isinstance(data, np.ndarray):
                 data = data.tolist()
             storage_dict[key] = data
@@ -481,7 +516,11 @@ class GaborConfusionMeter(loss_utils.ConfusionMeter):
             the GaborConfusionMeter object.
         """
 
-        self.reinitialize_values_gabors(storage_dict["class_names"])
+        self.reinitialize_values_gabors(
+            storage_dict["class_names"],
+            U_prob=storage_dict["U_prob"],
+            unexp=storage_dict["unexp"]
+            )
 
         super().load_from_storage_dict(storage_dict)
         self.class_names = [
@@ -552,7 +591,7 @@ def get_mean_U_oris(mean_oris):
 
 
 #############################################
-def get_gabor_classes(num_mean_oris=NUM_MEAN_ORIS, gray=True, U_prob=0.1, 
+def get_gabor_classes(num_mean_oris=NUM_MEAN_ORIS, gray=True, U_prob=0.08, 
                       diff_U_possizes=False):
     """
     get_gabor_classes()
@@ -565,7 +604,7 @@ def get_gabor_classes(num_mean_oris=NUM_MEAN_ORIS, gray=True, U_prob=0.1,
         Number of equally spaced orientations.
     - gray : bool (default=True)
         Whether gray frames are included.
-    - U_prob : float (default=0.1)
+    - U_prob : float (default=0.08)
         Probability of U frames.
     - diff_U_possizes : bool (default=False)
         Whether U frames have different positions/sizes from D frames.
@@ -608,7 +647,7 @@ def get_gabor_classes(num_mean_oris=NUM_MEAN_ORIS, gray=True, U_prob=0.1,
 
 
 #############################################
-def get_num_classes(num_mean_oris=NUM_MEAN_ORIS, gray=True, U_prob=0.1, 
+def get_num_classes(num_mean_oris=NUM_MEAN_ORIS, gray=True, U_prob=0.08, 
                     diff_U_possizes=False):
     """
     get_num_classes()
@@ -622,7 +661,7 @@ def get_num_classes(num_mean_oris=NUM_MEAN_ORIS, gray=True, U_prob=0.1,
         Number of equally spaced orientations.
     - gray : bool (default=True)
         Whether gray frames are included.
-    - U_prob : float (default=0.1)
+    - U_prob : float (default=0.08)
         Probability of U frames.
     - diff_U_possizes : bool (default=False)
         Whether U frames have different positions/sizes from D frames.
@@ -645,7 +684,7 @@ def get_num_classes(num_mean_oris=NUM_MEAN_ORIS, gray=True, U_prob=0.1,
 
 #############################################
 def get_image_class_and_label_dict(num_mean_oris=NUM_MEAN_ORIS, gray=True, 
-                                   U_prob=0.1, diff_U_possizes=False, 
+                                   U_prob=0.08, diff_U_possizes=False, 
                                    class_to_label=True):
     """
     get_image_class_and_label_dict()
@@ -658,7 +697,7 @@ def get_image_class_and_label_dict(num_mean_oris=NUM_MEAN_ORIS, gray=True,
         Number of equally spaced orientations.
     - gray : bool (default=True)
         Whether gray frames are included.
-    - U_prob : float (default=0.1)
+    - U_prob : float (default=0.08)
         Probability of U frames.
     - diff_U_possizes : bool (default=False)
         Whether U frames have different positions/sizes from D frames.
@@ -920,6 +959,43 @@ def image_label_to_class(image_label_and_class_dict, seq_labels,
 
     return seq_classes
 
+#############################################
+def get_best_acc(best_accs, save_best=True, unexp=None):
+    """
+    get_best_acc(best_accs)
+
+    Returns the best accuracy values to which to compare new accuracy values, 
+    for training/evaluating on [exp, unexp] Gabor dataset sequences.
+
+    Optional args
+    -------------
+    - best_accs : float or list (default=None)
+        Initial best accuracy value(s) based on which to calculate output, as 
+        either a list [exp, unexp], or a single value, specified by unexp. 
+        If None, the output is set to -np.inf, unless save_best is False.
+    - save_best : bool (default=True)
+        If False, the output best accuracy is set to None. 
+    - unexp : bool (default=None)
+        Whether best_accs, if a float, specifies the best accuracy for exp or 
+        unexp training/evaluating.
+
+    Returns
+    -------
+    - best_accs : list
+        Best accuracy values to use in comparison [exp, unexp].
+    """
+
+    if not isinstance(best_accs, list):
+        best_accs = [None, None] # exp, unexp
+        if unexp is not None:
+            best_accs[int(unexp)] = best_accs
+
+    best_accs = [
+        loss_utils.get_best_acc(acc, save_best) for acc in best_accs
+        ]
+
+    return best_accs
+
 
 #############################################
 def update_dataset_possizes(main_loader, val_loader=None, seed=None, incr=0):
@@ -1161,8 +1237,7 @@ def warn_supervised(dataset):
 
 #############################################
 def plot_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0, 
-                        unexp=False, U_prob=0.1, nest_frames=False, 
-                        output_dir="."):
+                        nest_frames=False, output_dir="."):
     """
     plot_gabor_conf_mat(gabor_conf_mat)
 
@@ -1181,11 +1256,6 @@ def plot_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0,
         and save name.
     - epoch_n : int (default=0)
         Epoch number, for use in plot title and save name,
-    - unexp : bool (default=False)
-        Whether unexpected sequences occurred at this epoch. Used in plot title.
-    - U_prob : float (default=0.1)
-        Probability at which U frames occurred, if unexp is True. Used in plot 
-        title.
     - nest_frames : bool (default=False)
         Whether to nest frames (image types) along each confusion matrix axis, 
         instead of preserving the class label order.
@@ -1195,19 +1265,23 @@ def plot_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0,
 
     if isinstance(gabor_conf_mat, dict):
         conf_mat_dict = gabor_conf_mat
-        keys = ["class_names", "mean_oris"]
+        keys = ["class_names", "unexp"]
         dict_types = ["ConfusionMeter", "GaborConfusionMeter"]
         for key, dict_type in zip(keys, dict_types):
             if key not in conf_mat_dict.keys():
                 raise RuntimeError(
                     f"Expected to find a {dict_type} storage dictionary."
                     )
-        gabor_conf_mat = GaborConfusionMeter(conf_mat_dict["class_names"])
+        gabor_conf_mat = GaborConfusionMeter(
+            conf_mat_dict["class_names"],
+            U_prob=conf_mat_dict["U_prob"],
+            unexp=conf_mat_dict["unexp"]
+            )
         gabor_conf_mat.load_from_storage_dict(conf_mat_dict)
 
     U_prob_str = ""
-    if unexp:
-        U_perc = U_prob * 100
+    if gabor_conf_mat.unexp:
+        U_perc = gabor_conf_mat.U_prob * 100
         U_perc = int(U_perc) if int(U_perc) == U_perc else U_perc
         U_prob_str = f", U freq: {U_perc}%"
 
@@ -1225,8 +1299,8 @@ def plot_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0,
 
 #############################################
 def plot_save_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0, 
-                             unexp=False, U_prob=0.1, nest_frames=False, 
-                             output_dir="."):
+                             nest_frames=False, output_dir=".", 
+                             raise_exists=False):
     """
     plot_save_gabor_conf_mat(gabor_conf_mat)
 
@@ -1247,26 +1321,24 @@ def plot_save_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0,
         and save name.
     - epoch_n : int (default=0)
         Epoch number, for use in plot title and save name,
-    - unexp : bool (default=False)
-        Whether unexpected sequences occurred at this epoch. Used in plot title.
-    - U_prob : float (default=0.1)
-        Probability at which U frames occurred, if unexp is True. Used in plot 
-        title.
     - nest_frames : bool (default=False)
         Whether to nest frames (image types) along each confusion matrix axis, 
         instead of preserving the class label order.
-    - output_dir : str or path
+    - output_dir : str or path (default=".")
         Main directory in which to save the plotted confusion matrix under the 
         GABOR_CONF_MAT_DIREC directory. Also, the directory from which to load 
         the json file, if it exists, and where the updated or new json file is 
         saved.
+    - raise_exists : bool (default=False)
+        If True and the epoch number key exists, an error is raised. Otherwise, 
+        a warning is thrown and the key is overwritten.
     """
 
     output_dir = Path(output_dir, GABOR_CONF_MAT_DIREC)
     
     plot_gabor_conf_mat(
-        gabor_conf_mat, mode=mode, epoch_n=epoch_n, unexp=unexp, U_prob=U_prob, 
-        nest_frames=nest_frames, output_dir=output_dir
+        gabor_conf_mat, mode=mode, epoch_n=epoch_n, nest_frames=nest_frames, 
+        output_dir=output_dir
         )
 
     gabor_conf_mat_dict_path = Path(output_dir, "gabor_confusion_mat_data.json")
@@ -1282,9 +1354,13 @@ def plot_save_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0,
     # only overwrite for test mode
     epoch_key = f"epoch_{epoch_n}"
     if mode != "test" and epoch_key in gabor_conf_mat_dict[mode]:
-        raise RuntimeError(
-            f"{epoch_n} epoch key for {mode} mode already exists."
-            )
+        msg = f"Epoch key for epoch {epoch_n}, {mode} mode already exists."
+        if raise_exists:
+            raise RuntimeError(msg)
+        else:
+            warnings.warn(f"{msg} It will be overwritten.")
+            time.sleep(5) # to allow for skipping file removal.
+
     
     gabor_conf_mat_dict[mode][epoch_key] = \
         gabor_conf_mat.get_storage_dict()
@@ -1294,9 +1370,8 @@ def plot_save_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0,
 
 
 #############################################
-def load_plot_gabor_conf_mat(gabor_conf_mat_dict_path, unexp_epoch=None, 
-                             U_prob=0.1, nest_frames=False, output_dir=None, 
-                             parallel=False):
+def load_plot_gabor_conf_mat(gabor_conf_mat_dict_path, nest_frames=False, 
+                             output_dir=None, parallel=False):
     """
     load_plot_gabor_conf_mat(gabor_conf_mat_dict_path)
 
@@ -1314,11 +1389,6 @@ def load_plot_gabor_conf_mat(gabor_conf_mat_dict_path, unexp_epoch=None,
     - mode : str (default="train")
         Dataset mode (i.e., "train", "val", or "test"), for use in plot title 
         and save name.
-    - unexp_epoch : int (default=None)
-        Epoch number as of which unexpected sequences were introduced.
-    - U_prob : float (default=0.1)
-        Probability at which U frames occurred, if unexp is True. Used in plot 
-        title.
     - nest_frames : bool (default=False)
         Whether to nest frames (image types) along each confusion matrix axis, 
         instead of preserving the class label order.
@@ -1339,7 +1409,6 @@ def load_plot_gabor_conf_mat(gabor_conf_mat_dict_path, unexp_epoch=None,
         gabor_conf_mat_dict = json.load(f)
 
     plot_kwargs = {
-        "U_prob"     : U_prob,
         "nest_frames": nest_frames 
     }
 
@@ -1352,8 +1421,6 @@ def load_plot_gabor_conf_mat(gabor_conf_mat_dict_path, unexp_epoch=None,
         raise RuntimeError(
             f"Expected {gabor_conf_mat_dict_path} to be storing a dictionary."
             )
-        
-    unexp_epoch = np.inf if unexp_epoch is None else int(unexp_epoch)
 
     for mode_key, mode_dict in gabor_conf_mat_dict.items():
         if not isinstance(mode_dict, dict):
@@ -1365,7 +1432,7 @@ def load_plot_gabor_conf_mat(gabor_conf_mat_dict_path, unexp_epoch=None,
         plot_kwargs["mode"] = mode_key
 
         # collect epoch numbers and unexp values
-        epoch_ns, unexps = [], []
+        epoch_ns = []
         epoch_prefix = "epoch_"
         for epoch_key, conf_mat_dict in mode_dict.items():
             if not epoch_key.startswith(epoch_prefix):
@@ -1375,7 +1442,6 @@ def load_plot_gabor_conf_mat(gabor_conf_mat_dict_path, unexp_epoch=None,
                     )
             epoch_n = int(epoch_key.replace(epoch_prefix, ""))
             epoch_ns.append(epoch_n)
-            unexps.append((epoch_n >= unexp_epoch))
 
         num_epochs = len(mode_dict)
         logger.info(
@@ -1388,17 +1454,16 @@ def load_plot_gabor_conf_mat(gabor_conf_mat_dict_path, unexp_epoch=None,
 
             Parallel(n_jobs=n_jobs)(
                 delayed(plot_gabor_conf_mat)(
-                    mode_dict[f"{epoch_prefix}{epoch_n}"], epoch_n=epoch_n, 
-                    unexp=unexp, **plot_kwargs
-                    ) for epoch_n, unexp 
-                in tqdm(zip(epoch_ns, unexps), total=num_epochs)
+                    mode_dict[f"{epoch_prefix}{epoch_n}"], 
+                    epoch_n=epoch_n, **plot_kwargs
+                    ) for epoch_n in tqdm(epoch_ns, total=num_epochs)
             )
         
         else:
-            for epoch_n, unexp in tqdm(zip(epoch_ns, unexps), total=num_epochs):
+            for epoch_n in tqdm(epoch_ns, total=num_epochs):
                 plot_gabor_conf_mat(
                     mode_dict[f"{epoch_prefix}{epoch_n}"], 
-                    epoch_n=epoch_n, unexp=unexp, **plot_kwargs
+                    epoch_n=epoch_n, **plot_kwargs
                     )
 
 
@@ -1424,13 +1489,17 @@ def init_gabor_conf_mat(dataset):
         raise ValueError("'dataset' should be a Gabor dataset object.")
 
     gabor_classes = list(dataset.class_dict_encode.keys())
-    confusion_mat = GaborConfusionMeter(gabor_classes)
+    confusion_mat = GaborConfusionMeter(
+        gabor_classes,
+        U_prob=dataset.U_prob,
+        unexp=dataset.unexp
+        )
 
     return confusion_mat
 
 
 #############################################
-def init_gabor_records(dataset, init_conf_mat=True):
+def init_gabor_records(dataset):
     """
     init_gabor_records(dataset)
 
@@ -1463,24 +1532,22 @@ def init_gabor_records(dataset, init_conf_mat=True):
     - acc_dict : dict
         Dictionary for collecting accuracy data, with the same keys as 
         loss_dict.
-    - confusion_mat : GaborConfusionMeter or None
-        GaborConfusionMeter object or None, if init_conf_mat is False.
     """
 
     if isinstance(dataset, str):
         raise ValueError("'dataset' should be a Gabor dataset object.")
 
     gabor_classes = list(dataset.class_dict_encode.keys())
-    if init_conf_mat:
-        confusion_mat = init_gabor_conf_mat(dataset)
-    else:
-        confusion_mat = None
 
     # initialize loss/accuracy dictionaries
     loss_dict = dict()
     acc_dict = dict()
 
     for gabor_image, gabor_ori in gabor_classes:
+        gabor_image = str(gabor_image)
+        gabor_ori = str(gabor_ori)
+        if gabor_ori != "N/A":
+            gabor_ori = str(float(gabor_ori)) # for consistency
         if gabor_image not in loss_dict.keys():
             loss_dict[gabor_image] = list()
             acc_dict[gabor_image] = list()
@@ -1492,7 +1559,7 @@ def init_gabor_records(dataset, init_conf_mat=True):
         acc_dict[key] = list()
         loss_dict[key] = list()
 
-    return loss_dict, acc_dict, confusion_mat
+    return loss_dict, acc_dict
 
 
 #############################################
@@ -1597,7 +1664,7 @@ def update_records(dataset, loss_dict, acc_dict, output, sup_target,
             "suggesting a label interpretation error."
             )
 
-    # add to meters
+    # add to lists
     batch_loss = batch_loss.reshape(-1)
     for key in loss_dict.keys():
         str_key = str(key)
@@ -1621,7 +1688,7 @@ def update_records(dataset, loss_dict, acc_dict, output, sup_target,
     for key, data in zip(keys, all_data):
         n_total = len(data)
         acc_dict[key].append(data.sum().item() / n_total)
-        loss_dict[key].append(batch_loss[data].mean().item())
+        loss_dict[key].append(batch_loss.mean().item()) # can't distinguish
 
 
 #############################################
@@ -1632,10 +1699,6 @@ if __name__ == "__main__":
         help="path of Gabor confusion matrix data to replot")
     parser.add_argument("--nest_frames", action="store_true",
         help="If True, Gabor frames are nested instead of orientations")
-    parser.add_argument("--unexp_epoch", default=None,
-        help="epoch as of which unexpected sequences are included.")
-    parser.add_argument("--U_prob", type=float, default=0.1,
-        help="probability of unexpected U frames, if included.")
 
     parser.add_argument("--output_dir", default=None, 
         help=("directory in which to save files. If None, it is inferred from "
@@ -1655,8 +1718,6 @@ if __name__ == "__main__":
     else:
         load_plot_gabor_conf_mat(
             args.gabor_conf_mat_dict_path, 
-            unexp_epoch=args.unexp_epoch,
-            U_prob=args.U_prob,
             nest_frames=args.nest_frames, 
             output_dir=args.output_dir,
             parallel=args.parallel,

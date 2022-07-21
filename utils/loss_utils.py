@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-import yaml
 
 sys.path.extend(["..", str(Path("..", "utils"))])
 from utils import misc_utils, plot_utils
@@ -1201,7 +1200,7 @@ def get_best_acc(best_acc=None, save_best=True):
 def init_loss_dict(dataset, direc=".", ks=[1, 3, 5], val=True, 
                    supervised=False, save_by_batch=False, light=True):
     """
-    init_loss_dict()
+    init_loss_dict(dataset)
 
     Initializes a loss dictionary, either from an existing file or from 
     scratch.
@@ -1256,7 +1255,7 @@ def init_loss_dict(dataset, direc=".", ks=[1, 3, 5], val=True,
         if val:
         'val': sub-dictionary for the val mode, with the same keys as 'train', 
                and, if supervised,
-            'confusion_matrix': for confusion matrices
+            'confusion_mat': for confusion matrices
     """
 
     loss_dict_path = Path(direc, "loss_data.json")
@@ -1285,9 +1284,7 @@ def init_loss_dict(dataset, direc=".", ks=[1, 3, 5], val=True,
     is_gabor = hasattr(dataset, "num_gabors")
     if is_gabor:
         from utils.gabor_utils import init_gabor_records
-        gabor_loss_dict, gabor_acc_dict, _ = init_gabor_records(
-            dataset, init_conf_mat=False
-            )
+        gabor_loss_dict, gabor_acc_dict = init_gabor_records(dataset)
         dataset_keys = ["gabor_loss_dict", "gabor_acc_dict"]
 
     for main_key in main_keys:
@@ -1295,7 +1292,7 @@ def init_loss_dict(dataset, direc=".", ks=[1, 3, 5], val=True,
             loss_dict[main_key] = dict()
         sub_keys = shared_keys + batch_keys + dataset_keys
         if main_key == "val" and supervised:
-            sub_keys = sub_keys + ["confusion_matrix"]
+            sub_keys = sub_keys + ["confusion_mat"]
         for key in sub_keys:
             if key not in loss_dict[main_key].keys():
                 if key == "gabor_loss_dict":
@@ -1309,8 +1306,8 @@ def init_loss_dict(dataset, direc=".", ks=[1, 3, 5], val=True,
 
 
 #############################################
-def populate_loss_dict(src_dict, target_dict, append_confusion_matrices=True, 
-                       is_best=False):
+def populate_loss_dict(src_dict, target_dict, append_conf_matrices=True, 
+                       is_best=False, gabor_unexp=None):
     """
     populate_loss_dict(src_dict, target_dict)
 
@@ -1321,31 +1318,44 @@ def populate_loss_dict(src_dict, target_dict, append_confusion_matrices=True,
     -------------
     - src_dict : dict
         Dictionary from which to get data to store in the target dictionary.
+        See init_loss_dict() for key details.
     - target_dict : dict
-        Dictionary in which to store data.
+        Dictionary in which to store data. See init_loss_dict() for key details.
 
     Optional args
     -------------
-    - append_confusion_matrices : bool (default=True)
+    - append_conf_matrices : bool (default=True)
         If True, confusion matrix data is appended. Otherwise, it replaces any 
-        previously stored value under the 'confusion_matrix' key. Only applies 
-        if the 'confusion_matrix' key is present in the source and target 
+        previously stored value under the 'confusion_mat' key. Only applies 
+        if the 'confusion_mat' key is present in the source and target 
         dictionary. 
     - is_best : bool (default=False)
-        If True, and the 'confusion_matrix' key is present in the source 
+        If True, and the 'confusion_mat' key is present in the source 
         dictionary, the confusion matrix data is saved under the 
-        'confusion_matrix_best' key in the target dictionary.
+        'confusion_mat_best', with the epoch stored under the 'epoch_n_best' 
+        key in the target dictionary.
+    - gabor_unexp : bool
+        Whether the model, if trained on the Gabor dataset, was presented with 
+        unexpected sequences. If so, the "_unexp" suffix is added to the 
+        'confusion_mat_best' and 'epoch_n_best' keys.
     """
 
-    conf_matrix_key = "confusion_matrix"
+    confusion_mat_key = "confusion_mat"
+
+    for loss_sub_dict in [src_dict, target_dict]:
+        if "train" in loss_sub_dict.keys() or "val" in loss_sub_dict.keys():
+            raise ValueError(
+                "'src_dict' and 'target_dict' should be mode dictionaries, "
+                "and not contain 'train' or 'val' keys."
+                )
 
     for key, value in src_dict.items():
         if key not in target_dict.keys():
             continue
-        if key == conf_matrix_key and not append_confusion_matrices:
+        if key == confusion_mat_key and not append_conf_matrices:
             continue
          # append the full dictionary, only if it's the confusion matrix
-        if key == conf_matrix_key or not isinstance(value, dict):
+        if key == confusion_mat_key or not isinstance(value, dict):
             target_dict[key].append(src_dict[key])  
         else:
             if not isinstance(target_dict[key], dict):
@@ -1356,11 +1366,15 @@ def populate_loss_dict(src_dict, target_dict, append_confusion_matrices=True,
             populate_loss_dict(value, target_dict[key])
 
     # if not appending, check if it should be replaced
-    if conf_matrix_key in src_dict:
-        if not append_confusion_matrices:
-            target_dict[conf_matrix_key] = src_dict[conf_matrix_key]
+    if confusion_mat_key in src_dict:
+        if not append_conf_matrices:
+            target_dict[confusion_mat_key] = src_dict[confusion_mat_key]
         if is_best:
-            target_dict["confusion_matrix_best"] = src_dict[conf_matrix_key]
+            gab_unexp_str = "_unexp" if gabor_unexp else ""
+            target_dict[f"epoch_n_best{gab_unexp_str}"] = src_dict["epoch_n"]
+            target_dict[f"confusion_mat_best{gab_unexp_str}"] = \
+                src_dict[confusion_mat_key]
+            
 
                             
 #############################################
@@ -1432,26 +1446,32 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
     if dataset == "Gabors":
         unexp_str_pr = f" (unexp. epoch: {unexp_epoch})"
 
-    by_batches = [False]
+    plot_what_vals = ["main"]
     if "avg_loss_by_batch" in loss_dict["train"].keys():
-        by_batches.append(True)
+        plot_what_vals.append("by_batch")
+    if "gabor_loss_dict" in loss_dict["train"].keys():
+        plot_what_vals.append("by_gabor")
 
-    for by_batch in by_batches:
-        if by_batch:
-            batch_str = "_by_batch"
-            batch_str_pr = " (average by batch)"
-        else:
-            batch_str, batch_str_pr = "", ""
+    for plot_what in plot_what_vals:
+        ext_str, ext_str_pr = "", ""
+        y = 1
+        if plot_what in ["by_batch", "by_gabor"]:
+            ext_str = f"_{plot_what}"
+            if plot_what == "by_batch":
+                ext_str_pr = " (average by batch)"
+            else:
+                y = 0.93
+                ext_str_pr = " (split by class value comp.)"            
 
         fig = plot_utils.plot_from_loss_dict(
             loss_dict, num_classes=num_classes, dataset=dataset, 
-            unexp_epoch=unexp_epoch, by_batch=by_batch
+            unexp_epoch=unexp_epoch, plot_what=plot_what
             )
         title = (f"{dataset[0].capitalize()}{dataset[1:]} dataset"
-            f"{unexp_str_pr}{seed_str_pr}{batch_str_pr}")
-        fig.suptitle(title)
+            f"{unexp_str_pr}{seed_str_pr}{ext_str_pr}")
+        fig.suptitle(title, y=y)
 
-        full_path = Path(output_dir, f"{savename}{batch_str}.svg")
+        full_path = Path(output_dir, f"{savename}{ext_str}.svg")
         fig.savefig(full_path, bbox_inches="tight")
 
 
@@ -1462,6 +1482,8 @@ def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
     save_loss_dict(loss_dict)
 
     Saves a loss dictionary, and optionally plots loss data.
+
+    Before saving the dictionary, checks for potential problems in the file.
 
     Required args
     -------------
@@ -1518,6 +1540,33 @@ def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
     """
     
     full_path = Path(output_dir, f"loss_data.json")
+
+    # check that there are a consistent number of batches per epoch, if recorded
+    for key, subdict in loss_dict.items():
+        if "avg_loss_by_batch" in subdict.keys():
+            vals_count = subdict["avg_loss_by_batch"]
+        elif "gabor_loss_dict" in subdict.keys():
+            vals_count = subdict["gabor_loss_dict"]["overall"]
+        else:
+            continue
+        num_batches_per_unique = []
+        for vals in vals_count:
+            n_vals_str = str(len(vals))
+            if n_vals_str not in num_batches_per_unique:
+                num_batches_per_unique.append(n_vals_str)
+        if len(num_batches_per_unique) > 1:
+            raise RuntimeError(
+                "Found an inconsistent number of batches per epoch "
+                f"({', '.join(num_batches_per_unique)}). This is likely due "
+                "to resuming training with a different number of devices, "
+                "leading to a change in batch size and number of batches per "
+                "epoch. To address this, consider resuming with the same "
+                "number of devices as before, or copying the model (and "
+                "optionally the associated hyperparameters.json file) into a "
+                "new folder, so that the existing loss dictionary is not "
+                "reloaded."
+                )
+
         
     with open(full_path, "w") as f:
         json.dump(loss_dict, f)
@@ -1620,11 +1669,9 @@ def plot_conf_mat(conf_mat, mode="val", suffix=None, epoch_n=None,
         Additional confusion matrix plotting arguments for conf_mat.plot_mat()
     """
 
-    suffix_str = ""
-    if suffix is not None and len(suffix):
-        suffix_str = suffix if suffix_str[0] == "_" else f"_{suffix}"
+    suffix_str = misc_utils.format_addendum(suffix, is_suffix=True)
 
-    save_name = f"{mode}_confusion_matrix{suffix_str}.svg"
+    save_name = f"{mode}_confusion_mat{suffix_str}.svg"
     conf_mat_path = Path(output_dir, save_name)
 
     if suffix == "best":
@@ -1673,9 +1720,13 @@ def load_plot_conf_mat(conf_mat_dict, mode="val", suffix=None,
         raise RuntimeError(f"Expected {conf_mat_dict} to be a dictionary.")
     
     plot_mat_kwargs = dict()
-    if "mean_oris" in conf_mat_dict.keys():
+    if "unexp" in conf_mat_dict.keys():
         from utils.gabor_utils import GaborConfusionMeter
-        conf_mat = GaborConfusionMeter(conf_mat_dict["class_names"])
+        conf_mat = GaborConfusionMeter(
+            conf_mat_dict["class_names"],
+            U_prob=conf_mat_dict["U_prob"],
+            unexp=conf_mat_dict["unexp"]
+            )
     else:
         conf_mat = ConfusionMeter(conf_mat_dict["class_names"])
         plot_mat_kwargs["incl_class_names"] = not(omit_class_names)
@@ -1686,6 +1737,32 @@ def load_plot_conf_mat(conf_mat_dict, mode="val", suffix=None,
         conf_mat, mode=mode, suffix=suffix, epoch_n=epoch_n, 
         output_dir=output_dir, **plot_mat_kwargs
         )
+
+
+#############################################
+def plot_best_conf_mat(loss_sub_dict, mode="val", omit_class_names=True, 
+                               output_dir="."):
+    """
+    plot_best_conf_mat(loss_sub_dict)
+    """
+    
+    if "train" in loss_sub_dict.keys() or "val" in loss_sub_dict.keys():
+        raise ValueError(
+            "'loss_sub_dict' should be mode dictionaries, and not contain "
+            "'train' or 'val' keys."
+            )
+
+    for key in ["confusion_mat_best", "confusion_mat_best_unexp"]:
+        epoch_key = key.replace("confusion_mat", "epoch_n")
+        suffix = key.replace("confusion_mat_", "")
+        
+        if key in loss_sub_dict.keys():
+            best_epoch_n = loss_sub_dict[epoch_key]
+            load_plot_conf_mat(
+                loss_sub_dict[key], mode=mode, suffix=suffix, 
+                omit_class_names=omit_class_names, epoch_n=best_epoch_n, 
+                output_dir=output_dir
+                )
 
 
 #############################################
@@ -1706,11 +1783,18 @@ def plot_conf_mats(loss_dict, epoch_n=-1, omit_class_names=False,
         'epoch_n' (list): Epoch number per epoch.
         
         if 'val' key:
-        'confusion_matrix' (list or dict): Confusion matrix storage 
+        'confusion_mat' (list or dict): Confusion matrix storage 
             dictionaries either for the final epoch or all epochs.
+        
         and optionally:
-        'confusion_matrix_best' (dict)   : Confusion matrix storage 
+        'confusion_mat_best' (dict)      : Confusion matrix storage 
             dictionaries for the best epoch.
+        'confusion_mat_best_unexp' (dict): Confusion matrix storage 
+            dictionaries for the best epoch, when Gabors dataset was set to 
+            include unexpected sequences.
+        'epoch_n_best' (int)                : Best epoch number.
+        'epoch_n_best_unexp' (int)          : Best epoch number, when Gabors 
+            dataset was set to include unexpected sequences.
 
     Optional args
     -------------
@@ -1726,8 +1810,8 @@ def plot_conf_mats(loss_dict, epoch_n=-1, omit_class_names=False,
     """
     
     for mode, mode_dict in loss_dict.items():
-        if "confusion_matrix" in mode_dict.keys():
-            conf_mat_dict = mode_dict["confusion_matrix"]
+        if "confusion_mat" in mode_dict.keys():
+            conf_mat_dict = mode_dict["confusion_mat"]
             if isinstance(conf_mat_dict, list):
                 if epoch_n == -1:
                     epoch_n = len(conf_mat_dict) - 1
@@ -1747,25 +1831,17 @@ def plot_conf_mats(loss_dict, epoch_n=-1, omit_class_names=False,
                 omit_class_names=omit_class_names, output_dir=output_dir
                 )
 
-        if "confusion_matrix_best" in mode_dict.keys():
-            best_idx = np.argmax(mode_dict["acc"])
-            best_epoch_n = mode_dict["epoch_n"][best_idx]
-
-            load_plot_conf_mat(
-                mode_dict["confusion_matrix_best"], 
-                mode=mode, 
-                suffix="best", 
-                omit_class_names=omit_class_names,
-                epoch_n=best_epoch_n,
-                output_dir=args.output_dir
-                )
+        plot_best_conf_mat(
+            mode_dict, mode=mode, omit_class_names=omit_class_names, 
+            output_dir=output_dir
+            )
 
 
 #############################################
-def save_confusion_mat_dict(conf_mat_dict, prefix=None, output_dir=".", 
-                            overwrite=True):
+def save_conf_mat_dict(conf_mat_dict, prefix=None, suffix=None, output_dir=".", 
+                       overwrite=True):
     """
-    save_confusion_mat_dict(conf_mat_dict)
+    save_conf_mat_dict(conf_mat_dict)
 
     Saves a ConfusionMeter storage dictionary as a json file.
 
@@ -1785,15 +1861,13 @@ def save_confusion_mat_dict(conf_mat_dict, prefix=None, output_dir=".",
         Otherwise, a unique file name is identified.
     """
 
-    save_name = "confusion_matrix_data.json"
-    if prefix is not None and len(prefix):
-        if prefix[-1] != "_":
-            prefix = f"{prefix}_"
-        save_name = f"{prefix}{save_name}"
+    prefix_str = misc_utils.format_addendum(prefix, is_suffix=False)
+    suffix_str = misc_utils.format_addendum(suffix, is_suffix=True)
+    save_name = f"{prefix_str}confusion_mat_data{suffix_str}"
 
-    save_path = Path(output_dir, save_name)
     save_path = misc_utils.get_unique_filename(
-        Path(output_dir, save_name), overwrite=overwrite
+        Path(output_dir, f"{save_name}.json"), 
+        overwrite=overwrite
         )
 
     with open(save_path, "w") as f:
@@ -1823,19 +1897,11 @@ def load_confusion_mat_dict(prefix=None, suffix=None, output_dir="."):
         ConfusionMeter storage dictionary.
     """
 
-    save_name = "confusion_matrix_data.json"
+    prefix_str = misc_utils.format_addendum(prefix, is_suffix=False)
+    suffix_str = misc_utils.format_addendum(suffix, is_suffix=True)
+    save_name = f"{prefix_str}confusion_mat_data{suffix_str}"
 
-    if prefix is not None and len(prefix):
-        if prefix[-1] != "_":
-            prefix = f"{prefix}_"
-        save_name = f"{prefix}{save_name}"
-
-    if suffix is not None and len(suffix):
-        if suffix[0] != "_":
-            suffix = f"_{suffix}"
-        save_name = f"{save_name}{suffix}"
-
-    save_path = Path(output_dir, save_name)
+    save_path = Path(output_dir, f"{save_name}.json")
     if save_path.is_file():
         with open(save_path, "r") as f:
             conf_mat_dict = json.load(f)
@@ -1849,6 +1915,8 @@ def load_confusion_mat_dict(prefix=None, suffix=None, output_dir="."):
 def load_loss_hyperparameters(model_direc, suffix=None): 
     """
     load_loss_hyperparameters(model_direc)
+
+    Loads loss and hyperparameter dictionaries.
 
     Required args
     -------------
@@ -1872,11 +1940,18 @@ def load_loss_hyperparameters(model_direc, suffix=None):
         'top{k}' (list) : Final local top k accuracy average per epoch.
 
         if 'val' key:
-        'confusion_matrix' (list or dict): Confusion matrix storage 
+        'confusion_mat' (list or dict)   : Confusion matrix storage 
             dictionaries either for the final epoch or all epochs.
+
         and optionally:
-        'confusion_matrix_best' (dict)   : Confusion matrix storage 
+        'confusion_mat_best' (dict)      : Confusion matrix storage 
             dictionaries for the best epoch.
+        'confusion_mat_best_unexp' (dict): Confusion matrix storage 
+            dictionaries for the best epoch, when Gabors dataset was set to 
+            include unexpected sequences.
+        'epoch_n_best' (int)                : Best epoch number.
+        'epoch_n_best_unexp' (int)          : Best epoch number, when Gabors 
+            dataset was set to include unexpected sequences.
 
         and optionally:
         'avg_loss_by_batch' (2D list)       : average loss values with dims:
@@ -1911,22 +1986,15 @@ def load_loss_hyperparameters(model_direc, suffix=None):
     if not Path(model_direc).is_dir():
         raise ValueError(f"{model_direc} is not a directory")
 
-    suffix_str = ""
-    if suffix is not None and len(suffix):
-        suffix_str = suffix if suffix_str[0] == "_" else f"_{suffix}"
+    hp_dict =  misc_utils.load_hyperparameters(model_direc, suffix)
 
+    suffix_str = misc_utils.format_addendum(suffix, is_suffix=True)
     loss_dict_path = Path(model_direc, f"loss_data{suffix_str}.json")
-    hp_dict_path = Path(model_direc, f"hyperparameters{suffix_str}.yaml")
-
     if not loss_dict_path.is_file():
         raise OSError(f"{loss_dict_path} does not exist.")
-    if not hp_dict_path.is_file():
-        raise OSError(f"{hp_dict_path} does not exist.")
     
     with open(loss_dict_path, "r") as f:
         loss_dict = json.load(f)
-    with open(hp_dict_path, "r") as f:
-        hp_dict = yaml.safe_load(f)
 
     return loss_dict, hp_dict
 
@@ -1974,26 +2042,31 @@ if __name__ == "__main__":
 
         if args.test:
             conf_mat_dict = load_confusion_mat_dict(
-                prefix="test", output_dir=args.model_direc
+                prefix="test", 
+                suffix=args.file_suffix,
+                output_dir=args.model_direc
                 )
 
             load_plot_conf_mat(
                 conf_mat_dict,
                 mode="test",
                 epoch_n=0,
+                suffix=args.file_suffix,
                 omit_class_names=args.omit_class_names, 
                 output_dir=args.output_dir
                 )
 
         else:
             loss_dict, hp_dict = load_loss_hyperparameters(
-                args.model_direc, suffix=args.file_suffix
+                args.model_direc, 
+                suffix=args.file_suffix
                 )
 
             # plot and save loss
             if not args.conf_mat_only:
                 loss_plot_kwargs = get_loss_plot_kwargs(
-                    hp_dict, num_classes=args.num_classes
+                    hp_dict, 
+                    num_classes=args.num_classes
                     )
 
                 plot_from_loss_dict(
