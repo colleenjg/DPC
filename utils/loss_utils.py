@@ -1247,6 +1247,8 @@ def init_loss_dict(dataset, direc=".", ks=[1, 3, 5], val=True,
                 'target_by_batch': for target values for each batch
             
             if is_gabor:
+            'unexp'          : to track whether epoch contained unexpected 
+                               events
             'gabor_loss_dict': for gabor loss keys 
                                (see gabor_utils.init_gabor_records()).
             'gabor_acc_dict' : for gabor accuracy keys 
@@ -1285,7 +1287,7 @@ def init_loss_dict(dataset, direc=".", ks=[1, 3, 5], val=True,
     if is_gabor:
         from utils.gabor_utils import init_gabor_records
         gabor_loss_dict, gabor_acc_dict = init_gabor_records(dataset)
-        dataset_keys = ["gabor_loss_dict", "gabor_acc_dict"]
+        dataset_keys = ["unexp", "gabor_loss_dict", "gabor_acc_dict"]
 
     for main_key in main_keys:
         if main_key not in loss_dict.keys():

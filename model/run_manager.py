@@ -17,6 +17,36 @@ logger = logging.getLogger(__name__)
 
 TAB = "    "
 
+KEYS = [
+    "train_pre",
+    "train_load",
+    "train_pass",
+    "train_loss",
+    "train_batch",
+    "train_gabor",
+    "train_log",
+    "train_end",
+    "val_pre",
+    "val_load",
+    "val_pass",
+    "val_loss",
+    "val_conf_mat",
+    "val_log",
+    "val_batch",
+    "val_gabor",
+    "val_end",
+    "ep_pre",
+    "ep_best",
+    "ep_loss",
+    "ep_train",
+    "ep_checkpoint",
+    "overall_pre",
+    "overall_post"
+]
+import json
+TIMINGS = {key: [] for key in KEYS}
+
+
 #############################################
 def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50, 
                 topk=TOPK, loss_weights=None, device="cpu", log_freq=5, 
@@ -102,6 +132,8 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     - log_idx : int
         Updated log index, for writing to tensorboard.
     """
+
+    tick = time.perf_counter()
     
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
     is_gabor = gabor_stimuli.check_if_is_gabor(dataloader.dataset)
@@ -128,13 +160,26 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
         loss_weights=loss_weights, device=device
         )
 
+    TIMINGS["train_pre"].append(time.perf_counter() - tick)
+    tick = time.perf_counter()
+
     batch_times = []
+
+    for key in ["train_load", "train_pass", "train_loss", "train_batch", "train_gabor", "train_log"]:
+        TIMINGS[key].append([])
+    tick = time.perf_counter()
+
     for idx, (input_seq, sup_target) in enumerate(dataloader):
+        TIMINGS["train_load"][-1].append(time.perf_counter() - tick)
+        tick = time.perf_counter()
         start_time = time.perf_counter()
         input_seq = input_seq.to(device)
         input_seq_shape = input_seq.size()
         [output_, mask_] = model(input_seq)
-        
+
+        TIMINGS["train_pass"][-1].append(time.perf_counter() - tick)
+        tick = time.perf_counter()
+
         # visualize 2 examples from the batch
         if writer is not None and idx % log_freq == 0:
             misc_utils.write_input_seq_tb(writer, input_seq, n=2, i=log_idx)
@@ -161,6 +206,8 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
             topk_meters, output_flattened, target_flattened, ks=topk, 
             main_shape=loss_reshape
             )
+        TIMINGS["train_loss"][-1].append(time.perf_counter() - tick)
+        tick = time.perf_counter()
 
         if save_by_batch:
             batch_loss = criterion_no_reduction(
@@ -182,6 +229,8 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
                 epoch_n=epoch_n
                 )
 
+            TIMINGS["train_batch"][-1].append(time.perf_counter() - tick)
+            tick = time.perf_counter()
             if is_gabor:
                 gabor_utils.update_records(
                     dataloader.dataset,
@@ -193,6 +242,9 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
                     supervised=supervised,
                     confusion_mat=gabor_conf_mat,
                     )
+
+            TIMINGS["train_gabor"][-1].append(time.perf_counter() - tick)
+            tick = time.perf_counter()
 
         del output_, target, sup_target, target_flattened, output_flattened
 
@@ -225,6 +277,10 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
             
             log_idx += 1
 
+        TIMINGS["train_log"][-1].append(time.perf_counter() - tick)
+        tick = time.perf_counter()
+
+
     train_dict["loss"] = loss_avg
     train_dict["acc"]  = acc_avg
     for i, k in enumerate(topk):
@@ -235,7 +291,8 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
             gabor_conf_mat, mode="train", epoch_n=epoch_n, 
             output_dir=output_dir
         ) 
-
+    TIMINGS["train_end"].append(time.perf_counter() - tick)
+    tick = time.perf_counter()
     return train_dict, log_idx
 
 
@@ -320,6 +377,8 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
                                   same keys as 'gabor_loss_dict'.
     """
 
+    tick = time.perf_counter()
+
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
     is_gabor = gabor_stimuli.check_if_is_gabor(dataloader.dataset)
 
@@ -365,10 +424,19 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
     if not supervised:
         chance_level = loss_utils.AverageMeter()
 
+    TIMINGS["val_pre"].append(time.perf_counter() - tick)
+    tick = time.perf_counter()
+    for key in ["val_load", "val_pass", "val_loss", "val_conf_mat", "val_batch", "val_gabor", "val_log"]:
+        TIMINGS[key].append([])
+    
+    
     shared_pred, SUB_B = False, None
     start_time = time.perf_counter()
     with torch.no_grad():
         for idx, (input_seq, sup_target) in enumerate(dataloader):
+            TIMINGS["val_load"][-1].append(time.perf_counter() - tick)
+            tick = time.perf_counter()
+
             if supervised and len(input_seq.size()) == 7:
                 shared_pred = True # applies to all batches
                 input_seq, SUB_B = training_utils.resize_input_seq(input_seq)
@@ -376,6 +444,8 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
             input_seq = input_seq.to(device)
             [output_, mask_] = model(input_seq)
             del input_seq
+            TIMINGS["val_pass"][-1].append(time.perf_counter() - tick)
+            tick = time.perf_counter()
 
             # get targets, and reshape for loss calculation
             output_flattened, target_flattened, loss_reshape, target = \
@@ -388,11 +458,13 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
             loss = criterion(output_flattened, target_flattened)
 
             # collect some values
-            losses.update(loss.item(), len(output_))
             loss_utils.update_topk_meters(
                 topk_meters, output_flattened, target_flattened, ks=topk, 
                 main_shape=loss_reshape
                 )
+
+            TIMINGS["val_loss"][-1].append(time.perf_counter() - tick)
+            tick = time.perf_counter()
 
             if not supervised:
                 chance = loss_utils.calc_chance(output_flattened, loss_reshape)
@@ -404,6 +476,9 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
                     pred.detach().cpu(), 
                     target_flattened.reshape(-1).byte().detach().cpu()
                     )
+
+            TIMINGS["val_conf_mat"][-1].append(time.perf_counter() - tick)
+            tick = time.perf_counter()
 
             if save_by_batch:
                 batch_loss = criterion_no_reduction(
@@ -424,7 +499,8 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
                     target=target.detach().cpu().tolist(), 
                     epoch_n=epoch_n
                     )
-
+                TIMINGS["val_batch"][-1].append(time.perf_counter() - tick)
+                tick = time.perf_counter()
                 if is_gabor:
                     gabor_utils.update_records(
                         dataloader.dataset,
@@ -436,9 +512,10 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
                         supervised=supervised,
                         confusion_mat=gabor_conf_mat,
                         )
+                TIMINGS["val_gabor"][-1].append(time.perf_counter() - tick)
+                tick = time.perf_counter()
 
-        del output_, target, sup_target, target_flattened, output_flattened
-
+            del output_, target, sup_target, target_flattened, output_flattened
 
     chance = 1 / num_classes if supervised else chance_level.avg
     loss_avg, acc_avg, stats_str = loss_utils.get_stats(
@@ -482,6 +559,9 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
             filename=f"{mode}_log{test_suffix}{gab_unexp_str}.md",
             overwrite=overwrite
             )
+    
+    TIMINGS["val_end"].append(time.perf_counter() - tick)
+    tick = time.perf_counter()
 
     return val_or_test_dict
 
@@ -550,6 +630,8 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         model (see checkpoint_utils.load_checkpoint()).
     """
 
+    tick = time.perf_counter()
+
     dataset = misc_utils.normalize_dataset_name(dataset)
     is_gabor = gabor_stimuli.check_if_is_gabor(main_loader.dataset)
     
@@ -601,6 +683,8 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             supervised=supervised, save_by_batch=save_by_batch, 
             )
 
+    TIMINGS["overall_pre"].append(time.perf_counter() - tick)
+    tick = time.perf_counter()
     ### main loop ###
     data_seed = seed
     gab_unexp_str = ""
@@ -616,7 +700,10 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             gab_unexp_str = "_unexp" if gabor_unexp else ""
             if not test:
                 best_acc = best_accs[int(gabor_unexp)]
-        
+
+        TIMINGS["ep_pre"].append(time.perf_counter() - tick)
+        tick = time.perf_counter()
+
         if not test:
             train_dict, log_idx = train_epoch(
                 main_loader, 
@@ -637,6 +724,9 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             loss_utils.populate_loss_dict(
                 src_dict=train_dict, target_dict=loss_dict["train"]
                 )
+
+        TIMINGS["ep_train"].append(time.perf_counter() - tick)
+        tick = time.perf_counter()
 
         if test or save_best:
             val_dict = val_or_test_epoch(
@@ -678,6 +768,9 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                         output_dir=output_dir
                         )
 
+            TIMINGS["ep_best"].append(time.perf_counter() - tick)
+            tick = time.perf_counter()
+
             loss_utils.populate_loss_dict(
                 src_dict=val_dict, 
                 target_dict=loss_dict["val"],
@@ -705,6 +798,10 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         logger.debug(f"Epoch train loss: {train_dict['loss']}")
         if save_best:
             logger.debug(f"Epoch val loss: {val_dict['loss']}")
+
+        TIMINGS["ep_loss"].append(time.perf_counter() - tick)
+        tick = time.perf_counter()
+
 
         # save checkpoint
         state_dict = {
@@ -736,7 +833,11 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
 
         # close plots
         plt.close("all")
- 
+        TIMINGS["ep_checkpoint"].append(time.perf_counter() - tick)
+        tick = time.perf_counter()
+
+        plot_save_timings(output_dir)
+
     # replot the best confusion matrix, with class names (can take a long time)
     loss_utils.plot_best_conf_mat(
         loss_dict["val"], mode="val", omit_class_names=False, 
@@ -747,3 +848,45 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         f"Training from epoch {start_epoch_n} to {num_epochs} finished."
         )
 
+    TIMINGS["overall_post"].append(time.perf_counter() - tick)
+    plot_save_timings(output_dir)
+
+
+
+def plot_save_timings(output_dir):
+
+    with open(Path(output_dir, "timings.json"), "w") as f:
+        json.dump(TIMINGS, f)
+
+    fig, ax = plt.subplots(nrows=3, sharex=True, figsize=[16, 16])
+
+    key_starts = ["train", "val", "ep", "overall"]
+    main_title = ""
+    for key, item in TIMINGS.items():
+        if len(item) == 0:
+            continue
+        data = item
+        if isinstance(item[0], list):
+            data = [np.mean(sub) for sub in item]
+            key = f"{key} (avg)"
+        starts = [key.startswith(sub) for sub in key_starts]
+        col = starts.index(True)
+
+        if col == 3:
+            main_title = f"{main_title}   {key.replace('_', ' ').capitalize()}: {data[0]:.5f}s"
+        else:
+            ax[col].plot(data, label=key, marker='d', lw=1.5, alpha=0.7)
+            ax[col].legend()
+    
+    for s, sub_ax in enumerate(ax.ravel()):
+        sub_ax.set_ylabel("Time in sec")
+        sub_ax.set_title(key_starts[s].capitalize())
+        sub_ax.spines["right"].set_visible(False)
+        sub_ax.spines["top"].set_visible(False)
+
+    ax[-1].set_xlabel("Number of epochs")
+
+    fig.suptitle(main_title, y=0.92)
+
+    save_path = Path(output_dir, "timings.svg")
+    fig.savefig(save_path, format="svg", bbox_inches="tight", dpi=600)
