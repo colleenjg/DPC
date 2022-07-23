@@ -40,7 +40,7 @@ def get_device(num_workers=None, cpu_only=False):
     if torch.cuda.is_available() and not cpu_only:
         device_name = "cuda"
     else:
-         device_name = "cpu"
+        device_name = "cpu"
 
     device = torch.device(device_name)
 

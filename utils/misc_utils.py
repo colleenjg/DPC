@@ -385,35 +385,6 @@ def seed_all(seed=None, deterministic_algorithms=True):
 
 
 #############################################
-def get_torch_generator(seed=None, gen_none=False):
-    """
-    get_torch_generator()
-
-    Returns a torch Generator.
-
-    Optional args
-    -------------
-    - seed : int (default=None)
-        Seed to use in seeding torch Generator.
-    - gen_none : bool (default=False)
-        If True, a torch Generator even if seed is None. Otherwise, None is 
-        returned.
-
-    Returns
-    -------
-    rng : torch.Generator
-        Torch generator or None.
-    """
-
-    rng = None
-    if gen_none or seed is not None:
-        rng = torch.Generator()
-        rng.manual_seed(seed)
-
-    return rng
-
-
-#############################################
 def format_time(duration, sep_min=True, lead=False):
     """
     format_time(duration)

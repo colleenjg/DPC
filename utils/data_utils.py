@@ -326,7 +326,6 @@ def get_dataloader(data_path_dir="process_data", transform=None,
             )
 
     sampler = data.RandomSampler(dataset)
-    generator = misc_utils.get_torch_generator(seed)
 
     dataloader = data.DataLoader(
         dataset,
@@ -334,7 +333,6 @@ def get_dataloader(data_path_dir="process_data", transform=None,
         sampler=sampler,
         shuffle=False,
         num_workers=num_workers,
-        generator=generator,
         worker_init_fn=seed_workers,
         pin_memory=True,
         drop_last=drop_last
