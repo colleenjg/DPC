@@ -1236,6 +1236,35 @@ def warn_supervised(dataset):
 
 
 #############################################
+def get_U_prob_str(U_prob=0.08, unexp=True):
+    """
+    get_U_prob_str()
+
+    Returns a string specifying the probability of U frames, if applicable.
+
+    Optional args
+    -------------
+    - U_prob : float (default=0.08)
+        Probability of U frames.
+    - unexp : bool (default=False)
+        Whether unexpected sequences are included.
+    
+    Returns
+    -------
+    - U_prob_str : str
+        String specifying probability of U frames.
+    """
+    
+    U_prob_str = ""
+    if unexp:
+        U_perc = U_prob * 100
+        U_perc = int(U_perc) if int(U_perc) == U_perc else U_perc
+        U_prob_str = f", U freq: {U_perc}%"
+
+    return U_prob_str
+
+
+#############################################
 def plot_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0, 
                         nest_frames=False, output_dir="."):
     """
@@ -1279,11 +1308,7 @@ def plot_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0,
             )
         gabor_conf_mat.load_from_storage_dict(conf_mat_dict)
 
-    U_prob_str = ""
-    if gabor_conf_mat.unexp:
-        U_perc = gabor_conf_mat.U_prob * 100
-        U_perc = int(U_perc) if int(U_perc) == U_perc else U_perc
-        U_prob_str = f", U freq: {U_perc}%"
+    U_prob_str = get_U_prob_str(gabor_conf_mat.U_prob, gabor_conf_mat.unexp)
 
     title = f"Epoch {epoch_n} ({mode}{U_prob_str})"
 
@@ -1298,9 +1323,35 @@ def plot_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0,
 
 
 #############################################
+def get_gabor_conf_mat_dict_path(output_dir="."):
+    """
+    get_gabor_conf_mat_dict_path()
+
+    Returns path for the Gabor confusion matrix dictionary file.
+
+    Optional args
+    -------------
+    - output_dir : str or path (default=".")
+        Main directory in which to save the plotted confusion matrix data, 
+        under the GABOR_CONF_MAT_DIREC directory. 
+
+    Returns
+    -------
+    - gabor_conf_mat_dict_path : path
+        Path under which the Gabor confusion matrix dictionary file should be 
+        stored.
+    """
+
+    output_dir = Path(output_dir, GABOR_CONF_MAT_DIREC)
+    gabor_conf_mat_dict_path = Path(output_dir, "gabor_confusion_mat_data.json")
+
+    return gabor_conf_mat_dict_path
+
+
+#############################################
 def plot_save_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0, 
                              nest_frames=False, output_dir=".", 
-                             raise_exists=False):
+                             raise_exists=False, skip_plot=False):
     """
     plot_save_gabor_conf_mat(gabor_conf_mat)
 
@@ -1332,16 +1383,19 @@ def plot_save_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0,
     - raise_exists : bool (default=False)
         If True and the epoch number key exists, an error is raised. Otherwise, 
         a warning is thrown and the key is overwritten.
+    - skip_plot : bool (default=False)
+        If True, plotting is skipped (e.g., to save time).
     """
 
-    output_dir = Path(output_dir, GABOR_CONF_MAT_DIREC)
-    
-    plot_gabor_conf_mat(
-        gabor_conf_mat, mode=mode, epoch_n=epoch_n, nest_frames=nest_frames, 
-        output_dir=output_dir
-        )
+    gabor_conf_mat_dict_path = get_gabor_conf_mat_dict_path(output_dir)
 
-    gabor_conf_mat_dict_path = Path(output_dir, "gabor_confusion_mat_data.json")
+    output_dir = gabor_conf_mat_dict_path.parent
+    
+    if not skip_plot:
+        plot_gabor_conf_mat(
+            gabor_conf_mat, mode=mode, epoch_n=epoch_n, 
+            nest_frames=nest_frames, output_dir=output_dir
+            )
 
     gabor_conf_mat_dict = dict()
     if gabor_conf_mat_dict_path.is_file():
@@ -1365,6 +1419,7 @@ def plot_save_gabor_conf_mat(gabor_conf_mat, mode="train", epoch_n=0,
     gabor_conf_mat_dict[mode][epoch_key] = \
         gabor_conf_mat.get_storage_dict()
 
+    gabor_conf_mat_dict_path.parent.mkdir(exist_ok=True, parents=True)
     with open(gabor_conf_mat_dict_path, "w") as f:
         json.dump(gabor_conf_mat_dict, f)
 
@@ -1520,15 +1575,12 @@ def init_gabor_records(dataset):
     -------
     - loss_dict : dict
         Dictionary for collecting loss data, with keys
-        'gabor_loss_dict' (dict):  Gabor loss dictionary, with keys
-            '{image_type}' (list)       : image type loss, for each batch
-            '{mean ori}' (list)         : orientation loss, for each batch
-            'image_types_overall' (list): overall image type loss, for each 
-                                          batch
-            'mean_oris_overall'   (list): overall mean ori loss, for each batch
-            'overall'             (list): overall loss, for each batch
-        'gabor_acc_dict' (dict) : Gabor top 1 accuracy dictionary, with the 
-                                  same keys as 'gabor_loss_dict'.
+        '{image_type}' (list)       : image type loss, for each batch
+        '{mean ori}' (list)         : orientation loss, for each batch
+        'image_types_overall' (list): overall image type loss, for each 
+                                        batch
+        'mean_oris_overall'   (list): overall mean ori loss, for each batch
+        'overall'             (list): overall loss, for each batch
     - acc_dict : dict
         Dictionary for collecting accuracy data, with the same keys as 
         loss_dict.

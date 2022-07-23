@@ -1247,7 +1247,7 @@ def init_loss_dict(dataset, direc=".", ks=[1, 3, 5], val=True,
                 'target_by_batch': for target values for each batch
             
             if is_gabor:
-            'unexp'          : to track whether epoch contained unexpected 
+            'unexp'          : for tracking whether epoch contained unexpected 
                                events
             'gabor_loss_dict': for gabor loss keys 
                                (see gabor_utils.init_gabor_records()).
@@ -1332,10 +1332,10 @@ def populate_loss_dict(src_dict, target_dict, append_conf_matrices=True,
         if the 'confusion_mat' key is present in the source and target 
         dictionary. 
     - is_best : bool (default=False)
-        If True, and the 'confusion_mat' key is present in the source 
-        dictionary, the confusion matrix data is saved under the 
-        'confusion_mat_best', with the epoch stored under the 'epoch_n_best' 
-        key in the target dictionary.
+        If True, epoch number is stored under the 'epoch_n_best' key in the 
+        target dictionary. If the 'confusion_mat' key is present in the source 
+        dictionary, the confusion matrix data is also saved under the 
+        'confusion_mat_best'.
     - gabor_unexp : bool
         Whether the model, if trained on the Gabor dataset, was presented with 
         unexpected sequences. If so, the "_unexp" suffix is added to the 
@@ -1367,21 +1367,24 @@ def populate_loss_dict(src_dict, target_dict, append_conf_matrices=True,
                     )
             populate_loss_dict(value, target_dict[key])
 
-    # if not appending, check if it should be replaced
+    # add best epoch information
+    gab_unexp_str = "_unexp" if gabor_unexp else ""
+    if is_best:
+        target_dict[f"epoch_n_best{gab_unexp_str}"] = src_dict["epoch_n"]
+
+    # if not appending, replace stored confusion matrix, if applicable
     if confusion_mat_key in src_dict:
         if not append_conf_matrices:
             target_dict[confusion_mat_key] = src_dict[confusion_mat_key]
         if is_best:
-            gab_unexp_str = "_unexp" if gabor_unexp else ""
-            target_dict[f"epoch_n_best{gab_unexp_str}"] = src_dict["epoch_n"]
             target_dict[f"confusion_mat_best{gab_unexp_str}"] = \
                 src_dict[confusion_mat_key]
-            
+
 
                             
 #############################################
 def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101", 
-                        unexp_epoch=10, num_classes=None):
+                        num_classes=None):
     """
     plot_from_loss_dict(loss_dict)
 
@@ -1408,8 +1411,13 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
         'sup_target_by_batch' (4 or 6D list): supervised targets with dims: 
             epochs x batches x B x N (x SL x [image type, mean ori] 
             if Gabor dataset).
+        'epoch_n_best' (int)                : Best epoch number.
+        'epoch_n_best_unexp' (int)          : Best epoch number, when Gabors 
+            dataset was set to include unexpected sequences.
         
         if Gabor dataset:
+        'unexp' (list)          : for each epoch, whether unexpectes sequences 
+                                  were included.
         'gabor_loss_dict' (list):  Gabor loss dictionary, with keys
             '{image_type}' (list)       : image type loss, with dims 
                                           epochs x batchs
@@ -1423,7 +1431,7 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
                                           epochs x batchs
         'gabor_acc_dict' (list) : Gabor top 1 accuracy dictionary, with the 
                                   same keys as 'gabor_loss_dict'.
-
+            
     Optional args
     -------------
     - output_dir : str or path (default=".")
@@ -1432,8 +1440,6 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
         Seed used for model training, if applicable. Used in the plot title.
     - dataset : str (default="UCF101")
         Dataset name.
-    - unexp_epoch : int (default=10)
-        Epoch as of which unexpected sequences are introduced.
     - num_classes : int (default=None)
         Number of classes to use to compute chance in plotting loss, if 
         applicable.
@@ -1446,7 +1452,12 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
     seed_str_pr = "" if seed is None else f" (seed {seed})"
     unexp_str_pr = ""
     if dataset == "Gabors":
-        unexp_str_pr = f" (unexp. epoch: {unexp_epoch})"
+        unexp_str_pr = plot_utils.get_unexp_epoch_ranges(
+            loss_dict["train"]["unexp"], loss_dict["train"]["epoch_n"], 
+            as_str=True
+            )
+        if len(unexp_str_pr):
+            unexp_str_pr = f" ({unexp_str_pr})"
 
     plot_what_vals = ["main"]
     if "avg_loss_by_batch" in loss_dict["train"].keys():
@@ -1456,18 +1467,19 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
 
     for plot_what in plot_what_vals:
         ext_str, ext_str_pr = "", ""
-        y = 1
+        y = 0.98
         if plot_what in ["by_batch", "by_gabor"]:
             ext_str = f"_{plot_what}"
             if plot_what == "by_batch":
+                y = 0.95
                 ext_str_pr = " (average by batch)"
             else:
-                y = 0.93
+                y = 0.92
                 ext_str_pr = " (split by class value comp.)"            
 
         fig = plot_utils.plot_from_loss_dict(
             loss_dict, num_classes=num_classes, dataset=dataset, 
-            unexp_epoch=unexp_epoch, plot_what=plot_what
+            plot_what=plot_what
             )
         title = (f"{dataset[0].capitalize()}{dataset[1:]} dataset"
             f"{unexp_str_pr}{seed_str_pr}{ext_str_pr}")
@@ -1479,7 +1491,7 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
 
 #############################################
 def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101", 
-                   unexp_epoch=10, num_classes=None, plot=True):
+                   num_classes=None, plot=True):
     """
     save_loss_dict(loss_dict)
 
@@ -1510,6 +1522,8 @@ def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
             if Gabor dataset).
         
         if Gabor dataset:
+        'unexp' (list)          : for each epoch, whether unexpectes sequences 
+                                  were included.
         'gabor_loss_dict' (list):  Gabor loss dictionary, with keys
             '{image_type}' (list)       : image type loss, with dims 
                                           epochs x batchs
@@ -1532,8 +1546,6 @@ def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
         Seed used for model training, if applicable. Used in the plot title.
     - dataset : str (default="UCF101")
         Dataset name.
-    - unexp_epoch : int (default=10)
-        Epoch as of which unexpected sequences are introduced.
     - num_classes : int (default=None)
         Number of classes to use to compute chance in plotting loss, if 
         applicable.
@@ -1544,7 +1556,7 @@ def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
     full_path = Path(output_dir, f"loss_data.json")
 
     # check that there are a consistent number of batches per epoch, if recorded
-    for key, subdict in loss_dict.items():
+    for subdict in loss_dict.values():
         if "avg_loss_by_batch" in subdict.keys():
             vals_count = subdict["avg_loss_by_batch"]
         elif "gabor_loss_dict" in subdict.keys():
@@ -1579,7 +1591,6 @@ def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
             output_dir=output_dir,
             seed=seed,
             dataset=dataset,
-            unexp_epoch=unexp_epoch,
             num_classes=num_classes
         )
 
@@ -1634,8 +1645,6 @@ def get_loss_plot_kwargs(hp_dict, num_classes=None):
         num_classes = int(num_classes)
     
     loss_plot_kwargs["num_classes"] = num_classes
-    if "unexp_epoch" in hp_dict["dataset"].keys():
-        loss_plot_kwargs["unexp_epoch"] = hp_dict["dataset"]["unexp_epoch"]
 
     return loss_plot_kwargs
 
@@ -1673,17 +1682,24 @@ def plot_conf_mat(conf_mat, mode="val", suffix=None, epoch_n=None,
 
     suffix_str = misc_utils.format_addendum(suffix, is_suffix=True)
 
+    U_prob_str = ""
+    if hasattr(conf_mat, "unexp") and conf_mat.unexp:
+        suffix_str = f"{suffix_str}_unexp"
+        
+        from utils.gabor_utils import get_U_prob_str
+        U_prob_str = get_U_prob_str(conf_mat.U_prob, conf_mat.unexp)
+
     save_name = f"{mode}_confusion_mat{suffix_str}.svg"
     conf_mat_path = Path(output_dir, save_name)
 
     if suffix == "best":
         sub_str = f"{mode}, epoch {epoch_n}" if epoch_n is not None else mode
-        title=f"Best model ({sub_str})"
+        title=f"Best model ({sub_str}{U_prob_str})"
     else:
         if epoch_n is None:
             title = mode.capitalize()
         else:
-            title = f"Epoch {epoch_n} ({mode})" 
+            title = f"Epoch {epoch_n} ({mode}{U_prob_str})" 
     
     conf_mat.plot_mat(conf_mat_path, title=title, **plot_mat_kwargs)
 
@@ -1743,7 +1759,7 @@ def load_plot_conf_mat(conf_mat_dict, mode="val", suffix=None,
 
 #############################################
 def plot_best_conf_mat(loss_sub_dict, mode="val", omit_class_names=True, 
-                               output_dir="."):
+                       output_dir="."):
     """
     plot_best_conf_mat(loss_sub_dict)
     """
@@ -1756,12 +1772,11 @@ def plot_best_conf_mat(loss_sub_dict, mode="val", omit_class_names=True,
 
     for key in ["confusion_mat_best", "confusion_mat_best_unexp"]:
         epoch_key = key.replace("confusion_mat", "epoch_n")
-        suffix = key.replace("confusion_mat_", "")
         
         if key in loss_sub_dict.keys():
             best_epoch_n = loss_sub_dict[epoch_key]
             load_plot_conf_mat(
-                loss_sub_dict[key], mode=mode, suffix=suffix, 
+                loss_sub_dict[key], mode=mode, suffix="best", 
                 omit_class_names=omit_class_names, epoch_n=best_epoch_n, 
                 output_dir=output_dir
                 )

@@ -90,6 +90,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
             dataset).
         
         if Gabor dataset:
+        'unexp'                 : Unexpected dataloader value for the epoch. 
         'gabor_loss_dict' (dict):  Gabor loss dictionary, with keys
             '{image_type}' (list)       : image type loss, for each batch
             '{mean ori}' (list)         : orientation loss, for each batch
@@ -119,6 +120,9 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
         save_by_batch=save_by_batch, 
         )["train"]
     train_dict["epoch_n"] = epoch_n
+
+    if is_gabor:
+        train_dict["unexp"] = dataloader.dataset.unexp
 
     if is_gabor and save_by_batch:
         gabor_conf_mat = None     
@@ -234,7 +238,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     if is_gabor and gabor_conf_mat is not None:
         gabor_utils.plot_save_gabor_conf_mat(
             gabor_conf_mat, mode="train", epoch_n=epoch_n, 
-            output_dir=output_dir
+            output_dir=output_dir, skip_plot=True
         ) 
 
     return train_dict, log_idx
@@ -310,6 +314,7 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
                                    epoch
 
         if Gabor dataset:
+        'unexp'                 : Unexpected dataloader value for the epoch. 
         'gabor_loss_dict' (dict):  Gabor loss dictionary, with keys
             '{image_type}' (list)       : image type loss, for each batch
             '{mean ori}' (list)         : orientation loss, for each batch
@@ -346,7 +351,9 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
 
     gab_unexp_str = ""
     if is_gabor:
-        gab_unexp_str = "_unexp" if dataloader.dataset.unexp else ""
+        unexp = dataloader.dataset.unexp
+        val_or_test_dict["unexp"] = unexp
+        gab_unexp_str = "_unexp" if unexp else ""
         gabor_conf_mat = None     
         if save_by_batch and output_dir is not None:
             gabor_conf_mat = gabor_utils.init_gabor_conf_mat(dataloader.dataset)
@@ -354,13 +361,9 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
     if supervised and output_dir is not None:
         if is_gabor:
             confusion_mat = gabor_utils.init_gabor_conf_mat(dataloader.dataset)
-            plot_mat_kwargs = dict()
         else:
             class_names = list(dataloader.dataset.class_dict_encode.keys())
             confusion_mat = loss_utils.ConfusionMeter(class_names)
-            # only include class names for final epoch 
-            # (if there are many class labels, saving to svg is very slow)
-            plot_mat_kwargs = {"incl_class_names": (epoch_n == num_epochs)}
         Path(output_dir).mkdir(exist_ok=True, parents=True)
 
     if not supervised:
@@ -389,6 +392,7 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
             loss = criterion(output_flattened, target_flattened)
 
             # collect some values
+            losses.update(loss.item(), len(output_))
             loss_utils.update_topk_meters(
                 topk_meters, output_flattened, target_flattened, ks=topk, 
                 main_shape=loss_reshape
@@ -458,27 +462,31 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
         val_or_test_dict[f"top{k}"] = topk_meters[i].avg
     
     if confusion_mat is not None:
-        savename = f"{mode}_confusion_mat{test_suffix}{gab_unexp_str}.svg"
-        confusion_mat.plot_mat(
-            Path(output_dir, savename), 
-            title=f"Epoch {epoch_n} ({mode})",
-            **plot_mat_kwargs
-            )
         val_or_test_dict["confusion_mat"] = confusion_mat.get_storage_dict()
+        # plot only if test or last epoch (slow, especially if many classes)
+        if test or epoch_n == num_epochs: 
+            loss_utils.plot_conf_mat(
+                confusion_mat, mode=mode, suffix=test_suffix, 
+                epoch_n=epoch_n, output_dir=output_dir
+                )
 
     if is_gabor and gabor_conf_mat is not None:
         gabor_utils.plot_save_gabor_conf_mat(
             gabor_conf_mat, mode=mode, epoch_n=epoch_n, 
-            output_dir=output_dir
-        ) 
+            output_dir=output_dir, skip_plot=not(test)
+        )
 
     if output_dir is not None:
         overwrite = True if test else False
+        suffix = ""
+        if test:
+            suffix = f"{test_suffix}{gab_unexp_str}"
+
         training_utils.write_log(
             stats_str=stats_str,
             epoch_n=epoch_n,
             output_dir=output_dir,
-            filename=f"{mode}_log{test_suffix}{gab_unexp_str}.md",
+            filename=f"{mode}_log{suffix}.md",
             overwrite=overwrite
             )
 
@@ -669,15 +677,6 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 if is_gabor:
                     best_accs[int(gabor_unexp)] = best_acc
 
-                if is_best and "confusion_mat" in val_dict.keys():
-                    # plot best confusion matrix
-                    loss_utils.load_plot_conf_mat(
-                        val_dict["confusion_mat"], mode="val", 
-                        suffix=f"best{gab_unexp_str}",
-                        omit_class_names=True, epoch_n=epoch_n, 
-                        output_dir=output_dir
-                        )
-
             loss_utils.populate_loss_dict(
                 src_dict=val_dict, 
                 target_dict=loss_dict["val"],
@@ -693,7 +692,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         # Save and log loss information
         loss_utils.save_loss_dict(
             loss_dict, output_dir=output_dir, seed=seed, dataset=dataset, 
-            unexp_epoch=unexp_epoch, num_classes=num_classes, plot=True
+            num_classes=num_classes, plot=True
             )
 
         if use_tb:
@@ -737,11 +736,22 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         # close plots
         plt.close("all")
 
-    # replot the best confusion matrix, with class names (can take a long time)
+    # plot the best confusion matrix, with class names (can take a long time)
     loss_utils.plot_best_conf_mat(
         loss_dict["val"], mode="val", omit_class_names=False, 
         output_dir=output_dir
         )
+    
+    # plot Gabor confusion matrices by epoch, in parallel, if possible
+    if is_gabor:
+        parallel = False
+        if main_loader.num_workers is not None and main_loader.num_workers > 1:
+            parallel = True
+        gabor_utils.load_plot_gabor_conf_mat(
+            gabor_utils.get_gabor_conf_mat_dict_path(output_dir), 
+            parallel=parallel
+            )
+
 
     logger.info(
         f"Training from epoch {start_epoch_n} to {num_epochs} finished."

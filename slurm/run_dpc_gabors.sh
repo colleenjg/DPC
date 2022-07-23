@@ -22,8 +22,8 @@ FIXED_NET=resnet18
 FIXED_TRAIN_WHAT=all
 FIXED_IMG_DIM=128
 FIXED_AUGM_ARG="--no_augm"
-FIXED_BATCH_SIZE=15
-FIXED_TRAIN_LEN=900
+FIXED_BATCH_SIZE=16
+FIXED_TRAIN_LEN=960
 FIXED_GAB_IMG_LEN=3
 FIX_SEQ_LEN=$FIXED_GAB_IMG_LEN
 FIXED_U_PROB=0.08
@@ -90,7 +90,7 @@ MODEL=${MODELS[$MODELS_IDX]}
 
 # Set the pretrain path, if applicable
 if [[ $PRETRAINED == yes ]]; then
-    PRETRAINED_ARG="--pretrained "$SCRATCH"/dpc/pretrained/mousesim_left-128_r18_dpc-rnn/model/model_best_epoch946.pth.tar"
+    PRETRAINED_ARG="--pretrained "$SCRATCH"/dpc/pretrained/mousesim_left-128_r18_dpc-rnn/model/best_epoch946.pth.tar"
     UNEXP_EPOCH=30
 else
     PRETRAINED_ARG=""

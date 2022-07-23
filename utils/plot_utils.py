@@ -45,6 +45,72 @@ def get_cmap_colors(cmap_name="Blues", n_vals=5, min_n=5):
 
 
 #############################################
+def get_unexp_epoch_ranges(unexp_vals, epoch_ns=None, as_str=False):
+    """
+    get_unexp_epoch_ranges(unexp_vals)
+
+    Returns ranges of epochs during which unexpected sequences occur, e.g. 
+    [[start1, end1], [start2, end2], ...], where the start and end values are 
+    inclusive.
+
+    Required args
+    -------------
+    - unexp_vals : array-like
+        List of boolean values indicating whether each epoch included 
+        unexpected sequences or not.
+
+    Optional args
+    -------------
+    - epoch_ns : array-like (default=None)
+        Epoch numbers corresponding to unexp_vals. If not provided, indices 
+        are reported instead.
+    - as_str : bool (default=False)
+        If True, unexpected epoch transition information is returned in a 
+        string, instead of a nested list.
+
+    Returns
+    -------
+    - unexp_ranges : list or str
+        If as_str, a string listing the ranges of epochs with unexpected 
+        sequences. If not, a nested list of start to end ranges. 
+    """
+
+    if epoch_ns is not None and len(epoch_ns) != len(unexp_vals):
+        raise ValueError(
+            "If provided, 'epoch_ns', must have the same length as "
+            "'unexp_vals'."
+            )
+        
+    unexp_vals = np.asarray(unexp_vals, dtype=int)
+    n_vals = len(unexp_vals)
+    if epoch_ns is None:
+        epoch_ns = np.arange(n_vals)
+
+    unexp_vals = np.insert(unexp_vals, 0, 0)
+    change_vals = np.where(np.diff(unexp_vals) != 0)[0].tolist()
+    change_vals.append(n_vals)
+
+    unexp_ranges = []
+    for i, val in enumerate(change_vals[:-1]):
+        if not i % 2:
+            unexp_ranges.append([val, change_vals[i + 1] - 1])
+
+    for u, unexp_range in enumerate(unexp_ranges):
+        unexp_ranges[u] = [epoch_ns[i] for i in unexp_range]
+
+    if as_str:
+        unexp_ranges_str = ""
+        if len(unexp_ranges) == 1 and unexp_ranges[0][-1] == epoch_ns[-1]:
+            unexp_ranges_str = f"unexp. epoch: {unexp_ranges[0][0]}"
+        elif len(unexp_ranges):
+            range_str = ", ".join([f"{v1}-{v2}" for v1, v2 in unexp_ranges])
+            unexp_ranges_str = f"unexp. epochs: {range_str}"
+        unexp_ranges = unexp_ranges_str
+
+    return unexp_ranges
+
+
+#############################################
 def plot_acc(sub_ax, data_dict, epoch_ns, chance=None, cmap_name="Blues", 
              ls=None, data_label="train"):
     """
@@ -331,7 +397,7 @@ def plot_gabor_data(sub_ax, data_dict, epoch_ns, datatype="image_types",
 
 #############################################
 def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101", 
-                        unexp_epoch=10, plot_what="main"):
+                        plot_what="main"):
     """
     plot_from_loss_dict(loss_dict)
 
@@ -358,8 +424,14 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
         'sup_target_by_batch' (4 or 6D list): supervised targets with dims: 
             epochs x batches x B x N (x SL x [image type, mean ori] 
             if Gabor dataset).
-        
+        'epoch_n_best' (int)                : Best epoch number.
+        'epoch_n_best_unexp' (int)          : Best epoch number, when Gabors 
+            dataset was set to include unexpected sequences.
+
+
         if Gabor dataset:
+        'unexp' (list)          : for each epoch, whether unexpectes sequences 
+                                  were included.
         'gabor_loss_dict' (list):  Gabor loss dictionary, with keys
             '{image_type}' (list)       : image type loss, with dims 
                                           epochs x batchs
@@ -432,6 +504,8 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
     gab_loss_maxes = [None, None]
     add_leg = []
     lab_best = 1
+    poss_best_epoch_keys = ["epoch_n_best", "epoch_n_best_unexp"]
+    best_epoch_key_colors = ["k", "darkred"]
     for m, mode in enumerate(modes):
         epoch_ns = loss_dict[mode]["epoch_n"]
         cmap_name = f"{colors[m].capitalize()}s"
@@ -479,18 +553,23 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
                 )
 
         if mode == "val":
-            best_idx = np.argmax(loss_dict[mode]["acc"])
-            best_epoch_n = epoch_ns[best_idx]
-            for s, sub_ax in enumerate(ax.reshape(-1)):
-                label = None
-                if s == lab_best:
-                    best_acc = 100 * loss_dict[mode]["acc"][best_idx]
-                    label = f"ep {best_epoch_n}: {best_acc:.2f}%"
-                    add_leg.extend([lab_best])
-                sub_ax.axvline(
-                    best_epoch_n, color="k", ls="dashed", alpha=0.8, 
-                    label=label
-                    )
+            for b, best_key in enumerate(poss_best_epoch_keys):
+                if best_key not in loss_dict[mode].keys():
+                    continue
+                unexp_str = " (unexp)" if best_key.endswith("_unexp") else ""
+                best_epoch_n = loss_dict[mode][best_key]
+                best_idx = np.argmax(loss_dict[mode]["acc"])
+                best_idx = epoch_ns.index(best_epoch_n)
+                for s, sub_ax in enumerate(ax.reshape(-1)):
+                    label = None
+                    if s == lab_best:
+                        best_acc = 100 * loss_dict[mode]["acc"][best_idx]
+                        label = f"ep {best_epoch_n}{unexp_str}: {best_acc:.2f}%"
+                        add_leg.extend([lab_best])
+                    sub_ax.axvline(
+                        best_epoch_n, color=best_epoch_key_colors[b], 
+                        ls="dashed", alpha=0.8, label=label
+                        )
 
     min_x, max_x = ax[0, 0].get_xlim()
     for s, sub_ax in enumerate(ax.reshape(-1)):
@@ -498,11 +577,14 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
             sub_ax.legend(fontsize="small", loc="upper left")
         sub_ax.spines["right"].set_visible(False)
         sub_ax.spines["top"].set_visible(False)
-        if dataset == "Gabors" and unexp_epoch < max(epoch_ns):
-            sub_ax.axvspan(
-                unexp_epoch, max(epoch_ns), color="red", alpha=0.08, lw=0, 
-                zorder=-12
+        if dataset == "Gabors":
+            unexp_ranges = get_unexp_epoch_ranges(
+                loss_dict["train"]["unexp"], loss_dict["train"]["epoch_n"]
                 )
+            for v1, v2 in unexp_ranges:
+                sub_ax.axvspan(
+                    v1, v2, color="red", alpha=0.08, lw=0, zorder=-12
+                    )
         sub_ax.set_xlim(min_x, max_x)
 
     ax[0, 0].set_ylabel("Loss")

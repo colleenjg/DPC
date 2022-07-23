@@ -313,8 +313,6 @@ def run_training_or_test(args):
 
     args = check_adjust_args(args)
 
-    args.output_dir = get_output_directory(args)
-
     # get whether to save by batch
     args.dataset = misc_utils.normalize_dataset_name(args.dataset)
     args.save_by_batch = (args.dataset == "Gabors")
@@ -357,6 +355,9 @@ def run_training_or_test(args):
         use_scheduler=args.use_scheduler, train_what=args.train_what, 
         test=args.test
     )
+
+    # get output directory
+    args.output_dir = get_output_directory(args)
 
     # save hyperparameters
     misc_utils.save_hyperparameters(args.__dict__)

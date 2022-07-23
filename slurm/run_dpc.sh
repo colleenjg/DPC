@@ -17,7 +17,6 @@ module load cuda/10.2/cudnn/7.6
 
 conda activate ssl
 
-
 # 2. Array ID hyperparameters
 DATASETS=( MouseSim HMDB51 UCF101 Kinetics400 ) # 4
 PRETRAINEDS=( no yes ) # 2
