@@ -33,13 +33,13 @@ Arranges the datasets as follows:
 
 * Kinetics400
 ```
-{main_path}/Kinetics400/videos/train_split/{class name}/{video name}.mp4
-{main_path}/Kinetics400/videos/val_split/{class name}/{video name}.mp4
+{main_path}/Kinetics400/videos/{class name}/{video name}.mp4
 ```
 And keeps the downloaded csv files, stored as:
 ```
 {main_path}/Kinetics400/videos/train_split.csv
 {main_path}/Kinetics400/videos/val_split.csv
+{main_path}/Kinetics400/videos/test_split.csv
 ```
 
 ### 2. Extract frames

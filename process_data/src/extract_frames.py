@@ -391,18 +391,13 @@ def main_Kinetics400(v_root, f_root=None, dim=None, parallel=True):
     if dim is None:
         dim = 150 # default value
 
-    for split in ["train", "val", "test"]:
-        v_root_split = Path(v_root, f"{split}_split")
-        f_root_split = Path(f_root, f"{split}_split")
-
-        extract_videos_opencv(
-            v_root_split, f_root_split, dim=dim, video_ext="mp4", 
-            parallel=parallel
-            )
+    extract_videos_opencv(
+        v_root, f_root, dim=dim, video_ext="mp4", parallel=parallel
+        )
 
 
 #############################################
-def main_MouseSim(v_root, f_root=None, parallel=True):
+def main_MouseSim(v_root, f_root=None, eye="all", parallel=True):
     """
     main_MouseSim(v_root)
 
@@ -415,6 +410,9 @@ def main_MouseSim(v_root, f_root=None, parallel=True):
     
     Optional args
     -------------
+    - eye : str (default="all")
+        Eye views for which to extract frames 
+        ('all', 'both', 'left' or 'right').
     - f_root : path (default=None)
         Main folder in which to save frames for the dataset. If None, 
         a default location is identified, based on v_root.
@@ -423,8 +421,17 @@ def main_MouseSim(v_root, f_root=None, parallel=True):
         parallel.
     """
     
+    if eye == "all":
+        eyes = [False, "left", "right"]
+    elif eye == "both":
+        eyes = [False]
+    elif eye in ["left", "right"]:
+        eyes = [eye]
+    else:
+        raise ValueError("'eye' must be 'all', 'both', 'left' or 'right'.")
+
     f_root_orig = f_root
-    for eye in [False, "left", "right"]:
+    for eye in eyes:
         eye_str_pr = f" ({eye} eye only)" if eye else "" 
         eye_str = f"_{eye}" if eye else ""
 
@@ -451,7 +458,10 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", default="UCF101", help="dataset name")
     parser.add_argument("--k400_big", action="store_true", 
         help=("if True, and dataset is k400, the larger version frames "
-            "are stored (256 instead of 150)."))
+            "are extracted and stored (256 instead of 150)."))
+    parser.add_argument("--eye", default="all", 
+        help=("if 'all', frames for each eye view ('left', 'right', 'both') "
+            "are extracted and stored."))
 
     parser.add_argument("--log_level", default="info", 
         help="logging level, e.g., debug, info, error")
@@ -490,7 +500,9 @@ if __name__ == "__main__":
             )
 
     elif args.dataset == "MouseSim":
-        main_MouseSim(v_root=v_root, f_root=f_root, parallel=parallel)
+        main_MouseSim(
+            v_root=v_root, f_root=f_root, eye=args.eye, parallel=parallel
+            )
 
     elif args.dataset == "Gabors":
         raise ValueError(

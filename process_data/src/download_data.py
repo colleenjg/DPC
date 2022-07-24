@@ -412,11 +412,23 @@ def main_Kinetics400(d_root, minimal=False, parallel=True):
     for item in Path(annot_root).iterdir():
         Path(item).rename(str(item).replace(".csv", "_split.csv"))
     
-    for video_dir in ["train", "val", "test"]:      
-        src_direc = Path(d_root, "videos", video_dir)
-        targ_direc = Path(d_root, "videos", f"{video_dir}_split")
-        src_direc.rename(targ_direc)
-        check_num_classes(targ_direc, num_classes=400)
+    # move videos from all splits into the main directory
+    for video_dir in ["train", "val", "test"]:
+        src_direc = Path(v_root, video_dir)
+        if video_dir == "train":
+            for class_dir in src_direc.iterdir():
+                targ_dir = Path(v_root, class_dir.stem)
+                shutil.move(class_dir, targ_dir)
+        else:
+            for class_dir in src_direc.iterdir():
+                class_name = class_dir.stem
+                for spec_dir in class_dir.iterdir():
+                    spec_name = spec_dir.stem
+                    targ_dir = Path(v_root, class_name, spec_name)
+                    shutil.move(spec_dir, targ_dir)
+        shutil.rmtree(src_direc)
+
+    check_num_classes(v_root, num_classes=400)
 
 
 #############################################

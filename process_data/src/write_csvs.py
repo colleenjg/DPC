@@ -275,17 +275,17 @@ def check_exists(split_row, split_root):
 
 
 #############################################
-def get_split(split_root, split_path, mode="train"):
+def get_split(f_root, split_path, mode="train"):
     """
-    get_split(split_root, split_path)
+    get_split(f_root, split_path)
 
     Returns list of video directory names and number of frames for each 
     Kinetics400 video.
 
     Required args
     -------------
-    - split_root : path
-        Root directory for the split
+    - f_root : path
+        Main folder in which frames for the dataset are stored.
     - split_path : path
         Kinetics400 file specifying the split content
 
@@ -300,18 +300,18 @@ def get_split(split_root, split_path, mode="train"):
         List of frames directory name and number of frames for each video 
         [full_dirname, n_frames], with None for missing videos.
     """
-    
-    for pathname in [split_root, split_path]:
+
+    for pathname in [f_root, split_path]:
         if not Path(pathname).exists():
             raise ValueError(f"{pathname} does not exist.")
 
     logger.info(f"Processing {mode} split...")
-    logger.info(f"Checking {split_root}")
+    logger.info(f"Checking {f_root}")
     split_list = []
     split_content = pd.read_csv(str(split_path)).iloc[:, 0:4]
     n_jobs = misc_utils.get_num_jobs(len(split_content))
     split_list = Parallel(n_jobs=n_jobs)(
-        delayed(check_exists)(row, split_root)
+        delayed(check_exists)(row, f_root)
         for _, row in tqdm(split_content.iterrows(), total=len(split_content))
         )
         
@@ -370,9 +370,8 @@ def main_Kinetics400(f_root, splits_root=None, modes=["train", "val", "test"],
                 )
             continue
 
-        split = get_split(Path(f_root, f"{mode}_split"), mode_path, mode)
-
-        write_list(split, target_csv)    
+        split = get_split(f_root, mode_path, mode)
+        write_list(split, target_csv)
 
     # create class index file
     split_df = pd.read_csv(mode_path)
