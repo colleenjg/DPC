@@ -82,6 +82,7 @@ python run_model.py \
     --seed $SEED \
     $PRETRAINED_ARG \
     --num_workers 8 \
+    --log_test_cmd \
 
 code="$?"
 if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
@@ -89,18 +90,6 @@ if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
 set +x # stop echoing commands to console
 
 
-# 5. Print instructions for testing model
-if [[ $MODEL == "lc-rnn" ]]; then
-    echo -e "To test the model, run:\n"\
-    "python run_model.py "\
-    "--model $MODEL "\
-    "--dataset $DATASET "\
-    "--img_dim $IMG_DIM "\
-    "--num_seq $NUM_SEQ "\
-    "--seed $SEED "\
-    "--test $SCRATCH/dpc/models/..."
-fi
-  
 
 if [ "$EXIT" -ne 0 ]; then exit "$EXIT"; fi # exit with highest exit code
 

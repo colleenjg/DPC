@@ -384,6 +384,9 @@ def run_training_or_test(args):
         save_by_batch=args.save_by_batch,
         reload_kwargs=reload_kwargs,
         )
+    
+    if args.log_test_cmd:
+        misc_utils.log_test_cmd(args)
 
 
 #############################################
@@ -482,6 +485,9 @@ if __name__ == "__main__":
         help="logging level, e.g., debug, info, error")
     parser.add_argument("--cpu_only", action="store_true", 
         help="run on CPU (very slow)")
+    parser.add_argument("--log_test_cmd", action="store_true", 
+        help=("logs command for testing the best model, after supervised "
+            "training is complete."))
 
     # MouseSim only
     parser.add_argument("--eye", default="left", 

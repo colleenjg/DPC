@@ -159,31 +159,12 @@ python run_model.py \
     --num_epochs $NUM_EPOCHS \
     $SUFFIX_ARG \
     $PRETRAINED_ARG \
+    --log_test_cmd \
 
 code="$?"
 if [ "$code" -gt "$EXIT" ]; then EXIT="$code"; fi # collect exit code
 
 set +x # stop echoing commands to console
-
-
-# 5. Print instructions for testing model
-if [[ $MODEL == "lc-rnn" ]]; then
-    echo -e "To test the model, run:\n"\
-    "python run_model.py"\
-    "--gabor_model $MODEL"\
-    "--dataset $FIXED_DATASET"\
-    "--img_dim $FIXED_IMG_DIM"\
-    "--train_len $FIXED_TRAIN_LEN"\
-    "--gab_img_len $FIXED_GAB_IMG_LEN"\
-    "--seq_len $FIX_SEQ_LEN"\
-    "--U_prob $FIXED_U_PROB"\
-    "$SEED_ARG"\
-    "$U_POSSIZE_ARG"\
-    "--num_seq $NUM_SEQ"\
-    "$ROLL_ARG"\
-    "--unexp_epoch 0"\
-    "--test $SCRATCH/dpc/models/gabors..."
-fi
   
 
 if [ "$EXIT" -ne 0 ]; then exit "$EXIT"; fi # exit with highest exit code

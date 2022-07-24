@@ -869,7 +869,7 @@ def get_technical_hyperparams():
         "seed", "use_tb"
         ]
 
-    ignore_params = []
+    ignore_params = ["log_test_cmd"]
 
     return technical_params, ignore_params
     
@@ -1382,4 +1382,90 @@ def update_resume_args(args, resume_dir):
         logger.warning(log_str, extra={"spacing": "\n"})
 
     return args
+
+
+#############################################
+def log_test_cmd(args):
+    """
+    log_test_cmd(args)
+
+    Logs to the console a command for running a test on the best model using 
+    the same parameters. 
+
+    Required args
+    -------------
+    - args : argparse.Namespace
+        Argparse namespace containing arguments used to set hyperparameters.
+    """
+    
+    if not args.supervised or args.test:
+        return
+
+    # get the model to test
+    from utils.checkpoint_utils import find_last_checkpoint
+    for best in [True, False]:
+        test_checkpoint_path = find_last_checkpoint(
+            args.output_dir, best=best, raise_none=False
+            )
+        if test_checkpoint_path is not None:
+            break
+
+    if test_checkpoint_path is None:
+        return
+
+    # collect the arguments to use
+    args_dict = args.__dict__
+
+    cmd = "python run_model.py"
+
+    # mandatory test settings
+    cmd = f"{cmd} --batch_size 1 --not_save_best --num_epochs 0"
+
+    # specific settings
+    include = [
+        "data_path_dir", "dataset", "img_dim", "log_level", "model", "net", 
+        "num_seq", "plt_bkend", "seq_len",
+        ]
+
+    if args.seed is not None:
+        include.append("seed")
+
+    if args.dataset == "Gabors":
+        include.extend(
+            ["gab_img_len", "num_gabors", "train_len", "U_prob"]
+            )
+    else:
+        include.append("ucf_hmdb_ms_ds")
+        if args.dataset == "MouseSim":
+            include.append("eye")
+
+    # append to cmd
+    for key in include:
+        val = args_dict[key]
+        cmd = f"{cmd} --{key} {val}"
+
+
+    include_bool = ["cpu_only"]
+    if args.dataset == "Gabors":
+        include_bool.extend(["diff_U_possizes", "roll"])
+
+    # append to cmd
+    for key in include:
+        val = args_dict[key]
+        if val:
+            cmd = f"{cmd} --{key}"
+
+    if args.dataset == "Gabors":
+        # check the converted (opposite) args, as they are definitely up to date
+        if not args.same_possizes:
+            cmd = f"{cmd} --diff_possizes"
+        if not args.gray:
+            cmd = f"{cmd} --no_gray"
+
+        # set unexpected epoch to 0
+        cmd = f"{cmd} --unexp_epoch 0"
+    
+    best_str = "best" if best else "last (no best found)"
+    cmd = f"{cmd} --test {test_checkpoint_path}"
+    logging.info(f"To test the {best_str} model, run:\n{cmd}")
 

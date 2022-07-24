@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 import random
 
 import numpy as np
@@ -171,7 +172,7 @@ def get_transform(dataset=None, img_dim=256, mode="train", no_augm=False,
     
 
 #############################################
-def get_dataloader(data_path_dir="process_data", transform=None, 
+def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None, 
                    dataset="UCF101", mode="train", eye="both",
                    batch_size=4, img_dim=128, seq_len=5, num_seq=8, 
                    ucf_hmdb_ms_ds=3, split_n=1, supervised=False, 
@@ -184,7 +185,7 @@ def get_dataloader(data_path_dir="process_data", transform=None,
 
     Optional args
     -------------
-    - data_path_dir : str or path (default="process_data")
+    - data_path_dir : str or path (default=Path("process_data", "data"))
         Directory where the data is stored (only needed if dataset is not Gabors)
     - transform : torch Transform or None (default=None)
         torch Transforms for the dataset
