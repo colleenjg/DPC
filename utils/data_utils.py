@@ -216,7 +216,8 @@ def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None,
         If True, no augmentations are applied (other than the basics: 
         scaling, converting to tensor and normalizing).
     - seed : int (default=None)
-        Seed for seeding the sampling generator for the dataloader.
+        Seed for seeding the sampling generator for the dataloader, and the 
+        datasets (only used for unit testing).
     - temp_data_dir : str or Path (default=None)
         If provided, path to the new data directory to reset video paths to 
         point to (up to dataset name directory), after loading.
@@ -338,6 +339,7 @@ def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None,
             )
 
     sampler = data.RandomSampler(dataset)
+    generator = misc_utils.get_torch_generator(seed)
 
     dataloader = data.DataLoader(
         dataset,
@@ -345,6 +347,7 @@ def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None,
         sampler=sampler,
         shuffle=False,
         num_workers=num_workers,
+        generator=generator,
         worker_init_fn=seed_workers,
         pin_memory=True,
         drop_last=drop_last
