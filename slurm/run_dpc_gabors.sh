@@ -90,7 +90,7 @@ MODEL=${MODELS[$MODELS_IDX]}
 
 # Set the pretrain path, if applicable
 if [[ "$PRETRAINED" == "yes" ]]; then
-    PRETRAINED_ARG="--pretrained ${SCRATCH}/dpc/pretrained/mousesim_left-128_r18_dpc-rnn/model/best_epoch946.pth.tar"
+    PRETRAINED_ARG="--pretrained ${SCRATCH}/dpc/pretrained/mousesim_left-128_r18_dpc-rnn/model/best_epoch781.pth.tar"
     UNEXP_EPOCH=30
 else
     PRETRAINED_ARG=""
