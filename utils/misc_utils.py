@@ -866,7 +866,7 @@ def get_technical_hyperparams():
 
     technical_params = [
         "cpu_only", "data_parallel", "device_type", "num_workers", "plt_bkend", 
-        "seed", "use_tb"
+        "seed", "temp_data_dir", "use_tb"
         ]
 
     ignore_params = ["log_test_cmd"]
@@ -1450,7 +1450,7 @@ def log_test_cmd(args):
         include_bool.extend(["diff_U_possizes", "roll"])
 
     # append to cmd
-    for key in include:
+    for key in include_bool:
         val = args_dict[key]
         if val:
             cmd = f"{cmd} --{key}"
@@ -1467,5 +1467,8 @@ def log_test_cmd(args):
     
     best_str = "best" if best else "last (no best found)"
     cmd = f"{cmd} --test {test_checkpoint_path}"
-    logging.info(f"To test the {best_str} model, run:\n{cmd}")
+    logging.info(
+        f"To test the {best_str} model, run:\n{cmd}", 
+        extra={"spacing": "\n"}
+        )
 

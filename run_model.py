@@ -29,6 +29,7 @@ def check_adjust_args(args):
         - args.use_scheduler from args.supervised
     - Checks that values are accepted and inter-compatible for:
         - args.model
+        - args.temp_data_dir
         - args.train_what
         - args.test, given args.supervised
     - Sets opposite arguments:
@@ -114,6 +115,11 @@ def check_adjust_args(args):
             args.save_best = False
         else:
             raise ValueError("Test can only be done in the supervised setting.")
+    
+    # check whether args.temp_data_dir exists
+    if args.temp_data_dir is not None:
+        if not Path(args.temp_data_dir).is_dir():
+            raise OSError(f"{args.temp_data_dir} does not exist.")
     
     # try to update arguments, if resuming from an existing model
     if args.resume:
@@ -256,8 +262,11 @@ def get_dataloaders(args):
             "num_gabors", "gab_img_len", "same_possizes", "gray", "roll", 
             "U_prob", "diff_U_possizes", "train_len"
             ]
-        dataset_keys = dataset_keys + gabor_keys
-    elif dataset in ["UCF101", "HMDB51", "MouseSim"]:
+        dataset_keys.extend(gabor_keys)
+    else:
+        dataset_keys.append("temp_data_dir")
+    
+    if dataset in ["UCF101", "HMDB51", "MouseSim"]:
         dataset_keys = dataset_keys + ["ucf_hmdb_ms_ds"]
         if dataset == "MouseSim":
             dataset_keys = dataset_keys + ["eye"]
@@ -469,6 +478,10 @@ if __name__ == "__main__":
         help="path to pretrained model to initialize model with")
 
     # technical parameters
+    parser.add_argument("--temp_data_dir", default=None, 
+        help=("if provided, directory to which files have temporarily been "
+            "copied, e.g. for fast reading. Must have the same structure as "
+            "the original data paths, as of the dataset directory."))
     parser.add_argument("--num_workers", default=2, type=int)
     parser.add_argument("--log_freq", default=5, type=int, 
         help="batch frequency at which to log output during training")

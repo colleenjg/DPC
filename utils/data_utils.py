@@ -176,7 +176,7 @@ def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None,
                    dataset="UCF101", mode="train", eye="both",
                    batch_size=4, img_dim=128, seq_len=5, num_seq=8, 
                    ucf_hmdb_ms_ds=3, split_n=1, supervised=False, 
-                   num_workers=4, no_augm=False, seed=None, 
+                   num_workers=4, no_augm=False, seed=None, temp_data_dir=None,
                    **gabor_kwargs):
     """
     get_dataloader()
@@ -217,6 +217,9 @@ def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None,
         scaling, converting to tensor and normalizing).
     - seed : int (default=None)
         Seed for seeding the sampling generator for the dataloader.
+    - temp_data_dir : str or Path (default=None)
+        If provided, path to the new data directory to reset video paths to 
+        point to (up to dataset name directory), after loading.
 
     Keyword args
     ------------
@@ -257,6 +260,8 @@ def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None,
             big=use_big_K400,
             supervised=supervised,
             return_label=True,
+            seed=seed,
+            temp_data_dir=temp_data_dir,
             )
 
     elif dataset == "UCF101":
@@ -270,6 +275,8 @@ def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None,
             split_n=split_n,
             supervised=supervised,
             return_label=True,
+            seed=seed,
+            temp_data_dir=temp_data_dir,
             )
     
     elif dataset == "HMDB51":
@@ -283,6 +290,8 @@ def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None,
             split_n=split_n,
             supervised=supervised,
             return_label=True,
+            seed=seed,
+            temp_data_dir=temp_data_dir,
             )
 
     elif dataset == "MouseSim":
@@ -297,6 +306,8 @@ def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None,
             downsample=ucf_hmdb_ms_ds,
             supervised=supervised,
             return_label=True,
+            seed=seed,
+            temp_data_dir=temp_data_dir,
             ) 
 
     elif dataset == "Gabors":

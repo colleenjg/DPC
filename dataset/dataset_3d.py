@@ -79,6 +79,9 @@ class GeneralDataset(data.Dataset):
         Dataset train/val(/test) split to use.
     - supervised : bool
         If True, dataset is set to supervised mode.
+    - temp_data_dir : str or Path
+        If provided, path to the new data directory to reset video paths to 
+        point to (up to dataset name directory), after loading.
     - transform : torch Transform
         Transform to apply to the sequences sampled.
     - unit_test : bool
@@ -113,6 +116,7 @@ class GeneralDataset(data.Dataset):
                  return_label=False,
                  supervised=False,
                  seed=None,
+                 temp_data_dir=None,
                  ):
         """
         GeneralDataset(data_path_dir)
@@ -153,6 +157,9 @@ class GeneralDataset(data.Dataset):
         - seed : int (default=None)
             Seed to use for the random process of sub-sampling the dataset, if 
             unit_test is True.
+        - temp_data_dir : str or Path (default=None)
+            If provided, path to the new data directory to reset video paths to 
+            point to (up to dataset name directory), after loading.
         """
 
         self.data_path_dir = data_path_dir
@@ -164,6 +171,7 @@ class GeneralDataset(data.Dataset):
         self.downsample = downsample
         self.unit_test = unit_test
         self.split_n = split_n
+        self.temp_data_dir = temp_data_dir
 
         if self.supervised:
             return_label = True
@@ -275,6 +283,56 @@ class GeneralDataset(data.Dataset):
         return video_info
 
 
+    def _update_video_paths(self, new_data_dir=None):
+        """
+        self._update_video_paths()
+
+        Updates video paths in self.video_info to point to the new data 
+        directory provided.
+
+        Specifically, the new data directory replace the original path up to 
+        the dataset name directory with no suffixes 
+        (e.g., "Kinetics400" or "MouseSim"). If such a directory is not found 
+        in the original paths, the replacement will fail. 
+
+        Optional args
+        -------------
+        - new_data_dir : str or Path (default=None)
+            If provided, path to the new data directory to reset video paths to 
+            point to (up to dataset name directory). 
+        """
+        
+        if new_data_dir is None:
+            return
+
+        if not Path(new_data_dir).is_dir():
+            raise OSError(f"{new_data_dir} does not exist.")
+        video_paths = [Path(video_path) for video_path in self.video_info[0]]
+        orig_parts = video_paths[0].parts
+
+        dataset_name = self.dataset_name.split("_")[0]
+        if dataset_name in orig_parts:
+            idx = orig_parts.index(dataset_name)
+            first_path = Path(new_data_dir, *orig_parts[idx:])
+            if video_paths[0].is_dir() and not first_path.is_dir():
+                raise RuntimeError(
+                    "Updating data paths with 'new_data_dir' failed: "
+                    f"{first_path} does not exist."
+                    )
+            updated_video_paths = [
+                str(Path(new_data_dir, *video_path.parts[idx:])) 
+                for video_path in video_paths
+                ]
+            self.video_info[0] = updated_video_paths
+
+        else:
+            raise RuntimeError(
+                "Could not align 'new_data_dir with existing video "
+                "paths, as they do not contain the expected dataset name "
+                f"directory {dataset_name}."
+                )
+
+    
     def _set_video_info(self, mode="train", drop_short=True, seed=None):
         """
         self._set_video_info()
@@ -319,8 +377,10 @@ class GeneralDataset(data.Dataset):
             self.video_info = self.video_info.sample(
                 n_sample, random_state=seed
                 )
+        
+        self._update_video_paths(self.temp_data_dir)
+        
 
-    
     def _load_transform_images(self, vpath, seq_idx):
         """
         self._load_transform_images(vpath, seq_idx)
@@ -630,7 +690,8 @@ class Kinetics400_3d(GeneralDataset):
                  big=False,
                  return_label=False,
                  supervised=False,
-                 seed=None
+                 seed=None,
+                 temp_data_dir=None,
                 ):
         """
         Kinetics400_3d()
@@ -665,6 +726,9 @@ class Kinetics400_3d(GeneralDataset):
         - seed : int (default=None)
             Seed to use for the random process of sub-sampling the dataset, if 
             unit_test is True.
+        - temp_data_dir : str or Path (default=None)
+            If provided, path to the new data directory to reset video paths to 
+            point to (up to dataset name directory), after loading.
         """
 
         if big: 
@@ -687,6 +751,7 @@ class Kinetics400_3d(GeneralDataset):
             return_label=return_label,
             supervised=supervised,
             seed=seed,
+            temp_data_dir=temp_data_dir,            
             )
 
 
@@ -728,7 +793,8 @@ class UCF101_3d(GeneralDataset):
                  split_n=1,
                  return_label=False,
                  supervised=False,
-                 seed=None
+                 seed=None,
+                 temp_data_dir=None,
                  ):
         """
         UCF101_3d()
@@ -763,6 +829,9 @@ class UCF101_3d(GeneralDataset):
         - seed : int (default=None)
             Seed to use for the random process of sub-sampling the dataset, if 
             unit_test is True.
+        - temp_data_dir : str or Path (default=None)
+            If provided, path to the new data directory to reset video paths to 
+            point to (up to dataset name directory), after loading.
         """
 
         super().__init__(
@@ -778,6 +847,7 @@ class UCF101_3d(GeneralDataset):
             return_label=return_label,
             supervised=supervised,
             seed=seed,
+            temp_data_dir=temp_data_dir,
             )
 
 
@@ -800,7 +870,8 @@ class HMDB51_3d(GeneralDataset):
                  split_n=1,
                  return_label=False,
                  supervised=False,
-                 seed=None
+                 seed=None,
+                 temp_data_dir=None,
                  ):
         """
         HMDB51_3d()
@@ -835,6 +906,9 @@ class HMDB51_3d(GeneralDataset):
         - seed : int (default=None)
             Seed to use for the random process of sub-sampling the dataset, if 
             unit_test is True.
+        - temp_data_dir : str or Path (default=None)
+            If provided, path to the new data directory to reset video paths to 
+            point to (up to dataset name directory), after loading.
         """
 
         super().__init__(
@@ -850,6 +924,7 @@ class HMDB51_3d(GeneralDataset):
             return_label=return_label,
             supervised=supervised,
             seed=seed,
+            temp_data_dir=temp_data_dir,
             )
 
 
@@ -878,7 +953,8 @@ class MouseSim_3d(GeneralDataset):
                  unit_test=False,
                  return_label=False,
                  supervised=False,
-                 seed=None
+                 seed=None,
+                 temp_data_dir=None,
                  ):
         """
         MouseSim_3d()
@@ -916,6 +992,9 @@ class MouseSim_3d(GeneralDataset):
         - seed : int (default=None)
             Seed to use for the random process of sub-sampling the dataset, if 
             unit_test is True.
+        - temp_data_dir : str or Path (default=None)
+            If provided, path to the new data directory to reset video paths to 
+            point to (up to dataset name directory), after loading.
         """
 
         if eye == "both": 
@@ -940,6 +1019,7 @@ class MouseSim_3d(GeneralDataset):
             return_label=return_label,
             supervised=supervised,
             seed=seed,
+            temp_data_dir=temp_data_dir,
             )
 
     @property
