@@ -142,23 +142,23 @@ python run_model.py \
     --net "$FIXED_NET" \
     --train_what "$FIXED_TRAIN_WHAT" \
     --img_dim "$FIXED_IMG_DIM" \
-    "$FIXED_AUGM_ARG" \
+    $FIXED_AUGM_ARG \
     --batch_size "$FIXED_BATCH_SIZE" \
     --train_len "$FIXED_TRAIN_LEN" \
     --gab_img_len "$FIXED_GAB_IMG_LEN" \
     --U_prob "$FIXED_U_PROB" \
     --num_workers "$FIXED_NUM_WORKERS" \
-    "$SEED_ARG" \
+    $SEED_ARG \
     --model "$MODEL" \
-    "$U_POSSIZE_ARG" \
+    $U_POSSIZE_ARG \
     --unexp_epoch "$UNEXP_EPOCH" \
     --seq_len "$FIX_SEQ_LEN" \
     --pred_step "$PRED_STEP" \
     --num_seq "$NUM_SEQ" \
     "$ROLL_ARG" \
     --num_epochs "$NUM_EPOCHS" \
-    "$SUFFIX_ARG" \
-    "$PRETRAINED_ARG" \
+    $SUFFIX_ARG \
+    $PRETRAINED_ARG \
     --log_test_cmd \
 
 code="$?"

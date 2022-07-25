@@ -50,7 +50,7 @@ if [[ $DATASET == "Kinetics400" && $IMG_DIM -gt 140 ]]; then
     K400_BIG_ARG="-b" # for copying data
 elif [[ $DATASET == "MouseSim" ]]; then
     EYE_ARG="--eye left"
-    EYE_COPY_ARG="--e left" # for copying data
+    EYE_COPY_ARG="-e left" # for copying data
     NUM_EPOCHS=1000
     BATCH_SIZE=10
     LR_ARG="--lr 0.0001"
@@ -69,9 +69,10 @@ fi
 
 
 # 4. Copy data to $SLURM_TMPDIR
-SRC_DIR="${SCRATCH}/dpc/datasets"
-echo "Copying data from $SRC_DIR to $SLURM_TMPDIR."
-bash slurm/copy_frame_tars.sh -s "$SRC_DIR" -t "$SLURM_TMPDIR" -d "$DATASET" "$EYE_COPY_ARG" "$K400_BIG_ARG"
+EXIT=0
+
+set -x # echo commands to console
+bash slurm/copy_frame_tars.sh -s "${SCRATCH}/dpc/datasets" -t "$SLURM_TMPDIR" -d "$DATASET" $EYE_COPY_ARG $K400_BIG_ARG
 
 code=${?}
 if [[ "$code" -gt "$EXIT" ]]; then 
@@ -82,27 +83,23 @@ fi
 
 
 # 5. Train model
-EXIT=0
-
-set -x # echo commands to console
 
 python run_model.py \
     --output_dir "${SCRATCH}/dpc/models" \
-    --temp_data_dir "$SLURM_TMPDIR" \
     --model "$MODEL" \
     --dataset "$DATASET" \
-    "$EYE_ARG" \
+    $EYE_ARG \
     --img_dim "$IMG_DIM" \
     --batch_size "$BATCH_SIZE" \
     --num_seq "$NUM_SEQ" \
     --num_epochs "$NUM_EPOCHS" \
     --train_what "$TRAIN_WHAT" \
-    "$LR_ARG" \
+    $LR_ARG \
     --seed "$SEED" \
-    "$PRETRAINED_ARG" \
+    $PRETRAINED_ARG \
     --num_workers 8 \
     --log_test_cmd \
-    --temp_data_dir $SLURM_TMPDIR \
+    --temp_data_dir "$SLURM_TMPDIR" \
 
 code=${?}
 if [[ "$code" -gt "$EXIT" ]]; then EXIT="$code"; fi # collect exit code

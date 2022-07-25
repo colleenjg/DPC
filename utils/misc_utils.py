@@ -1008,21 +1008,18 @@ def get_general_hyperparams(resume=False, test=False):
         List of parameters to ignore when collecting hyperparameters.
     """
     
-    general_params = [
-        "data_path_dir", "log_freq", "log_level", "output_dir", "save_best", 
-        "save_by_batch", 
-        ]
+    general_params = ["data_path_dir", "log_level", "output_dir"]
     ignore_params = ["not_save_best"]
-
-    if resume:
-        ignore_params.append("overwrite")
-    else:
-        general_params.append("overwrite")
     
-    if resume or test:
-        ignore_params.append("suffix")
+    if test:
+        ignore_params.extend(["log_freq", "save_best", "save_by_batch"])
     else:
-        general_params.append("suffix")
+        general_params.extend(["log_freq", "save_best", "save_by_batch"])
+
+    if resume or test:
+        ignore_params.extend(["overwrite", "suffix"])
+    else:
+        general_params.extend(["overwrite", "suffix"])
 
     return general_params, ignore_params
 
@@ -1419,12 +1416,13 @@ def log_test_cmd(args):
     cmd = "python run_model.py"
 
     # mandatory test settings
-    cmd = f"{cmd} --batch_size 1 --not_save_best --num_epochs 0"
+    cmd = f"{cmd} --batch_size 1 --num_workers 1"
 
     # specific settings
     include = [
         "data_path_dir", "dataset", "img_dim", "log_level", "model", "net", 
         "num_seq", "plt_bkend", "seq_len",
+        # "temp_data_dir" # not included, as it is expected to be temporary
         ]
 
     if args.seed is not None:
@@ -1445,7 +1443,7 @@ def log_test_cmd(args):
         cmd = f"{cmd} --{key} {val}"
 
 
-    include_bool = ["cpu_only"]
+    include_bool = ["cpu_only", "no_augm", "use_tb"]
     if args.dataset == "Gabors":
         include_bool.extend(["diff_U_possizes", "roll"])
 

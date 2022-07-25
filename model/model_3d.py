@@ -469,7 +469,11 @@ class LC_RNN(torch.nn.Module):
         self.param["hidden_size"] = self.param["feature_size"]
         self.param["kernel_size"] = 1
 
-        logger.info("=> Loading RNN + FC model (ConvRNN, kernel size: 1).")
+        logger.info(
+            "=> Loading RNN + FC model (ConvRNN, kernel size: 1).", 
+            extra={"spacing": "\n"}
+            )
+            
         self.agg = convrnn.ConvGRU(
             input_size=self.param["feature_size"],
             hidden_size=self.param["hidden_size"],

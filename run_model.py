@@ -112,6 +112,7 @@ def check_adjust_args(args):
             logger.warning("Setting batch_size to 1.", extra={"spacing": TAB})
             args.num_epochs = 0
             args.batch_size = 1
+            args.num_workers = 1
             args.save_best = False
         else:
             raise ValueError("Test can only be done in the supervised setting.")

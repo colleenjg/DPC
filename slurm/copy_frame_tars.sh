@@ -90,5 +90,5 @@ if [[ "$EXIT" -ne 0 ]]; then exit "$EXIT"; fi # exit with highest exit code
 
 # 4. End
 
-echo "Successfully copied and untarred data."
+echo -e "Successfully copied and untarred data.\n"
 
