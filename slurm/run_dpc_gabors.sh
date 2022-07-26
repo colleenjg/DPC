@@ -9,6 +9,8 @@
 #SBATCH --output=/home/mila/g/gillonco/scratch/dpc_gabors_%A_%a.out
 
 
+# Current longest: ?
+
 # 1. Load modules
 module load anaconda/3
 module load cuda/10.2/cudnn/7.6
@@ -155,7 +157,7 @@ python run_model.py \
     --seq_len "$FIX_SEQ_LEN" \
     --pred_step "$PRED_STEP" \
     --num_seq "$NUM_SEQ" \
-    "$ROLL_ARG" \
+    $ROLL_ARG \
     --num_epochs "$NUM_EPOCHS" \
     $SUFFIX_ARG \
     $PRETRAINED_ARG \
