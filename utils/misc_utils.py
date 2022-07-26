@@ -1426,11 +1426,13 @@ def log_test_cmd(args):
     if not args.supervised or args.test:
         return
 
+    unexp = True if args.dataset == "Gabors" else False
+
     # get the model to test
     from utils.checkpoint_utils import find_last_checkpoint
     for best in [True, False]:
         test_checkpoint_path = find_last_checkpoint(
-            args.output_dir, best=best, raise_none=False
+            args.output_dir, best=best, unexp=unexp, raise_none=False
             )
         if test_checkpoint_path is not None:
             break

@@ -526,7 +526,7 @@ def save_checkpoint(state_dict, is_best=False, gap=None, filename=None,
 
 
 #############################################
-def find_last_checkpoint(output_dir, best=False, raise_none=True):
+def find_last_checkpoint(output_dir, best=False, unexp=False, raise_none=True):
     """
     find_last_checkpoint(output_dir)
 
@@ -542,6 +542,8 @@ def find_last_checkpoint(output_dir, best=False, raise_none=True):
     -------------
     - best : bool (default=False)
         If True, only 'best' models are returned.
+    - unexp : bool (default=False)
+        If True, unexpected model checkpoint is searched for. 
     - raise_none : bool (default=True)
         If True and no model is found, an error is raised. Otherwise, if no 
         model is found, a warning is thrown, but None is returned.
@@ -559,9 +561,11 @@ def find_last_checkpoint(output_dir, best=False, raise_none=True):
     if not Path(output_dir).is_dir():
         raise OSError(f"{output_dir} is not a directory.")
 
-    epoch_pattern = "epoch*.pth.tar"
+    unexp_str = "_unexp" if unexp else ""
+
+    epoch_pattern = f"epoch*{unexp_str}.pth.tar"
     if best:
-        epoch_pattern = "best_epoch*.pth.tar"
+        epoch_pattern = f"best_{unexp_str}epoch*.pth.tar"
     all_existing = glob.glob(
         str(Path(output_dir, "**", epoch_pattern)), recursive=True
         )

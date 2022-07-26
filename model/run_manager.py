@@ -618,7 +618,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         if is_gabor:
             data_seed = gabor_utils.update_gabors(
                 main_loader, val_loader, seed=data_seed, epoch_n=epoch_n, 
-                unexp_epoch=unexp_epoch
+                unexp_epoch=unexp_epoch, test=test
                 )
             gabor_unexp = main_loader.dataset.unexp
             gab_unexp_str = "_unexp" if gabor_unexp else ""

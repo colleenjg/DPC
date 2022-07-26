@@ -1042,7 +1042,8 @@ def update_dataset_possizes(main_loader, val_loader=None, seed=None, incr=0):
 
 
 #############################################
-def update_unexp(main_loader, val_loader=None, epoch_n=0, unexp_epoch=10):
+def update_unexp(main_loader, val_loader=None, epoch_n=0, unexp_epoch=10, 
+                 test=False):
     """
     update_unexp(main_loader)
 
@@ -1062,17 +1063,17 @@ def update_unexp(main_loader, val_loader=None, epoch_n=0, unexp_epoch=10):
         Epoch number.
     - unexp_epoch : int (default=10)
         Epoch as of which unexpected sequences are introduced.
+    - test : bool (default=False)
+        If True, main_loader is a test dataloader.
     """
 
     if not main_loader.dataset.unexp and epoch_n >= unexp_epoch:
         main_loader.dataset.unexp = True
-        loader_mode = main_loader.dataset.mode
-        dataset_str = f" {loader_mode} dataset"
+        loader_mode = "test" if test else "train"
+        dataset_str = f"{loader_mode} dataset"
         if val_loader is not None and not val_loader.dataset.unexp:
             val_loader.dataset.unexp = True
-            dataset_str = (
-                f"{loader_mode} and {val_loader.dataset.mode} datasets"
-                )
+            dataset_str = (f"{loader_mode} and val datasets")
 
         logger.info(f"Setting {dataset_str} to include unexpected sequences.", 
             extra={"spacing": "\n"}
@@ -1081,7 +1082,7 @@ def update_unexp(main_loader, val_loader=None, epoch_n=0, unexp_epoch=10):
 
 #############################################
 def update_gabors(main_loader, val_loader=None, seed=None, epoch_n=0, 
-                  unexp_epoch=10):
+                  unexp_epoch=10, test=False):
     """
     update_gabors(main_loader)
 
@@ -1103,6 +1104,8 @@ def update_gabors(main_loader, val_loader=None, seed=None, epoch_n=0,
         Epoch number.
     - unexp_epoch : int (default=10)
         Epoch as of which unexpected sequences are introduced.
+    - test : bool (default=False)
+        If True, main_loader is a test dataloader.
 
     Returns
     -------
@@ -1116,7 +1119,7 @@ def update_gabors(main_loader, val_loader=None, seed=None, epoch_n=0,
     
     update_unexp(
         main_loader, val_loader, epoch_n=epoch_n, 
-        unexp_epoch=unexp_epoch
+        unexp_epoch=unexp_epoch, test=test
         )
 
     return seed
