@@ -988,17 +988,15 @@ def get_dataset_hyperparams(dataset="UCF101"):
     dataset_params = ["dataset", "img_dim", "num_seq", "no_augm", "seq_len"]
     ignore_params = ["diff_possizes", "no_gray"]
 
-    ucf_hmdb_ms_params = ["ucf_hmdb_ms_ds"]
     if dataset in ["UCF101", "HMDB51", "MouseSim"]:
-        dataset_params.extend(ucf_hmdb_ms_params)
+        dataset_params.append("ucf_hmdb_ms_ds")
     else:
-        ignore_params.extend(ucf_hmdb_ms_params)        
+        ignore_params.append("ucf_hmdb_ms_ds")        
 
-    ms_params = ["eye"]
     if dataset == "MouseSim":
-        dataset_params.extend(ms_params)
+        dataset_params.append("eye")
     else:
-        ignore_params.extend(ms_params)
+        ignore_params.append("eye")
 
     gabor_params = [
         "diff_U_possizes", "gab_img_len", "gray", "num_gabors", 
@@ -1462,7 +1460,7 @@ def log_test_cmd(args):
         include.extend(
             ["gab_img_len", "num_gabors", "train_len", "U_prob"]
             )
-    else:
+    elif args.dataset in ["HMDB51", "MouseSim", "UCF101"]:
         include.append("ucf_hmdb_ms_ds")
         if args.dataset == "MouseSim":
             include.append("eye")
