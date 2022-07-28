@@ -1063,7 +1063,7 @@ def add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item,
 
 #############################################
 def log_epoch(stats_str, duration=None, epoch_n=0, num_epochs=50, val=False, 
-              test=False, batch_idx=0, n_batches=None, spacing="\n"):
+              test=False, batch_idx=0, n_batches=None, spacing="\n", tail=""):
     """
     log_epoch(stats_str)
 
@@ -1091,7 +1091,9 @@ def log_epoch(stats_str, duration=None, epoch_n=0, num_epochs=50, val=False,
     - n_batches : int (default=None)
         Total number of batches. If None, batch index is not logged.
     - spacing : str (default="\n")
-        Spacing to used before the logged string.
+        Spacing to add before the logged string.
+    - tail : str (default="")
+        Spacing to add after the logged string. 
 
     Returns
     -------
@@ -1121,7 +1123,7 @@ def log_epoch(stats_str, duration=None, epoch_n=0, num_epochs=50, val=False,
                 )
             time_str = f"{time_str}/batch"
 
-    log_str = f"{epoch_str}{TAB}{stats_str}{TAB}{time_str}"
+    log_str = f"{epoch_str}{TAB}{stats_str}{TAB}{time_str}{tail}"
 
     logger.info(log_str, extra={"spacing": spacing})
 

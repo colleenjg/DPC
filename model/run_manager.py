@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 import time
+from tqdm import tqdm
 
 from matplotlib import pyplot as plt
 import numpy as np
@@ -208,6 +209,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
 
         # log results
         if idx % log_freq == 0 or idx == len(dataloader) - 1:
+            tail = "\n" if idx == len(dataloader) - 1 else ""
             loss_avg, acc_avg, stats_str, loss_val, acc_val = \
                 loss_utils.get_stats(
                     losses, topk_meters, ks=topk, local=True, incl_last=True
@@ -216,7 +218,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
             training_utils.log_epoch(
                 stats_str, duration=np.mean(batch_times), epoch_n=epoch_n, 
                 num_epochs=num_epochs, batch_idx=idx, 
-                n_batches=len(dataloader), spacing=spacing
+                n_batches=len(dataloader), spacing=spacing, tail=tail
                 )
             batch_times = []
             spacing = "" # for all but first log of the epoch
@@ -245,11 +247,11 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
 
 
 #############################################
-def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50, 
-                      topk=TOPK, loss_weights=None, device="cpu", 
-                      test_suffix=False, output_dir=None, save_by_batch=False):
+def eval_epoch(dataloader, model, epoch_n=0, num_epochs=50, topk=TOPK, 
+               loss_weights=None, device="cpu", test_suffix=False, 
+               output_dir=None, save_by_batch=False):
     """
-    val_or_test_epoch(dataloader, model)
+    eval_epoch(dataloader, model)
 
     Runs one epoch of evaluation on the model with the dataloader provided.
 
@@ -291,7 +293,7 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
     
     Returns
     -------
-    - val_or_test_dict : dict
+    - eval_dict : dict
         Dictionary recording validation or test loss and accuracy data, with 
         keys:
 
@@ -343,16 +345,16 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
     test_suffix = misc_utils.format_addendum(test_suffix, is_suffix=True)
     mode = "test" if test else "val"
     
-    val_or_test_dict = loss_utils.init_loss_dict(
+    eval_dict = loss_utils.init_loss_dict(
         dataloader.dataset, ks=topk, val=True, supervised=supervised, 
         save_by_batch=save_by_batch,
         )["val"]
-    val_or_test_dict["epoch_n"] = epoch_n
+    eval_dict["epoch_n"] = epoch_n
 
     gab_unexp_str = ""
     if is_gabor:
         unexp = dataloader.dataset.unexp
-        val_or_test_dict["unexp"] = unexp
+        eval_dict["unexp"] = unexp
         gab_unexp_str = "_unexp" if unexp else ""
         gabor_conf_mat = None     
         if save_by_batch and output_dir is not None:
@@ -372,7 +374,9 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
     shared_pred, SUB_B = False, None
     start_time = time.perf_counter()
     with torch.no_grad():
-        for idx, (input_seq, sup_target) in enumerate(dataloader):
+        for idx, (input_seq, sup_target) in tqdm(
+            enumerate(dataloader), total=len(dataloader)
+            ):
             if supervised and len(input_seq.size()) == 7:
                 shared_pred = True # applies to all batches
                 input_seq, SUB_B = training_utils.resize_input_seq(input_seq)
@@ -419,7 +423,7 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
                     batch_loss = batch_loss.mean(axis=2)
 
                 training_utils.add_batch_data(
-                    val_or_test_dict, 
+                    eval_dict, 
                     dataset=dataloader.dataset, 
                     batch_loss=losses.val, 
                     batch_loss_by_item=batch_loss.detach().cpu().tolist(),
@@ -432,8 +436,8 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
                 if is_gabor:
                     gabor_utils.update_records(
                         dataloader.dataset,
-                        val_or_test_dict["gabor_loss_dict"], 
-                        val_or_test_dict["gabor_acc_dict"],
+                        eval_dict["gabor_loss_dict"], 
+                        eval_dict["gabor_acc_dict"],
                         output=output_flattened.detach().cpu(),
                         sup_target=sup_target.detach().cpu(),
                         batch_loss=batch_loss.detach().cpu(),
@@ -453,16 +457,16 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
 
     training_utils.log_epoch(
         stats_str, duration=duration, epoch_n=epoch_n, num_epochs=num_epochs, 
-        val=True, test=test, spacing="\n"
+        val=True, test=test, spacing=""
         )
 
-    val_or_test_dict["loss"] = loss_avg
-    val_or_test_dict["acc"]  = acc_avg
+    eval_dict["loss"] = loss_avg
+    eval_dict["acc"]  = acc_avg
     for i, k in enumerate(topk):
-        val_or_test_dict[f"top{k}"] = topk_meters[i].avg
+        eval_dict[f"top{k}"] = topk_meters[i].avg
     
     if confusion_mat is not None:
-        val_or_test_dict["confusion_mat"] = confusion_mat.get_storage_dict()
+        eval_dict["confusion_mat"] = confusion_mat.get_storage_dict()
         # plot only if test or last epoch (slow, especially if many classes)
         if test or epoch_n == num_epochs: 
             loss_utils.plot_conf_mat(
@@ -491,7 +495,7 @@ def val_or_test_epoch(dataloader, model, epoch_n=0, num_epochs=50,
             )
 
 
-    return val_or_test_dict
+    return eval_dict
 
 
 #############################################
@@ -583,7 +587,6 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     writer_train, writer_val = None, None
     test = reload_kwargs["test"] if "test" in reload_kwargs.keys() else False
     if test:
-        val_loader = main_loader
         save_best = False
     else:
         save_best = False if val_loader is None else True
@@ -647,8 +650,9 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 )
 
         if test or save_best:
-            val_dict = val_or_test_epoch(
-                val_loader, 
+            eval_loader = main_loader if test else val_loader
+            val_dict = eval_epoch(
+                eval_loader, 
                 model, 
                 epoch_n=epoch_n, 
                 num_epochs=num_epochs, 
