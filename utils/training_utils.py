@@ -609,7 +609,10 @@ def class_weights(dataset="MouseSim", supervised=True):
     class_weights = None
     dataset = misc_utils.normalize_dataset_name(dataset)
     if supervised and dataset == "MouseSim":
-        class_weights = [6, 1] # based on the training set proportions
+        # weights were previously applied, based on training set proportions
+        class_weights = None
+
+    if class_weights is not None:
         logger.warning(
             f"Loss will be weighted per class as follows: {class_weights}."
             )

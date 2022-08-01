@@ -113,6 +113,32 @@ class BasicLogFormatter(logging.Formatter):
 
 
 #############################################
+def get_order_str(n=1):
+    """
+    get_order_str()
+
+    Returns an order string (e.g., "1st") based on the digit passed
+    """
+
+    if int(float(n)) != float(n):
+        raise ValueError(f"{n} must be an integer.")
+
+    n = int(float(n))
+
+    last_digit = int(str(n)[-1])
+    if last_digit == 1:
+        order_str = f"{n}st"
+    elif last_digit == 2:
+        order_str = f"{n}nd"
+    elif last_digit == 3:
+        order_str = f"{n}rd"
+    else:
+        order_str = f"{n}th"
+
+    return order_str
+
+
+#############################################
 def format_addendum(text=None, is_suffix=True):
     """
     format_addendum()

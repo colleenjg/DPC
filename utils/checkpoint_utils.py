@@ -441,7 +441,7 @@ def get_epoch_number(model_path):
 
 #############################################
 def save_checkpoint(state_dict, is_best=False, gap=None, filename=None, 
-                    output_dir=".", epoch_n=0, gabor_unexp=None, 
+                    output_dir=".", gabor_unexp=None, suffix=None, 
                     keep_all=False):
     """
     save_checkpoint(state_dict)
@@ -471,10 +471,15 @@ def save_checkpoint(state_dict, is_best=False, gap=None, filename=None,
         If not None, the value of the 'unexp' attribute of the Gabor dataset on 
         which the model was trained. It is added to the model state dictionary, 
         and to the save name pattern.
+    - suffix : str (default=None)
+        Suffix to include in the save name, when saving an extra copy, if 
+        applicable. 
     - keep_all : bool (default=False)
         If False, previous epoch checkpoints are removed.
     """
     
+    epoch_n = state_dict["epoch_n"]
+
     unexp_str = "_unexp" if gabor_unexp else ""
     if gabor_unexp is not None:
         state_dict["gabor_unexp"] = gabor_unexp
@@ -509,6 +514,13 @@ def save_checkpoint(state_dict, is_best=False, gap=None, filename=None,
             if last_epoch_path.exists():
                 last_epoch_path.unlink() # remove
 
+    # store with suffix, if applicable
+    if suffix is not None and len(suffix):
+        suffix_str = misc_utils.format_addendum(suffix, is_suffix=True)
+        suffix_filename = Path(
+            output_dir, f"epoch{epoch_n}{unexp_str}{suffix_str}.pth.tar"
+            )
+        torch.save(state_dict, str(suffix_filename))
 
     # store as best, and replace previous, if applicable
     if is_best:
@@ -517,8 +529,6 @@ def save_checkpoint(state_dict, is_best=False, gap=None, filename=None,
         for past_best in all_past_best:
             if Path(past_best).exists():
                 Path(past_best).unlink() # remove
-
-        epoch_n = state_dict["epoch_n"]
         torch.save(
             state_dict, 
             Path(model_direc, f"best{unexp_str}_epoch{epoch_n}.pth.tar")

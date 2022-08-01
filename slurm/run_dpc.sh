@@ -52,9 +52,9 @@ elif [[ $DATASET == "MouseSim" ]]; then
     EYE_ARG="--eye left"
     EYE_COPY_ARG="-e left" # for copying data
     NUM_EPOCHS=1000
-    BATCH_SIZE=10
+    BATCH_SIZE=28
     LR_ARG="--lr 0.0001"
-    NUM_SEQ=25
+    NUM_SEQ=18
 fi
 
 if [[ $PRETRAINED == yes ]]; then

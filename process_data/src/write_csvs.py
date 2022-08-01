@@ -421,9 +421,16 @@ def main_MouseSim(f_root, csv_root=None, splits_seed=100, prop_test=0.2):
 
     csv_root_orig = csv_root
     f_root_orig = f_root
+    found_eye = False
     for eye in [False, "left", "right"]:
         eye_str = f"_{eye}" if eye else ""
         f_root = f"{f_root_orig}{eye_str}"
+
+        if not Path(f_root).is_dir():
+            logger.warning(f"Did not find frames directory under '{f_root}'.")
+            continue
+
+        found_eye = True
         csv_root = f"{csv_root_orig}{eye_str}"
         Path(csv_root).mkdir(exist_ok=True, parents=True)
 
@@ -471,6 +478,9 @@ def main_MouseSim(f_root, csv_root=None, splits_seed=100, prop_test=0.2):
             )
 
         write_class_index_file(class_names, csv_root, expected_n=None)
+    
+    if not found_eye:
+        raise ValueError("Did not find frames directory for any eye view.")
 
 
 #############################################

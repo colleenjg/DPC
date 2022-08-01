@@ -192,12 +192,12 @@ def get_output_directory(args):
         if dataset_str in ["UCF101", "HMDB51"]:
             ds_str = f"_ds{args.ucf_hmdb_ms_ds}"
         elif dataset_str in ["MouseSim"]:
-            if args.batch_size < 10:
+            if args.batch_size < 28:
                 logger.warning(
-                    "Increasing args.batch_size to 10 to ensure all videos "
+                    "Increasing args.batch_size to 28 to ensure all videos "
                     "are included in each batch."
                     )
-                args.batch_size = 10
+                args.batch_size = 28
 
         pred_str = ""
         if not args.supervised:

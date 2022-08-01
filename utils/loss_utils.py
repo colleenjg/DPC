@@ -263,7 +263,8 @@ class ConfusionMeter(object):
     - self.class_names : array-like
         Ordered list of class names or None.
     - self.mat : 2D array
-        Confusion matrix, with dimensions self.num_classes x self.num_classes.
+        Confusion matrix, with dimensions 
+        self.num_classes (predicted) x self.num_classes (target).
     - self.num_classes : int
         Number of classes.
     - self.precision : list

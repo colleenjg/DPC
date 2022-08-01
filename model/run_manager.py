@@ -618,8 +618,9 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     for epoch_n in range(start_epoch_n, num_epochs + 1):
         start_time = time.perf_counter()
 
+        gabor_suffix = None
         if is_gabor:
-            data_seed = gabor_utils.update_gabors(
+            data_seed, gabor_suffix = gabor_utils.update_gabors(
                 main_loader, val_loader, seed=data_seed, epoch_n=epoch_n, 
                 unexp_epoch=unexp_epoch, test=test
                 )
@@ -724,9 +725,9 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         checkpoint_utils.save_checkpoint(
             state_dict, is_best, 
             output_dir=model_direc,
-            epoch_n=epoch_n,
             gabor_unexp=gabor_unexp,
             keep_all=False,
+            suffix=gabor_suffix,
         )
 
         stop_time = time.perf_counter()
