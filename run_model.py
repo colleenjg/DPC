@@ -209,7 +209,7 @@ def get_output_directory(args):
             f"{dataset_str}-{args.img_dim}_r{args.net[6:]}_{args.model}_"
             f"bs{args.batch_size}_lr{args.lr}_nseq{args.num_seq}{pred_str}_"
             f"len{args.seq_len}{ds_str}_train-{args.train_what}"
-            f"{seed_str}{pretrained_str}{suffix_str}"
+            f"{seed_str}{suffix_str}{pretrained_str}"
         )
 
         output_dir = Path(args.output_dir, save_name)
