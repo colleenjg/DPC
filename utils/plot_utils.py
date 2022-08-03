@@ -599,7 +599,7 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
 
 
 #############################################
-def add_colorbar(im, adj_aspect=True, **cbar_kwargs):
+def add_colorbar(im, adj_aspect=True, norm=False, **cbar_kwargs):
     """
     add_colorbar(im)
 
@@ -615,8 +615,12 @@ def add_colorbar(im, adj_aspect=True, **cbar_kwargs):
     Optional args
     -------------
     - adj_aspect : bool (default=True)
-        If True, the colorbar width is adjusted to compensate for tick 
-        value width to minimize the impact on the confusion matrix width.
+        If True, the colorbar width is adjusted to compensate for tick value 
+        width to minimize the impact on the confusion matrix width.
+    - norm : bool (default=False)
+        If True, the confusion matrix has been normalized. A fixed number of 
+        ticks (6) will be plotted on the colorbar.
+
 
     Keyword args
     ------------
@@ -631,6 +635,9 @@ def add_colorbar(im, adj_aspect=True, **cbar_kwargs):
         "1000+" : 140,
     }
     
+    if norm:
+        adj_aspect = False # unnecessary
+
     fig = im.figure
     if adj_aspect:
         # ensure that the colormap aspect ratio keeps the widths of the 
@@ -641,12 +648,14 @@ def add_colorbar(im, adj_aspect=True, **cbar_kwargs):
 
     for _ in range(4):
         cm = fig.colorbar(im, **cbar_kwargs)
-        cm.ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+        
+        if not norm:
+            cm.ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
-        max_tick = max(
-            [tick for tick in cm.ax.get_yticks() if tick <= clims[1]]
-            )
         if adj_aspect:
+            max_tick = max(
+                [tick for tick in cm.ax.get_yticks() if tick <= clims[1]]
+                )
             for min_val in [1, 10, 100, 1000]:
                 if max_tick >= min_val:
                     new_aspect = aspect_ratios[f"{min_val}+"]
@@ -658,4 +667,7 @@ def add_colorbar(im, adj_aspect=True, **cbar_kwargs):
             break
 
     cm.set_label("Counts", rotation=270, labelpad=18)
+
+    if norm:
+        cm.ax.set_yticks(np.linspace(0, 1, 6))
 
