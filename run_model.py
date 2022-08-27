@@ -510,8 +510,9 @@ if __name__ == "__main__":
     # Gabors only
     parser.add_argument("--num_gabors", default=30, type=int,
         help="number of Gabor patches per image")
-    parser.add_argument("--gab_img_len", default=3, type=int,
-        help="number of frames per image")
+    parser.add_argument("--gab_img_len", default=5, type=int,
+        help=("number of frames per image (equivalent to 300ms, for a model "
+        "pretrained on 50 Hz MouseSim videos, downsampled by 3)"))
     parser.add_argument("--diff_possizes", action="store_true", 
         help=("if True, new positions/sizes are selected for each sequence. "
             "Otherwise, they are fixed at the start of each epoch."))

@@ -26,8 +26,7 @@ FIXED_TRAIN_WHAT=all
 FIXED_IMG_DIM=128
 FIXED_AUGM_ARG="--no_augm"
 FIXED_BATCH_SIZE=32
-FIXED_TRAIN_LEN=1024
-FIXED_GAB_IMG_LEN=3
+FIXED_GAB_IMG_LEN=5
 FIX_SEQ_LEN="$FIXED_GAB_IMG_LEN"
 FIXED_U_PROB=0.08
 FIXED_NUM_WORKERS=8
@@ -40,7 +39,6 @@ echo -e "\nFIXED HYPERPARAMETERS\n" \
 "image dimensions: $FIXED_IMG_DIM\n" \
 "augmentation argument: $FIXED_AUGM_ARG\n" \
 "batch size: $FIXED_BATCH_SIZE\n" \
-"training dataset length: $FIXED_TRAIN_LEN\n" \
 "Gabor image length: $FIXED_GAB_IMG_LEN\n" \
 "sequence length: $FIX_SEQ_LEN\n" \
 "U probability: $FIXED_U_PROB\n" \
@@ -99,6 +97,7 @@ if [[ "$SIMPLE" == "yes" ]]; then
     PRED_STEP=1 # predict D/U only
     NUM_SEQ=4 # gray will never appear
     ROLL_ARG=""
+    TRAIN_LEN=1024
     if [[ "$PRETRAINED_ARG" == "" ]]; then
         UNEXP_EPOCH=40
     else
@@ -108,6 +107,7 @@ else
     PRED_STEP=2
     NUM_SEQ=5
     ROLL_ARG="--roll"
+    TRAIN_LEN=4096
     if [[ "$PRETRAINED_ARG" == "" ]]; then
         UNEXP_EPOCH=50
     else
@@ -132,6 +132,7 @@ echo -e "\nARRAY ID HYPERPARAMETERS\n" \
 "number of steps to predict: $PRED_STEP\n" \
 "number of consecutive sequences per batch item: $NUM_SEQ\n" \
 "roll argument: $ROLL_ARG\n" \
+"training dataset length: $TRAIN_LEN\n" \
 "number of epochs: $NUM_EPOCHS\n" \
 "suffix argument: $SUFFIX_ARG\n" \
 "pretrained argument: $PRETRAINED_ARG\n" \
@@ -151,7 +152,6 @@ python run_model.py \
     --img_dim "$FIXED_IMG_DIM" \
     $FIXED_AUGM_ARG \
     --batch_size "$FIXED_BATCH_SIZE" \
-    --train_len "$FIXED_TRAIN_LEN" \
     --gab_img_len "$FIXED_GAB_IMG_LEN" \
     --U_prob "$FIXED_U_PROB" \
     --num_workers "$FIXED_NUM_WORKERS" \
@@ -162,6 +162,7 @@ python run_model.py \
     --pred_step "$PRED_STEP" \
     --num_seq "$NUM_SEQ" \
     $ROLL_ARG \
+    --train_len "$TRAIN_LEN" \
     --num_epochs "$NUM_EPOCHS" \
     $SUFFIX_ARG \
     $PRETRAINED_ARG \

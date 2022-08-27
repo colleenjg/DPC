@@ -721,6 +721,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         }
         if is_gabor:
             state_dict["best_acc"] = best_accs
+            state_dict["data_seed"] = data_seed + epoch_n
 
         checkpoint_utils.save_checkpoint(
             state_dict, is_best, 
