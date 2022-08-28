@@ -421,13 +421,13 @@ class GeneralDataset(data.Dataset):
         -------------
         - t_seq: list of 4D Tensors
             List of transformed Tensor sequences, each with dims: 
-                SL x C x H x W
+                L x C x H x W
 
         Returns
         -------
         - t_seq : 6D Tensor
             Tensor of all possible half-overlapping clips, with dims: 
-                number of clips x N x SL x C x H x W
+                number of clips x N x L x C x H x W
         """
         
         num_poss = len(t_seq) - self.num_seq + 1
@@ -468,7 +468,7 @@ class GeneralDataset(data.Dataset):
         Returns
         -------
         - seq_idx : 2D array
-            Indices of sequence frames to load, with dims: sequences x SL
+            Indices of sequence frames to load, with dims: sequences x L
         """
 
         last_poss_start = vlen - self.num_seq * self.seq_len * self.downsample
@@ -591,10 +591,10 @@ class GeneralDataset(data.Dataset):
             (C, H, W) = t_seq[0].size()
             t_seq = torch.stack(t_seq, 0) # stack images
 
-            # reshape/transpose to N_all x C x SL x H x W
+            # reshape/transpose to N_all x C x L x H x W
             t_seq = t_seq.reshape(-1, self.seq_len, C, H, W).transpose(1, 2)
             
-            # get a sub-batch: SUB_B x N x C x SL x H x W
+            # get a sub-batch: SUB_B x N x C x L x H x W
             t_seq = self._select_seq_sub_batch(t_seq)
 
         else:
@@ -615,7 +615,7 @@ class GeneralDataset(data.Dataset):
             (C, H, W) = t_seq[0].size()
             t_seq = torch.stack(t_seq, 0) # stack images
             
-            # reshape/transpose to N x C x SL x H x W
+            # reshape/transpose to N x C x L x H x W
             t_seq = t_seq.reshape(
                 self.num_seq, self.seq_len, C, H, W
                 ).transpose(1, 2)
@@ -945,7 +945,7 @@ class MouseSim_3d(GeneralDataset):
     def __init__(self,
                  data_path_dir=Path("process_data", "data"),
                  mode="train",
-                 eye="left",
+                 eye="right",
                  transform=None,
                  seq_len=10,
                  num_seq=5,
@@ -968,9 +968,9 @@ class MouseSim_3d(GeneralDataset):
             pointers to the video frames for each split) is located. 
         - mode : str (default="train")
             Dataset mode (i.e., "train", "val", or "test").
-        - eye : str (default="both")
+        - eye : str (default="right")
             Eye(s) to which data should be cropped 
-            (i.e., "right", "left", "both").
+            (i.e., "left", "right", "both").
         - transform : torch Transform (default=None)
             Transform to apply to the sequences sampled.
         - seq_len : int (default=10)

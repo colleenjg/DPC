@@ -3,7 +3,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:rtx8000:2
 #SBATCH --mem=48GB
-#SBATCH --array=0-11
+#SBATCH --array=0-5
 #SBATCH --time=5:00:00
 #SBATCH --job-name=dpc_gab
 #SBATCH --output=/home/mila/g/gillonco/scratch/dpc_gabors_%A_%a.out
@@ -27,21 +27,24 @@ FIXED_IMG_DIM=128
 FIXED_AUGM_ARG="--no_augm"
 FIXED_BATCH_SIZE=32
 FIXED_GAB_IMG_LEN=5
-FIX_SEQ_LEN="$FIXED_GAB_IMG_LEN"
+FIXED_SEQ_LEN="$FIXED_GAB_IMG_LEN"
 FIXED_U_PROB=0.08
+FIXED_U_POSSIZE_ARG="--diff_U_possizes"
 FIXED_NUM_WORKERS=8
 
 
 echo -e "\nFIXED HYPERPARAMETERS\n" \
 "dataset: $FIXED_DATASET\n" \
+"model: $FIXED_MODEL\n" \
 "net: $FIXED_NET\n" \
 "train what: $FIXED_TRAIN_WHAT\n" \
 "image dimensions: $FIXED_IMG_DIM\n" \
 "augmentation argument: $FIXED_AUGM_ARG\n" \
 "batch size: $FIXED_BATCH_SIZE\n" \
 "Gabor image length: $FIXED_GAB_IMG_LEN\n" \
-"sequence length: $FIX_SEQ_LEN\n" \
+"sequence length: $FIXED_SEQ_LEN\n" \
 "U probability: $FIXED_U_PROB\n" \
+"U position/size argument: $FIXED_U_POSSIZE_ARG\n" \
 "number of workers: $FIXED_NUM_WORKERS\n" \
 
 
@@ -58,11 +61,7 @@ echo -e "EXTERNALLY SET HYPERPARAMETERS\n" \
 
 # 4. Array ID hyperparameters
 PRETRAINEDS=( "MouseSim" "Kinetics400" "no" ) # 3
-
-SIMPLES=( "no" "yes" ) # 2
-
-U_POSSIZE_ARGS=( "" "--diff_U_possizes" ) # 2
-SUFFIX_ARGS=( "" "--suffix diff_U_possizes" )
+ROLL_ARGS=( "" "--roll" ) # 2
 
 # set values for task ID
 # inner loop
@@ -70,17 +69,10 @@ PRETRAINEDS_LEN=${#PRETRAINEDS[@]}
 PRETRAINEDS_IDX=$(( SLURM_ARRAY_TASK_ID % PRETRAINEDS_LEN ))
 PRETRAINED=${PRETRAINEDS[$PRETRAINEDS_IDX]}
 
-# middle loop
-SIMPLES_LEN=${#SIMPLES[@]}
-SIMPLES_IDX=$(( SLURM_ARRAY_TASK_ID / PRETRAINEDS_LEN % SIMPLES_LEN ))
-SIMPLE=${SIMPLES[$SIMPLES_IDX]}
-
 # outer loop
-U_POSSIZE_ARGS_LEN=${#U_POSSIZE_ARGS[@]}
-U_POSSIZE_ARGS_IDX=$(( SLURM_ARRAY_TASK_ID / ( PRETRAINEDS_LEN * SIMPLES_LEN ) % U_POSSIZE_ARGS_LEN ))
-U_POSSIZE_ARG=${U_POSSIZE_ARGS[$U_POSSIZE_ARGS_IDX]}
-SUFFIX_ARG=${SUFFIX_ARGS[$U_POSSIZE_ARGS_IDX]}
-
+ROLL_ARGS_LEN=${#ROLL_ARGS[@]}
+ROLL_ARGS_IDX=$(( SLURM_ARRAY_TASK_ID / PRETRAINEDS_LEN % ROLL_ARGS_LEN ))
+ROLL_ARG=${ROLL_ARGS[$ROLL_ARGS_IDX]}
 
 
 # Set the pretrain path, if applicable
@@ -93,29 +85,23 @@ else
 fi
 
 # Set the sequence parameters
-if [[ "$SIMPLE" == "yes" ]]; then
+if [[ "$ROLL_ARG" == "" ]]; then
     PRED_STEP=1 # predict D/U only
-    NUM_SEQ=4 # gray will never appear
-    ROLL_ARG=""
+    NUM_SEQ_IN=4 # gray will never appear
     TRAIN_LEN=1024
-    if [[ "$PRETRAINED_ARG" == "" ]]; then
-        UNEXP_EPOCH=40
-    else
-        UNEXP_EPOCH=20
-    fi
 else
     PRED_STEP=2
-    NUM_SEQ=5
-    ROLL_ARG="--roll"
+    NUM_SEQ_IN=5
     TRAIN_LEN=4096
-    if [[ "$PRETRAINED_ARG" == "" ]]; then
-        UNEXP_EPOCH=50
-    else
-        UNEXP_EPOCH=30
-    fi
 fi
 
-NUM_EPOCHS=$(( UNEXP_EPOCH * 2 ))
+if [[ "$PRETRAINED_ARG" == "" ]]; then
+    UNEXP_EPOCH=20
+else
+    UNEXP_EPOCH=10
+fi
+
+NUM_EPOCHS=$(( UNEXP_EPOCH + 5 ))
 
 if [[ "$ROLL_ARG" ]]; then
     if [[ $SUFFIX_ARG ]]; then
@@ -127,12 +113,11 @@ fi
 
 
 echo -e "\nARRAY ID HYPERPARAMETERS\n" \
-"U position/size argument: $U_POSSIZE_ARG\n" \
-"unexpected epoch: $UNEXP_EPOCH\n" \
-"number of steps to predict: $PRED_STEP\n" \
-"number of consecutive sequences per batch item: $NUM_SEQ\n" \
 "roll argument: $ROLL_ARG\n" \
+"number of steps to predict: $PRED_STEP\n" \
+"number of consecutive blocks to use as input: $NUM_SEQ_IN\n" \
 "training dataset length: $TRAIN_LEN\n" \
+"unexpected epoch: $UNEXP_EPOCH\n" \
 "number of epochs: $NUM_EPOCHS\n" \
 "suffix argument: $SUFFIX_ARG\n" \
 "pretrained argument: $PRETRAINED_ARG\n" \
@@ -153,16 +138,16 @@ python run_model.py \
     $FIXED_AUGM_ARG \
     --batch_size "$FIXED_BATCH_SIZE" \
     --gab_img_len "$FIXED_GAB_IMG_LEN" \
+    --seq_len "$FIXED_SEQ_LEN" \
     --U_prob "$FIXED_U_PROB" \
+    $FIXED_U_POSSIZE_ARG \
     --num_workers "$FIXED_NUM_WORKERS" \
     $SEED_ARG \
-    $U_POSSIZE_ARG \
-    --unexp_epoch "$UNEXP_EPOCH" \
-    --seq_len "$FIX_SEQ_LEN" \
-    --pred_step "$PRED_STEP" \
-    --num_seq "$NUM_SEQ" \
     $ROLL_ARG \
+    --pred_step "$PRED_STEP" \
+    --num_seq_in "$NUM_SEQ_IN" \
     --train_len "$TRAIN_LEN" \
+    --unexp_epoch "$UNEXP_EPOCH" \
     --num_epochs "$NUM_EPOCHS" \
     $SUFFIX_ARG \
     $PRETRAINED_ARG \

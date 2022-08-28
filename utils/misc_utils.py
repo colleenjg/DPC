@@ -566,7 +566,7 @@ def get_unique_direc(direc, overwrite=False):
 
 
 #############################################
-def normalize_dataset_name(dataset_name="UCF101", short=False, eye="left"):
+def normalize_dataset_name(dataset_name="UCF101", short=False, eye="right"):
     """
     normalize_dataset_name()
 
@@ -578,7 +578,7 @@ def normalize_dataset_name(dataset_name="UCF101", short=False, eye="left"):
         Dataset name.
     - short : bool (default=False)
         If True, the short version of the dataset name is returned.
-    - eye : str (default="left")
+    - eye : str (default="right")
         Additional information for specifying the short name of the MouseSim 
         dataset, namely the eye parameter.
 
@@ -834,12 +834,12 @@ def write_input_seq_tb(writer, input_seq, n=2, i=0):
         Index under which to record sequences.
     """
 
-    _, N, C, SL, H, W = input_seq.shape
+    _, N, C, L, H, W = input_seq.shape
     writer.add_image(
         "input_seq", 
         denorm_transform(vutils.make_grid(
             input_seq[:n].transpose(2, 3).reshape(-1, C, H, W), 
-            nrow=N * SL)
+            nrow=N * L)
         ), i
     )
 
@@ -1011,8 +1011,8 @@ def get_dataset_hyperparams(dataset="UCF101"):
         List of parameters to ignore when collecting hyperparameters.
     """
 
-    dataset_params = ["dataset", "img_dim", "num_seq", "no_augm", "seq_len"]
-    ignore_params = ["diff_possizes", "no_gray"]
+    dataset_params = ["dataset", "img_dim", "num_seq_in", "no_augm", "seq_len"]
+    ignore_params = ["diff_possizes", "no_gray", "num_seq"]
 
     if dataset in ["UCF101", "HMDB51", "MouseSim"]:
         dataset_params.append("ucf_hmdb_ms_ds")
@@ -1475,7 +1475,7 @@ def log_test_cmd(args):
     # specific settings
     include = [
         "data_path_dir", "dataset", "img_dim", "log_level", "model", "net", 
-        "num_seq", "plt_bkend", "seq_len",
+        "num_seq_in", "plt_bkend", "seq_len",
         # "temp_data_dir" # not included, as it is expected to be temporary
         ]
 

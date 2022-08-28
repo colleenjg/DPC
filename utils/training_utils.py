@@ -151,7 +151,7 @@ def allow_data_parallel(dataloader, device, supervised=False):
 
 
 #############################################
-def get_model(dataset="UCF101", supervised=True, img_dim=224, num_seq=10, 
+def get_model(dataset="UCF101", supervised=True, img_dim=224, num_seq_in=5, 
               seq_len=5, network="resnet18", pred_step=3, dropout=0.5):
     """
     get_model()
@@ -171,9 +171,9 @@ def get_model(dataset="UCF101", supervised=True, img_dim=224, num_seq=10,
         self-supervised model is returned.
     - img_dim : int (default=256)
         Image dimensions, when they are input to the model.
-    - num_seq : int (default=5)
-            Number of consecutive sequences to return per sample.
-    - seq_len : int (default=10)
+    - num_seq_in : int (default=5)
+            Number of consecutive sequences to use as input.
+    - seq_len : int (default=5)
         Number of frames per sequence.
     - network : str (default="resnet18")
         Backbone network on which to build the model.
@@ -190,10 +190,9 @@ def get_model(dataset="UCF101", supervised=True, img_dim=224, num_seq=10,
     """
 
     model_kwargs = {
-        "sample_size": img_dim,
-        "num_seq": num_seq,
-        "seq_len": seq_len,
-        "network": network,
+        "input_size": img_dim,
+        "seq_len"   : seq_len,
+        "network"   : network,
     }
 
     if supervised:
@@ -202,11 +201,16 @@ def get_model(dataset="UCF101", supervised=True, img_dim=224, num_seq=10,
         model = model_3d.LC_RNN(
             num_classes=num_classes,
             dropout=dropout,
+            num_seq=num_seq_in,
             **model_kwargs
             )
     
     else:
-        model = model_3d.DPC_RNN(pred_step=pred_step, **model_kwargs)
+        model = model_3d.DPC_RNN(
+            num_seq_in=num_seq_in,
+            pred_step=pred_step, 
+            **model_kwargs
+            )
 
     return model
 
@@ -251,14 +255,14 @@ def get_target_from_mask(mask):
     - mask : 6D Tensor
         Mask indicating the nature of each predicted-ground truth pair, 
         where 1s indicate positive pairs, with dims: 
-            B x PS x HW x B x PS x HW.
+            B x P x D_out2 x B x P x D_out2.
 
     Returns
     -------
     - target : 6D Tensor
         Target mask identifying all positive pairs by 1s, and all other pairs 
         (negative) by 0s, with dims:
-            B x PS x HW x B x PS x HW.
+            B x P x D_out2 x B x P x D_out2.
     """
     
     # mask meaning: 1: pos
@@ -665,12 +669,12 @@ def resize_input_seq(input_seq):
     Required args
     -------------
     - input_seq : 7D Tensor
-        Input sequence to reshape, with dims: B, SUB_B, N, C, SL, H, W
+        Input sequence to reshape, with dims: B, SUB_B, N, C, L, H, W
 
     Returns
     -------
     - input_seq : 6D Tensor
-        Reshaped input sequence, with dims: B * SUB_B, N, C, SL, H, W
+        Reshaped input sequence, with dims: B * SUB_B, N, C, L, H, W
     - SUB_B : int
         Input sequence sub-batch size, before reshaping.
     """
@@ -678,8 +682,8 @@ def resize_input_seq(input_seq):
     if len(input_seq.shape) != 7:
         raise ValueError("'input_seq' should have 7 dimensions.")
 
-    B, SUB_B, N, C, SL, H, W = input_seq.shape
-    input_seq = input_seq.reshape(B * SUB_B, N, C, SL, H, W)
+    B, SUB_B, N, C, L, H, W = input_seq.shape
+    input_seq = input_seq.reshape(B * SUB_B, N, C, L, H, W)
 
     return input_seq, SUB_B
 
@@ -810,59 +814,59 @@ def prep_self_supervised_loss(output, mask, input_seq_shape=None):
     -------------
     - output : 6D Tensor
         Model output tensor, with dims: 
-            B x PS x HW x B x PS x HW.
+            B x P x D_out2 x B x P x D_out2.
     - mask : 6D Tensor
         Mask indicating the nature of each predicted-ground truth pair, 
         where 1s indicate positive pairs, with dims: 
-            B x PS x HW x B x PS x HW.
+            B x P x D_out2 x B x P x D_out2.
 
     Optional args
     -------------
     - input_seq_shape : tuple (default=None)
-        Input sequence shape (B, N, C, SL, H, W), optionally used for logging 
+        Input sequence shape (B, N, C, L, H, W), optionally used for logging 
         at the debugging level.
 
     Returns
     -------
     - output_flattened : 2D Tensor
         Flattened model output tensor, with dims: 
-            B * PS * HW x B_per (per GPU) * PS * HW
+            B * P * D_out2 x B_per (per GPU) * P * D_out2
     - target_flattened : 2D Tensor
         Flattened target mask identifying all positive pairs by 1s, and all 
         other pairs (negative) by 0s, with the same dimensions as 
         output_flattened.
     - loss_reshape : tuple
         Shape to which loss can be reshaped to separate loss values by batch, 
-        i.e. (B, PS, HW)
+        i.e. (B, P, D_out2)
     - target : 6D Tensor
         Unflattened target mask identifying all positive pairs by 1s, and all 
         other pairs (negative) by 0s, with dims: 
-            B x PS x HW x B x PS x HW.
+            B x P x D_out2 x B x P x D_out2.
     """
     
     input_seq_str = ""
     if input_seq_shape is not None:
         input_seq_str = (
             f"Input sequence shape: {input_seq_shape} "
-            "(expecting [B, N, C, SL, H, W]).\n"
+            "(expecting [B, N, C, L, H, W]).\n"
         )
 
     logger.debug(
         f"Model called next.\n{input_seq_str}"
         f"Output shape: {output.shape} "
-        "(expecting a 6D tensor: [B, PS, HW, B_per, PS, HW]).\n"
+        "(expecting a 6D tensor: [B, P, D_out2, B_per, P, D_out2]).\n"
         f"Mask shape: {mask.size()}"
     )
 
     # batch x pred step x dim squared x batch/GPU x pred step x dim squared
-    (B, PS, HW, B_per, _, _) = mask.size()
-    flat_dim = B * PS * HW
-    flat_dim_per = B_per * PS * HW # B_per: batch size per GPU
-    loss_reshape = (B, PS, HW)
+    (B, P, D_out2, B_per, _, _) = mask.size()
+    flat_dim = B * P * D_out2
+    flat_dim_per = B_per * P * D_out2 # B_per: batch size per GPU
+    loss_reshape = (B, P, D_out2)
 
     target = get_target_from_mask(mask)
 
-    # output is a 6d tensor: [B, PS, HW, B_per, PS, HW]
+    # output is a 6d tensor: [B, P, D_out2, B_per, P, D_out2]
     output_flattened = output.reshape(flat_dim, flat_dim_per)
     target_flattened = target.reshape(
         flat_dim, flat_dim_per).argmax(dim=1)
@@ -888,13 +892,13 @@ def prep_loss(output, mask=None, sup_target=None, input_seq_shape=None,
     - mask : 6D Tensor
         Mask indicating the nature of each predicted-ground truth pair, 
         where 1s indicate positive pairs. Required if supervised is False. 
-            Dimensions: B x PS x HW x B x PS x HW.
+            Dimensions: B x P x D_out2 x B x P x D_out2.
     - sup_target : 2 or 3D Tensor
         Tensor specifying the target class for each sequence. Required if 
         supervised is True. 
-        Dimensions: B x N (x SL x [label, unexp_label]).
+        Dimensions: B x N (x L x [label, unexp_label]).
     - input_seq_shape : tuple (default=None)
-        Input sequence shape (B, N, C, SL, H, W), optionally used for logging 
+        Input sequence shape (B, N, C, L, H, W), optionally used for logging 
         at the debugging level, if supervised is False.
     - supervised : bool (default=False)
         Whether output and target are for the supervised task.
@@ -968,13 +972,13 @@ def get_sup_target_to_store(dataset, sup_target):
     - sup_target : 2 or 4D Tensor
         Tensor specifying the target class for each sequence. Required if 
         supervised is True. 
-        Dimensions: B x N (x SL x [label, unexp label] if Gabor dataset).
+        Dimensions: B x N (x L x [label, unexp label] if Gabor dataset).
 
     Returns
     -------
     - sup_target : list
         Input sup_target converted to a nested list, or modified if Gabor 
-        dataset to B x N x SL x [image type, mean ori]. 
+        dataset to B x N x L x [image type, mean ori]. 
     """
     
     if isinstance(dataset, str):
@@ -1013,13 +1017,14 @@ def add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item,
         and optionally:
         'output_by_batch' (4 or 7D array-like)    : output values for each 
             batch, with dims batch x B x N x number of classes if the task is 
-            supervised or batch x B x PS x HW x B_per x PS x HW, otherwise.
+            supervised or batch x B x P x D_out2 x B_per x P x D_out2, 
+            otherwise.
         'sup_target_by_batch' (4 or 6D Tensor): supervised targets for each 
-            batch, each with dims: batch x B x N (x SL x [image type, mean ori] 
+            batch, each with dims: batch x B x N (x L x [image type, mean ori] 
             if Gabor dataset).
         'target_by_batch' (3 or 7D array-like)    : target values for each 
             batch, each with dims batch x B x N if the task is supervised or 
-            batch x B x PS x HW x B_per x PS x HW, otherwise.
+            batch x B x P x D_out2 x B_per x P x D_out2, otherwise.
 
     - dataset : torch data.Dataset object
         Torch dataset object, used to identify whether the dataset is a 
@@ -1034,14 +1039,14 @@ def add_batch_data(data_dict, dataset, batch_loss, batch_loss_by_item,
     - sup_target : 2 or 4D nested array-like
         List specifying the target class for each sequence. Required if 
         supervised is True. 
-        Dimensions: B x N (x SL x [label, unexp_label] if Gabor dataset).
+        Dimensions: B x N (x L x [label, unexp_label] if Gabor dataset).
     - output : 3 or 6D nested array-like
         Model output for the batch, with dims:
             B x N x number of classes if supervised, and 
-            B x PS x HW x B x PS x HW otherwise.
+            B x P x D_out2 x B x P x D_out2 otherwise.
     - target : 2, 4 or 6D nested array-like
         Target for the batch. See sup_target if supervised. 
-        Otherwise, dimensions are B x PS x HW x B x PS x HW. 
+        Otherwise, dimensions are B x P x D_out2 x B x P x D_out2. 
     - epoch_n : int (default=0)
         Epoch number associated with the batch for which data is being added.
     """

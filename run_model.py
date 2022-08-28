@@ -26,6 +26,7 @@ def check_adjust_args(args):
     - Normalizes dataset name
     - Sets arguments:
         - args.supervised from args.model
+        - args.num_seq from args.supervised
         - args.use_scheduler from args.supervised
     - Checks that values are accepted and inter-compatible for:
         - args.model
@@ -81,6 +82,7 @@ def check_adjust_args(args):
                 )
         args.model = "dpc-rnn"
         args.supervised = False
+        args.num_seq = args.num_seq_in + args.pred_step
     
     elif "lc" in args.model:
         if args.model not in ["lc-rnn", "lc"]:
@@ -90,6 +92,7 @@ def check_adjust_args(args):
                 )
         args.model = "lc-rnn"
         args.supervised = True
+        args.num_seq = args.num_seq_in
     else:
         raise ValueError(f"{args.model} not recognized.")
 
@@ -207,7 +210,7 @@ def get_output_directory(args):
 
         save_name = (
             f"{dataset_str}-{args.img_dim}_r{args.net[6:]}_{args.model}_"
-            f"bs{args.batch_size}_lr{args.lr}_nseq{args.num_seq}{pred_str}_"
+            f"bs{args.batch_size}_lr{args.lr}_nseq{args.num_seq_in}{pred_str}_"
             f"len{args.seq_len}{ds_str}_train-{args.train_what}"
             f"{seed_str}{suffix_str}{pretrained_str}"
         )
@@ -345,7 +348,7 @@ def run_training_or_test(args):
     # get model
     model = training_utils.get_model(
         dataset=main_loader.dataset, supervised=args.supervised, 
-        img_dim=args.img_dim, num_seq=args.num_seq, seq_len=args.seq_len, 
+        img_dim=args.img_dim, num_seq_in=args.num_seq_in, seq_len=args.seq_len, 
         network=args.net, pred_step=args.pred_step, dropout=args.dropout
         )
 
@@ -448,8 +451,8 @@ if __name__ == "__main__":
     parser.add_argument("--img_dim", default=128, type=int)
     parser.add_argument("--seq_len", default=5, type=int, 
         help="number of frames in each video block")
-    parser.add_argument("--num_seq", default=8, type=int, 
-        help="number of video blocks")
+    parser.add_argument("--num_seq_in", default=5, type=int, 
+        help="number of input video blocks, excluding the ones to predict")
     parser.add_argument("--ucf_hmdb_ms_ds", default=3, type=int, 
         help="frame downsampling rate for UCF, HMDB and MouseSim datasets")
 
@@ -504,7 +507,7 @@ if __name__ == "__main__":
             "training is complete."))
 
     # MouseSim only
-    parser.add_argument("--eye", default="left", 
+    parser.add_argument("--eye", default="right", 
         help="which eye to include (left, right or both)")
 
     # Gabors only
@@ -537,7 +540,8 @@ if __name__ == "__main__":
             "and supervised network will be run in test mode"))
 
     # self-supervised only
-    parser.add_argument("--pred_step", default=3, type=int)
+    parser.add_argument("--pred_step", default=3, type=int,
+        help="number of video blocks to predict (after num_seq_in)")
 
     args = parser.parse_args()
 

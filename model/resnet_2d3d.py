@@ -98,13 +98,13 @@ def downsample_basic_block(x, num_out_planes, stride=1):
     """
     downsample_basic_block(x, num_out_planes)
 
-    Returns the input, downsampled along the spatial dimension (H and W) and 
+    Returns the input, downsampled along the spatial dimensions (D) and 
     padded with 0s along the planes dimension.
     
     Required args
     -------------
     - x : 5D Tensor 
-        Input tensor, with dims: B x C_in (planes) x SL_in x H_in x W_in
+        Input tensor, with dims: B x C_in (planes) x L_in x D_in x D_in
     - num_out_planes : int
         Number of planes to expand the output to.
 
@@ -116,7 +116,7 @@ def downsample_basic_block(x, num_out_planes, stride=1):
     Returns
     -------
     - out : 5D Tensor 
-        dims: B x C_out (planes) x SL_out x H_out x W_out.
+        dims: B x C_out (planes) x L_out x D_out x D_out.
     """
 
     if len(x.size()) != 5:
@@ -237,13 +237,13 @@ class BasicBlock3d(nn.Module):
         Required args
         -------------
         - x : 5D Tensor 
-            Input tensor, with dims: B x C_in (planes) x SL_in x H_in x W_in.
+            Input tensor, with dims: B x C_in (planes) x L_in x D_in x D_in.
 
         Returns
         -------
         - out : 5D Tensor 
             Output tensor, with dims: 
-                B x C_out (planes) x SL_out x H_out x W_out.
+                B x C_out (planes) x L_out x D_out x D_out.
         """
         
         residual = x
@@ -361,12 +361,12 @@ class BasicBlock2d(nn.Module):
         Required args
         -------------
         - x : 5D Tensor 
-            Input tensor, with dims: B x C_in (planes) x SL x H_in x W_in.
+            Input tensor, with dims: B x C_in (planes) x L x D_in x D_in.
 
         Returns
         -------
         - out :  : 5D Tensor 
-            Output tensor, with dims: B x C_out (planes) x SL x H_out x W_out.
+            Output tensor, with dims: B x C_out (planes) x L x D_out x D_out.
         """
         residual = x
 
@@ -495,13 +495,13 @@ class Bottleneck3d(nn.Module):
         Required args
         -------------
         - x : 5D Tensor 
-            Input tensor, with dims: B x C_in (planes) x SL_in x H_in x W_in.
+            Input tensor, with dims: B x C_in (planes) x L_in x D_in x D_in.
 
         Returns
         -------
         - out :  : 5D Tensor 
             Output tensor, with dims: 
-                B x C_out (planes) x SL_out x H_out x W_out.
+                B x C_out (planes) x L_out x D_out x D_out.
         """
         
         residual = x
@@ -639,13 +639,13 @@ class Bottleneck2d(nn.Module):
         Required args
         -------------
         - x : 5D Tensor 
-            Input tensor, with dims: B x C_in (planes) x SL x H_in x W_in.
+            Input tensor, with dims: B x C_in (planes) x L x D_in x D_in.
 
         Returns
         -------
         - out :  : 5D Tensor 
             Output tensor, with dims: 
-                B x C_out (planes) x SL x H_out x W_out.
+                B x C_out (planes) x L x D_out x D_out.
         """
         
         residual = x
@@ -871,13 +871,13 @@ class ResNet2d3d_full(nn.Module):
         Required args
         -------------
         - x : 5D Tensor
-            Input tensor, with dims: B x C_in (planes=3) x SL_in x H_in x W_in.
+            Input tensor, with dims: B x C_in (planes=3) x L_in x D_in x D_in.
 
         Returns
         -------
         - x : 5D Tensor
             Output tensor, with dims: 
-                B x C_out (planes=256) x SL_out x H_out x W_out.            
+                B x C_out (planes=256) x L_out x D_out x D_out.            
         """
         
         x = self.conv1(x)

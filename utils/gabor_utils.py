@@ -1123,14 +1123,14 @@ def get_gabor_sup_target_to_store(dataset, sup_target):
         Gabor dataset
     - sup_target : Tensor
         Supervised target returned by the Gabors dataset for each sequence, 
-        with dims: B x N x SL  x 2 [label, unexp_label]
+        with dims: B x N x L  x 2 [label, unexp_label]
 
 
     Returns
     -------
     - sup_target : list
         Supervised target, with decoded labels, and dims: 
-        B x N x SL  x 2 [image type, ori]
+        B x N x L  x 2 [image type, ori]
     """
 
     if isinstance(dataset, str):
@@ -1155,7 +1155,7 @@ def get_gabor_sup_label(sup_target, warn=False):
     - sup_target: Tensor
         Supervised target returned by the Gabors dataset for each sequence, 
         with dims: 
-            B x N x SL  x 2, where the last dimension is [label, unexp_label]
+            B x N x L x 2, where the last dimension is [label, unexp_label]
 
     Optional args
     -------------
@@ -1172,10 +1172,10 @@ def get_gabor_sup_label(sup_target, warn=False):
     if len(sup_target.shape) != 4:
         raise ValueError(
             "'sup_target' should have 4 dimensions "
-            "(B x N x SL x (label, unexp))."
+            "(B x N x L x (label, unexp))."
             )
 
-    B, N, SL, _ = sup_target.shape
+    B, N, L, _ = sup_target.shape
 
     pred_idx = -1
     if warn:
@@ -1183,7 +1183,7 @@ def get_gabor_sup_label(sup_target, warn=False):
             "The supervised task for the Gabors dataset is currently "
             "implemented to predict the label (image type/mean orientation) "
             "of the final frame of the final sequence "
-            f"(frame {SL} of sequence {N})."
+            f"(frame {L} of sequence {N})."
             )
 
     sup_label = sup_target[:, pred_idx, pred_idx, 0].reshape(B, 1)
@@ -1216,8 +1216,8 @@ def warn_supervised(dataset):
     
     B = 1
     N = dataset.num_seq
-    SL = dataset.seq_len
-    dummy_arr = np.empty([B, N, SL, 2])
+    L = dataset.seq_len
+    dummy_arr = np.empty([B, N, L, 2])
 
     get_gabor_sup_label(dummy_arr, warn=True)
 
@@ -1629,15 +1629,15 @@ def update_records(dataset, loss_dict, acc_dict, output, sup_target,
         as loss_dict.
     - output : 2D Tensor
         Model output. If supervised, the dimensions are B x number of classes. 
-        Otherwise, the dimensions are B * PS * HW x B_per * PS * HW
+        Otherwise, the dimensions are B * P * D_out2 x B_per * P * D_out2
     - sup_target : 4D Tensor
         Supervised target returned by the Gabors dataset for each sequence, 
         with dims: 
-            B x N x SL x 2, where the last dimension is [label, unexp_label]
+            B x N x L x 2, where the last dimension is [label, unexp_label]
     - batch_loss : 2D Tensor
         Loss for each image. If supervised, the dimensions are B. 
         Otherwise, the batch loss is averaged across the spatial dimension, 
-        and the dimensions are B x PS (prediction step).
+        and the dimensions are B x P (prediction step).
 
     Optional args
     -------------
@@ -1653,16 +1653,16 @@ def update_records(dataset, loss_dict, acc_dict, output, sup_target,
         pred_labels = output.argmax(axis=1).reshape(-1)
 
     else:
-        B, PS = batch_loss.shape
-        HW = output.shape[0] / np.product(B * PS)
-        if int(HW) != HW:
+        B, P = batch_loss.shape
+        D_out2 = output.shape[0] / np.product(B * P)
+        if int(D_out2) != D_out2:
             raise RuntimeError(
-                "Failed to calculate spatial dimension (HW) from 'output' and "
-                "'batch_loss' shapes."
+                "Failed to calculate the flattened spatial dimension "
+                "(D_out2) from 'output' and 'batch_loss' shapes."
                 )
-        HW = int(HW)
+        D_out2 = int(D_out2)
 
-        main_shape = (B, PS, HW)
+        main_shape = (B, P, D_out2)
 
         # retrieve a prediction for each batch example / prediction step
         pred = loss_utils.get_predictions(
@@ -1670,7 +1670,7 @@ def update_records(dataset, loss_dict, acc_dict, output, sup_target,
             )[0].reshape(-1)
 
         # retrieve target for first frame of each predicted sequences
-        target_labels, _ = sup_target[:, -PS:, 0].reshape(B * PS, -1).T
+        target_labels, _ = sup_target[:, -P:, 0].reshape(B * P, -1).T
         pred_labels = target_labels[pred]
 
     # update confusion matrix

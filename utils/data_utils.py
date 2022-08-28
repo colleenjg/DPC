@@ -7,7 +7,7 @@ import torch
 from torch.utils import data
 from torchvision import transforms
 
-from dataset import augmentations, dataset_3d, gabor_stimuli
+from dataset import augmentations, dataset_3d, gabor_sequences
 from utils import misc_utils
 
 
@@ -73,7 +73,7 @@ def get_transform(dataset=None, img_dim=256, mode="train", no_augm=False,
             augmentations.Normalize(),
         ]
 
-    elif dataset in ["UCF101", "HMDB51", "MouseSim", "Gabors"]: 
+    elif dataset in ["UCF101", "HMDB51"]: 
         # designed for ucf101 and hmdb51: 
         # short size is 256 for ucf101, and 240 for hmdb51 
         # -> rand crop to 224 x 224 -> scale to img_dim x img_dim 
@@ -89,9 +89,6 @@ def get_transform(dataset=None, img_dim=256, mode="train", no_augm=False,
             augmentations.Normalize(),
         ]
 
-        if dataset == "Gabors":
-            allow_flip = False
-
     elif dataset == "Kinetics400": 
         # designed for kinetics400:
         # short size=150 -> rand crop to img_dim x img_dim
@@ -106,19 +103,25 @@ def get_transform(dataset=None, img_dim=256, mode="train", no_augm=False,
             augmentations.Normalize(),
         ]
     
-    elif dataset == "Gabors":
-        # no flip (to maintain orientations)
-        # -> rand crop to 224 x 224 -> scale to img_dim x img_dim 
+    elif dataset == "MouseSim": 
+        # designed for mousesim and gabors: 
         transform_list = [
             augmentations.RandomCrop(size=224, consistent=True),
             augmentations.Scale(size=(img_dim, img_dim)),
-            augmentations.RandomGray(consistent=False, p=0.5),
+            augmentations.ToTensor(),
+            augmentations.Normalize(),
+        ] 
+
+    elif dataset == "Gabors":
+        transform_list = [
+            augmentations.Scale(size=(img_dim, img_dim)),
             augmentations.ColorJitter(
                 brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0
                 ),
             augmentations.ToTensor(),
             augmentations.Normalize(),
-        ]    
+        ]
+
 
     elif dataset is None: # e.g., used for supervised learning
         if mode in ["train", "val"]:
@@ -158,12 +161,7 @@ def get_transform(dataset=None, img_dim=256, mode="train", no_augm=False,
     
     else:
         raise ValueError(f"{dataset} dataset is not recognized.")
-    
-    if not allow_flip: # remove any flips
-        transform_list = [
-            transform for transform in transform_list 
-            if not isinstance(transform, augmentations.RandomHorizontalFlip)
-        ]
+
 
     transform = transforms.Compose(transform_list)
 
@@ -203,7 +201,8 @@ def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None,
     - seq_len : int (default=5)
         Length of individual sequences to generate for the dataset.
     - num_seq : int (default=8)
-        Number of sequences to generate per batch item for the dataset.
+        Number of sequence blocks to generate per batch item for the dataset 
+        (should include any blocks to predict)
     - ucf_hmdb_ms_ds : bool (default=3)
         Level of temporal downsampling to use.
     - split_n : int (default=1)
@@ -321,7 +320,7 @@ def get_dataloader(data_path_dir=Path("process_data", "data"), transform=None,
                 )
             use_mode = "val"
 
-        dataset = gabor_stimuli.GaborSequenceGenerator(
+        dataset = gabor_sequences.GaborSequenceGenerator(
             unexp=False,
             mode=use_mode,
             transform=transform,

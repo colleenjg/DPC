@@ -55,7 +55,7 @@ _Workshop on Large Scale Holistic Video Understanding (ICCV)_.
 
 ## 5. Additional credit
 
-[Katharina Wilmes](https://github.com/k47h4) and [Luke Y. Prince](https://github.com/lyprince) developped the original code on which the **Gabor stimulus code** is based in this repository, based on [Gillon _et al._, 2021, _bioRxiv_](https://www.biorxiv.org/content/10.1101/2021.01.15.426915).
+[Katharina Wilmes](https://github.com/k47h4) and [Luke Y. Prince](https://github.com/lyprince) developped the original code on which the **Gabor sequences code** is based in this repository, based on [Gillon _et al._, 2021, _bioRxiv_](https://www.biorxiv.org/content/10.1101/2021.01.15.426915).
 
 
 ## 6. Licenses
@@ -63,7 +63,7 @@ _Workshop on Large Scale Holistic Video Understanding (ICCV)_.
 - Content that is original or derived from the [DPC repository](https://github.com/TengdaHan/DPC) is covered under **LICENSE_DPC**:  
     - `run_model.py`
     - `asset`
-    - `dataset`, except `gabor_stimuli.py` and `gabor_stimuli.ipynb`
+    - `dataset`, except `gabor_sequences.py` and `gabor_sequences.ipynb`
     - `model`
     - `process_data`
     - `utils`, except `gabor_utils.py`

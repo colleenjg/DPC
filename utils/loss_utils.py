@@ -890,38 +890,38 @@ def get_dim_per_GPU(output, main_shape):
     Required args
     -------------
     - output : 2D Tensor
-        Output, with dimensions B * PS * HW x B_per * PS * HW
+        Output, with dimensions B * P * D_out2 x B_per * P * D_out2
     - main_shape : tuple
-        Original shape of the first dimension of output (B, PS, HW).
+        Original shape of the first dimension of output (B, P, D_out2).
 
     Returns
     -------
     - dim_per_GPU : tuple
         Inferred original shape of the second dimension of output 
-        (B_per, PS, HW).
+        (B_per, P, D_out2).
     """
 
     if len(main_shape) != 3:
         raise ValueError(
-            ("Expected 'main_shape' to have 3 dimensions (B x PS x HW), "
+            ("Expected 'main_shape' to have 3 dimensions (B x P x D_out2), "
             f"but found {len(main_shape)}.")
         )
 
-    B, PS, HW = main_shape
+    B, P, D_out2 = main_shape
     if output.shape[0] != np.product(main_shape):
         raise ValueError(
             "The first dimension of 'output' should be the product of "
             "'main_shape'."
             )
 
-    B_per = output.shape[1] / (PS * HW)
+    B_per = output.shape[1] / (P * D_out2)
     if B_per != int(B_per):
         raise RuntimeError(
             "Could not compute 'B_per' (number of examples per GPU)."
             )
 
     B_per = int(B_per)
-    dim_per_GPU = (B_per, PS, HW)
+    dim_per_GPU = (B_per, P, D_out2)
 
     return dim_per_GPU
 
@@ -940,7 +940,7 @@ def calc_spatial_avg(values, main_shape):
         Values for which to compute the average along the spatial dimension, 
         where the first dimension can be reshaped using main_shape.
     - main_shape : tuple
-        Original shape of the first dimension of values (B, PS, HW).
+        Original shape of the first dimension of values (B, P, D_out2).
 
     Returns
     -------
@@ -949,26 +949,26 @@ def calc_spatial_avg(values, main_shape):
     """
 
     if len(main_shape) != 3:
-        raise ValueError("'main_shape' should comprise 3 values: (B, PS, HW).")
+        raise ValueError("'main_shape' should comprise 3 values: (B, P, D_out2).")
     
-    B, PS, HW = main_shape
+    B, P, D_out2 = main_shape
 
     if len(values.shape) == 2: # output
         B_per, _, _ = get_dim_per_GPU(values, main_shape)
-        reshape_tuple = (B, PS, HW, B_per, PS, HW)
+        reshape_tuple = (B, P, D_out2, B_per, P, D_out2)
 
-        # take spatial mean (across HW dimension)
+        # take spatial mean (across D_out2 dimension)
         values = values.reshape(reshape_tuple).mean(axis=(2, 5))
-        values = values.reshape(B * PS, B_per * PS)
+        values = values.reshape(B * P, B_per * P)
 
     elif len(values.shape) == 1: # target
         if np.product(values.shape) != np.product(main_shape):
             raise ValueError(
                 "The shape of 'values' should be the product of 'main_shape'."
                 )
-        # eliminate the HW dimension
-        values = values.reshape(main_shape).float()[..., 0] / HW
-        values = values.reshape(B * PS) 
+        # eliminate the D_out2 dimension
+        values = values.reshape(main_shape).float()[..., 0] / D_out2
+        values = values.reshape(B * P) 
 
     else:
         raise ValueError("Expected 'values' to have 1 or 2 dimensions.")
@@ -992,7 +992,7 @@ def calc_chance(output, main_shape, spatial_avg=False):
     -------------
     - main_shape : tuple (default=None)
         If None, specifies the unflatted shape of the first dimension of the 
-        output tensor (B, PS, HW).
+        output tensor (B, P, D_out2).
     - spatial_avg : bool (default=False)
         If True, chance is calculated after first collapsing the 
         spatial dimension of the output tensor, identified using main_shape.
@@ -1005,7 +1005,7 @@ def calc_chance(output, main_shape, spatial_avg=False):
 
     dims_per_GPU = get_dim_per_GPU(output, main_shape)
     if spatial_avg:
-        dims_per_GPU = dims_per_GPU[:1] # remove HW dim
+        dims_per_GPU = dims_per_GPU[:1] # remove D_out2 dim
     chance = 1 / np.product(dims_per_GPU)
 
     return chance
@@ -1033,8 +1033,8 @@ def get_predictions(output, keep_topk=1, spatial_avg=False, main_shape=None):
         using main_shape.
     - main_shape : tuple (default=None)
         If None, specifies the unflatted shape of the first dimension of the 
-        output tensor, used to average across the spatial dimension (B, PS, HW).
-        Required if spatial_avg is True. 
+        output tensor, used to average across the spatial dimension 
+        (B, P, D_out2). Required if spatial_avg is True. 
     
     Returns
     -------
@@ -1086,7 +1086,7 @@ def calc_topk_accuracy(output, target, ks=[1, 3, 5], spatial_avg=False,
     - main_shape : tuple (default=None)
         If None, specifies the unflatted shape of the first dimension of the 
         output and target tensors, used to average across the spatial 
-        dimension (B, PS, HW). Required if spatial_avg is True. 
+        dimension (B, P, D_out2). Required if spatial_avg is True. 
     
     Returns
     -------
@@ -1465,7 +1465,7 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
         'loss_by_item' (4d list)            : loss values with dims: 
                                               epochs x batches x B x N
         'sup_target_by_batch' (4 or 6D list): supervised targets with dims: 
-            epochs x batches x B x N (x SL x [image type, mean ori] 
+            epochs x batches x B x N (x L x [image type, mean ori] 
             if Gabor dataset).
         'epoch_n_best' (int)                : Best epoch number.
         'epoch_n_best_unexp' (int)          : Best epoch number, when Gabors 
@@ -1574,7 +1574,7 @@ def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
         'loss_by_item' (4d list)            : loss values with dims: 
                                               epochs x batches x B x N
         'sup_target_by_batch' (4 or 6D list): supervised targets with dims: 
-            epochs x batches x B x N (x SL x [image type, mean ori] 
+            epochs x batches x B x N (x L x [image type, mean ori] 
             if Gabor dataset).
         
         if Gabor dataset:
@@ -2034,7 +2034,7 @@ def load_loss_hyperparameters(model_direc, suffix=None):
         'loss_by_item' (4d list)            : loss values with dims: 
                                               epochs x batches x B x N
         'sup_target_by_batch' (4 or 6D list): supervised targets with dims: 
-            epochs x batches x B x N (x SL x [image type, mean ori] 
+            epochs x batches x B x N (x L x [image type, mean ori] 
             if Gabor dataset).
         
         if Gabor dataset:

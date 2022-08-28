@@ -185,7 +185,7 @@ def plot_batches(batch_ax, data_dict, U_ax=None, data_label="train",
         'batch_epoch_n' (2D list)           : epoch number, with dims:
                                               epochs x batches
         'sup_target_by_batch' (4 or 6D list): supervised targets with dims: 
-            epochs x batches x B x N (x SL x [image type, mean ori] 
+            epochs x batches x B x N (x L x [image type, mean ori] 
             if Gabor dataset).
 
     Optional args
@@ -215,7 +215,7 @@ def plot_batches(batch_ax, data_dict, U_ax=None, data_label="train",
         # for loop duration ~= duration i first converting data to np.array
         for e, epoch_data in enumerate(data_dict[target_key]):
             for b, batch_data in enumerate(epoch_data):
-                # B x N x SL x (image type, ori)
+                # B x N x L x (image type, ori)
                 batch_data = np.asarray(batch_data)[..., 0].reshape(-1)
                 freqs = []
                 for image_type in ["U", "D"]:
@@ -422,7 +422,7 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
         'loss_by_item' (4d list)            : loss values with dims: 
                                               epochs x batches x B x N
         'sup_target_by_batch' (4 or 6D list): supervised targets with dims: 
-            epochs x batches x B x N (x SL x [image type, mean ori] 
+            epochs x batches x B x N (x L x [image type, mean ori] 
             if Gabor dataset).
         'epoch_n_best' (int)                : Best epoch number.
         'epoch_n_best_unexp' (int)          : Best epoch number, when Gabors 

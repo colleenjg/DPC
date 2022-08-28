@@ -45,18 +45,17 @@ fi
 
 IMG_DIM=128
 BATCH_SIZE=64
-NUM_SEQ=8
+NUM_SEQ_IN=5
 DS_ARG=""
 if [[ $DATASET == "Kinetics400" && $IMG_DIM -gt 140 ]]; then
     K400_BIG_ARG="-b" # for copying data
 elif [[ $DATASET == "MouseSim" ]]; then
-    EYE_ARG="--eye left"
-    EYE_COPY_ARG="-e left" # for copying data
+    EYE_ARG="--eye right"
+    EYE_COPY_ARG="-e right" # for copying data
     DS_ARG="--ucf_hmdb_ms_ds 3" # from 50 Hz -> 16.7 Hz
     NUM_EPOCHS=1000
     BATCH_SIZE=28
     LR_ARG="--lr 0.0001"
-    NUM_SEQ=18
 fi
 
 if [[ $PRETRAINED == yes ]]; then
@@ -94,7 +93,7 @@ python run_model.py \
     $DS_ARG \
     --img_dim "$IMG_DIM" \
     --batch_size "$BATCH_SIZE" \
-    --num_seq "$NUM_SEQ" \
+    --num_seq_in "$NUM_SEQ_IN" \
     --num_epochs "$NUM_EPOCHS" \
     --train_what "$TRAIN_WHAT" \
     $LR_ARG \

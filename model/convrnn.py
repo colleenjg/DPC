@@ -97,15 +97,15 @@ class ConvGRUCell(nn.Module):
         Required args
         -------------
         - input_tensor : 4D Tensor
-            Input tensor with dims: B x C x H x W
+            Input tensor with dims: B x C x D x D
         - hidden_state : 4D Tensor
-            Hidden state tensor with dims: B x hidden size x H x W
+            Hidden state tensor with dims: B x hidden size x D x D
             Set to 0s if None.
 
         Returns
         -------
         - new_state : 4D Tensor
-            New hidden state tensor with dims: B x hidden size x H x W
+            New hidden state tensor with dims: B x hidden size x D x D
         """
         
         if hidden_state is None:
@@ -113,7 +113,7 @@ class ConvGRUCell(nn.Module):
             hidden_state = torch.zeros(
                 [B, self.hidden_size, *spatial_dim]
                 ).to(input_tensor.device)
-        # [B, C, H, W]
+        # [B, C, D, D]
         combined = torch.cat([input_tensor, hidden_state], dim=1) # concat in C
         update = torch.sigmoid(self.update_gate(combined))
         reset = torch.sigmoid(self.reset_gate(combined))
@@ -212,22 +212,22 @@ class ConvGRU(nn.Module):
         Required args
         -------------
         - x : 5D Tensor
-            Input tensor with dims: B x SL x C x H x W
+            Input tensor with dims: B x L x C x D x D
             
         Optional args
         -------------
         - hidden_state : list of 4D Tensors (default=None)
             Hidden state tensors for each layer, each with dims: 
-            B x hidden size x H x W
+            B x hidden size x D x D
             Set to None for each, if None.
 
         Returns
         -------
         - layer_output : 4D Tensor
-            Final layer output with dims B x output_size x H x W
+            Final layer output with dims B x output_size x D x D
         - last_state_list : list of 4D Tensors
             Updated hidden state tensors for each layer, each with dims: 
-            B x number of layers x H x W
+            B x number of layers x D x D
         """
         
         [B, seq_len, *_] = x.size()
@@ -276,8 +276,8 @@ if __name__ == "__main__":
         input_size=10, hidden_size=20, kernel_size=3, num_layers=2
         )
     
-    [B, SL, C, H, W] = 4, 5, 10, 6, 6 # temporal axis: SL
-    test_data = torch.randn(B, SL, C, H, W) 
+    [B, L, C, D, _] = 4, 5, 10, 6, 6 # temporal axis: L
+    test_data = torch.randn(B, L, C, D, D) 
     output, hn = test_crnn(test_data)
 
     breakpoint()

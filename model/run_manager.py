@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import torch
 
-from dataset import gabor_stimuli
+from dataset import gabor_sequences
 from utils import checkpoint_utils, gabor_utils, loss_utils, misc_utils, \
     training_utils
 
@@ -87,7 +87,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
         'loss_by_item' (3D list)            : loss values with dims: 
             batches x B x N
         'sup_target_by_batch' (3 or 5D list): supervised targets for each batch, 
-            with dims: B x N (x SL x [image type, mean ori] if Gabor 
+            with dims: B x N (x L x [image type, mean ori] if Gabor 
             dataset).
         
         if Gabor dataset:
@@ -107,7 +107,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     """
     
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
-    is_gabor = gabor_stimuli.check_if_is_gabor(dataloader.dataset)
+    is_gabor = gabor_sequences.check_if_is_gabor(dataloader.dataset)
         
     model = model.to(device)
 
@@ -174,7 +174,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
                 ).reshape(loss_reshape)
 
             if not supervised:
-                # take mean across spatial (HW) dimension
+                # take mean across spatial (D2) dimension
                 batch_loss = batch_loss.mean(axis=2) 
             
             training_utils.add_batch_data(
@@ -308,7 +308,7 @@ def eval_epoch(dataloader, model, epoch_n=0, num_epochs=50, topk=TOPK,
         'loss_by_item' (3D list)            : loss values with dims: 
             batches x B x N
         'sup_target_by_batch' (3 or 5D list): supervised targets for each batch, 
-            with dims: B x N (x SL x [image type, mean ori] if Gabor 
+            with dims: B x N (x L x [image type, mean ori] if Gabor 
             dataset).
         
         if output_dir is not None:
@@ -329,7 +329,7 @@ def eval_epoch(dataloader, model, epoch_n=0, num_epochs=50, topk=TOPK,
     """
 
     losses, topk_meters = loss_utils.init_meters(n_topk=len(topk))
-    is_gabor = gabor_stimuli.check_if_is_gabor(dataloader.dataset)
+    is_gabor = gabor_sequences.check_if_is_gabor(dataloader.dataset)
 
     model = model.to(device)
     model.eval()
@@ -419,7 +419,7 @@ def eval_epoch(dataloader, model, epoch_n=0, num_epochs=50, topk=TOPK,
                     ).reshape(loss_reshape)
 
                 if not supervised:
-                    # take mean across spatial (HW) dimension
+                    # take mean across spatial (D2) dimension
                     batch_loss = batch_loss.mean(axis=2)
 
                 training_utils.add_batch_data(
@@ -563,7 +563,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     """
 
     dataset = misc_utils.normalize_dataset_name(dataset)
-    is_gabor = gabor_stimuli.check_if_is_gabor(main_loader.dataset)
+    is_gabor = gabor_sequences.check_if_is_gabor(main_loader.dataset)
     
     topk = loss_utils.check_topk(
         topk, num_classes=training_utils.get_num_classes_sup(model)[0]
