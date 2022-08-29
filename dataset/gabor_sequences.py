@@ -587,7 +587,7 @@ class GaborSequenceGenerator(data.Dataset):
         self.class_dict_encode
 
         - dict
-            Dictionary for decoding class names from class labels.
+            Dictionary for encoding class names into class labels.            
         """
         
         if not hasattr(self, "_class_dict_encode"):
@@ -609,7 +609,7 @@ class GaborSequenceGenerator(data.Dataset):
         self.class_dict_decode
 
         - dict
-            Dictionary for encoding class names into class labels.
+            Dictionary for decoding class names from class labels.
         """
 
         if not hasattr(self, "_class_dict_decode"):

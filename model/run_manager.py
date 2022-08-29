@@ -10,6 +10,7 @@ import torch
 from dataset import gabor_sequences
 from utils import checkpoint_utils, gabor_utils, loss_utils, misc_utils, \
     training_utils
+from analysis import gabor_analysis
 
 # a few global variables
 TOPK = [1, 3, 5]
@@ -17,6 +18,9 @@ TOPK = [1, 3, 5]
 logger = logging.getLogger(__name__)
 
 TAB = "    "
+
+
+RUN_GABOR_ANALYSIS = True
 
 
 #############################################
@@ -628,6 +632,12 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             gab_unexp_str = "_unexp" if gabor_unexp else ""
             if not test:
                 best_acc = best_accs[int(gabor_unexp)]
+            
+            if RUN_GABOR_ANALYSIS and not supervised and gabor_suffix is not None: # run analysis
+                gabor_analysis.gabor_analysis(
+                    model, main_loader, device=device, output_dir=output_dir, 
+                    suffix=gabor_suffix
+                    )
 
         if not test:
             train_dict, log_idx = train_epoch(

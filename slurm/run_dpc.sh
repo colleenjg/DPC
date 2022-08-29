@@ -62,10 +62,12 @@ if [[ $PRETRAINED == yes ]]; then
     MODEL="lc-rnn"
     TRAIN_WHAT="ft"
     PRETRAINED_ARG="--pretrained ${SCRATCH}/dpc/pretrained/k400_128_r18_dpc-rnn/model/k400_128_r18_dpc-rnn.pth.tar"
+    LOG_TEST_CMD_ARG="--log_test_cmd"
 else
     MODEL="dpc-rnn"
     TRAIN_WHAT="all"
     PRETRAINED_ARG=""
+    LOG_TEST_CMD_ARG=""
 fi
 
 
@@ -100,7 +102,7 @@ python run_model.py \
     --seed "$SEED" \
     $PRETRAINED_ARG \
     --num_workers 8 \
-    --log_test_cmd \
+    $LOG_TEST_CMD_ARG \
     --temp_data_dir "$SLURM_TMPDIR" \
 
 code=${?}

@@ -28,6 +28,7 @@ FIXED_AUGM_ARG="--no_augm"
 FIXED_BATCH_SIZE=32
 FIXED_GAB_IMG_LEN=5
 FIXED_SEQ_LEN="$FIXED_GAB_IMG_LEN"
+FIXED_PRED_STEP=1
 FIXED_U_PROB=0.08
 FIXED_U_POSSIZE_ARG="--diff_U_possizes"
 FIXED_NUM_WORKERS=8
@@ -43,6 +44,7 @@ echo -e "\nFIXED HYPERPARAMETERS\n" \
 "batch size: $FIXED_BATCH_SIZE\n" \
 "Gabor image length: $FIXED_GAB_IMG_LEN\n" \
 "sequence length: $FIXED_SEQ_LEN\n" \
+"number of steps to predict: $FIXED_PRED_STEP\n" \
 "U probability: $FIXED_U_PROB\n" \
 "U position/size argument: $FIXED_U_POSSIZE_ARG\n" \
 "number of workers: $FIXED_NUM_WORKERS\n" \
@@ -77,7 +79,7 @@ ROLL_ARG=${ROLL_ARGS[$ROLL_ARGS_IDX]}
 
 # Set the pretrain path, if applicable
 if [[ "$PRETRAINED" == "MouseSim" ]]; then
-    PRETRAINED_ARG="--pretrained ${SCRATCH}/dpc/pretrained/mousesim_left-128_r18_dpc-rnn/model/mousesim_left_best_epoch853.pth.tar"
+    PRETRAINED_ARG="--pretrained ${SCRATCH}/dpc/pretrained/mousesim_right-128_r18_dpc-rnn/model/mousesim_right_best_epoch767.pth.tar"
 elif [[ "$PRETRAINED" == "Kinetics400" ]]; then
     PRETRAINED_ARG="--pretrained ${SCRATCH}/dpc/pretrained/k400_128_r18_dpc-rnn/model/k400_128_r18_dpc-rnn.pth.tar"
 else
@@ -86,12 +88,10 @@ fi
 
 # Set the sequence parameters
 if [[ "$ROLL_ARG" == "" ]]; then
-    PRED_STEP=1 # predict D/U only
-    NUM_SEQ_IN=4 # gray will never appear
+    NUM_SEQ_IN=3 # predict D/U only (gray will never appear)
     TRAIN_LEN=1024
 else
-    PRED_STEP=2
-    NUM_SEQ_IN=5
+    NUM_SEQ_IN=4
     TRAIN_LEN=4096
 fi
 
@@ -114,7 +114,6 @@ fi
 
 echo -e "\nARRAY ID HYPERPARAMETERS\n" \
 "roll argument: $ROLL_ARG\n" \
-"number of steps to predict: $PRED_STEP\n" \
 "number of consecutive blocks to use as input: $NUM_SEQ_IN\n" \
 "training dataset length: $TRAIN_LEN\n" \
 "unexpected epoch: $UNEXP_EPOCH\n" \
@@ -139,19 +138,19 @@ python run_model.py \
     --batch_size "$FIXED_BATCH_SIZE" \
     --gab_img_len "$FIXED_GAB_IMG_LEN" \
     --seq_len "$FIXED_SEQ_LEN" \
+    --pred_step "$FIXED_PRED_STEP" \
     --U_prob "$FIXED_U_PROB" \
     $FIXED_U_POSSIZE_ARG \
     --num_workers "$FIXED_NUM_WORKERS" \
     $SEED_ARG \
     $ROLL_ARG \
-    --pred_step "$PRED_STEP" \
     --num_seq_in "$NUM_SEQ_IN" \
     --train_len "$TRAIN_LEN" \
     --unexp_epoch "$UNEXP_EPOCH" \
     --num_epochs "$NUM_EPOCHS" \
     $SUFFIX_ARG \
     $PRETRAINED_ARG \
-    --log_test_cmd \
+
 
 code="$?"
 if [[ "$code" -gt "$EXIT" ]]; then EXIT="$code"; fi # collect exit code

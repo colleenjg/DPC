@@ -258,7 +258,7 @@ class BasicBlock3d(nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out += residual
+        out = out + residual
         if self.use_final_relu: 
             out = self.relu(out)
     
@@ -380,7 +380,7 @@ class BasicBlock2d(nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out += residual
+        out = out + residual
         if self.use_final_relu: 
             out = self.relu(out)
 
@@ -520,7 +520,7 @@ class Bottleneck3d(nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out += residual
+        out = out + residual
         if self.use_final_relu: 
             out = self.relu(out)
 
@@ -664,7 +664,7 @@ class Bottleneck2d(nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out += residual
+        out = out + residual
         if self.use_final_relu: out = self.relu(out)
 
         return out

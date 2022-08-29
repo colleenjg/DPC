@@ -1007,7 +1007,7 @@ def update_dataset_possizes(main_loader, val_loader=None, seed=None, incr=0):
 
 #############################################
 def update_unexp(main_loader, val_loader=None, epoch_n=0, unexp_epoch=10, 
-                 test=False, num_unexp=4):
+                 test=False, num_pre_post=4):
     """
     update_unexp(main_loader)
 
@@ -1029,8 +1029,9 @@ def update_unexp(main_loader, val_loader=None, epoch_n=0, unexp_epoch=10,
         Epoch as of which unexpected sequences are introduced.
     - test : bool (default=False)
         If True, main_loader is a test dataloader.
-    - num_unexp : int (default=4)
-        Number of unexpected epochs after onset for which to generate a suffix.
+    - num_pre_post : int (default=4)
+        Number of epochs before and after onset of unexpected eventsfor which 
+        to generate a suffix.
 
     Returns
     -------
@@ -1051,17 +1052,20 @@ def update_unexp(main_loader, val_loader=None, epoch_n=0, unexp_epoch=10,
             extra={"spacing": "\n"}
             )
 
-    suffix = None
-    n = int(epoch_n - unexp_epoch  + 1)
-    if n >=0 and n <= num_unexp:
-        suffix = misc_utils.get_order_str(n)
+    if not test:
+        suffix = None
+        n = int(epoch_n - unexp_epoch  + 1)
+        if -num_pre_post < n <= num_pre_post:
+            suffix = misc_utils.get_order_str(np.absolute(n))
+            if n <= 0:
+                suffix = f"pre_{suffix}"
 
     return suffix
 
 
 #############################################
 def update_gabors(main_loader, val_loader=None, seed=None, epoch_n=0, 
-                  unexp_epoch=10, test=False, num_unexp=4):
+                  unexp_epoch=10, test=False, num_pre_post=4):
     """
     update_gabors(main_loader)
 
@@ -1085,8 +1089,9 @@ def update_gabors(main_loader, val_loader=None, seed=None, epoch_n=0,
         Epoch as of which unexpected sequences are introduced.
     - test : bool (default=False)
         If True, main_loader is a test dataloader.
-    - num_unexp : int (default=4)
-        Number of unexpected epochs after onset for which to generate a suffix.
+    - num_pre_post : int (default=4)
+        Number of epochs before and after onset of unexpected events for which 
+        to generate a suffix.
 
     Returns
     -------
@@ -1103,7 +1108,7 @@ def update_gabors(main_loader, val_loader=None, seed=None, epoch_n=0,
     
     suffix = update_unexp(
         main_loader, val_loader, epoch_n=epoch_n, 
-        unexp_epoch=unexp_epoch, test=test, num_unexp=num_unexp
+        unexp_epoch=unexp_epoch, test=test, num_pre_post=num_pre_post
         )
 
     return seed, suffix
