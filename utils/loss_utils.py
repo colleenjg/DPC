@@ -402,7 +402,7 @@ class ConfusionMeter(object):
         """
         self.annotate(ax)
 
-        Annotates a plotted confusion matrix by added labels as text to each 
+        Annotates a plotted confusion matrix by addin labels as text to each 
         box in the grid.
 
         Required args
@@ -475,30 +475,11 @@ class ConfusionMeter(object):
             if ytick_diff < 1:
                 ax.set_yticks(np.arange(height) + 1)
         else:
-            ticks = np.sort(list(label_dict.keys()))
-            n_ticks = len(ticks)
-            fontsize = 10
-            fact = 8 if secondary else 13
-            if n_ticks >= fact:
-                fontsize = np.max([np.min([10, int(10 - n_ticks / fact)]), 1])
-
-            ax_x, ax_y = ax, ax
-            x_rotation = "vertical"
-            if secondary:
-                ax_x = ax.secondary_xaxis("top")
-                ax_y = ax.secondary_yaxis("right")
-                ax_x.tick_params(axis="x", top=False, pad=0.2)
-                ax_y.tick_params(axis="y", right=False, pad=0.2)
-                x_rotation = None
-
-            ax_x.set_xticks(
-                ticks + 1, [label_dict[i] for i in ticks], rotation=x_rotation, 
-                fontsize=fontsize, 
+            use_label_dict = {k + 1: v for k, v in label_dict.items()}
+            plot_utils.add_sets_of_ticks(
+                ax, use_label_dict, secondary=secondary
                 )
-            
-            ax_y.set_yticks(
-                ticks + 1, [label_dict[i] for i in ticks], fontsize=fontsize, 
-                )
+
 
     def get_norm_mat(self, by="targ"):
         """
@@ -1440,7 +1421,7 @@ def populate_loss_dict(src_dict, target_dict, append_conf_matrices=True,
                             
 #############################################
 def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101", 
-                        num_classes=None):
+                        num_classes=None, log_best=False):
     """
     plot_from_loss_dict(loss_dict)
 
@@ -1499,6 +1480,9 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
     - num_classes : int (default=None)
         Number of classes to use to compute chance in plotting loss, if 
         applicable.
+    - log_best : bool (default=False)
+        If True, the values for the best epoch are logged for the validation 
+        set.
     """
 
     dataset = misc_utils.normalize_dataset_name(dataset)
@@ -1522,9 +1506,11 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
         plot_what_vals.append("by_gabor")
 
     for plot_what in plot_what_vals:
+        use_log_best = log_best
         ext_str, ext_str_pr = "", ""
         y = 0.98
         if plot_what in ["by_batch", "by_gabor"]:
+            use_log_best = False
             ext_str = f"_{plot_what}"
             if plot_what == "by_batch":
                 y = 0.95
@@ -1535,7 +1521,7 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
 
         fig = plot_utils.plot_from_loss_dict(
             loss_dict, num_classes=num_classes, dataset=dataset, 
-            plot_what=plot_what
+            plot_what=plot_what, log_best=use_log_best
             )
         title = (f"{dataset[0].capitalize()}{dataset[1:]} dataset"
             f"{unexp_str_pr}{seed_str_pr}{ext_str_pr}")
@@ -1547,7 +1533,7 @@ def plot_from_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
 
 #############################################
 def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101", 
-                   num_classes=None, plot=True):
+                   num_classes=None, plot=True, log_best=False):
     """
     save_loss_dict(loss_dict)
 
@@ -1607,6 +1593,9 @@ def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
         applicable.
     - plot : bool (default=True)
         If True, loss dictionary data is plotted.
+    - log_best : bool (default=False)
+        If True, the values for the best epoch are logged for the validation 
+        set. Only applies if plot True.
     """
     
     full_path = Path(output_dir, f"loss_data.json")
@@ -1647,7 +1636,8 @@ def save_loss_dict(loss_dict, output_dir=".", seed=None, dataset="UCF101",
             output_dir=output_dir,
             seed=seed,
             dataset=dataset,
-            num_classes=num_classes
+            num_classes=num_classes,
+            log_best=log_best
         )
 
 
@@ -2143,7 +2133,8 @@ if __name__ == "__main__":
                     )
 
                 plot_from_loss_dict(
-                    loss_dict, output_dir=args.output_dir, **loss_plot_kwargs
+                    loss_dict, output_dir=args.output_dir, log_best=True,
+                    **loss_plot_kwargs,
                     )
 
             # plot and save confusion matrix data

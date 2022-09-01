@@ -30,6 +30,9 @@ def get_cmap_colors(cmap_name="Blues", n_vals=5, min_n=5):
         Colormap name.
     - n_vals : int (default=5)
         Number of values to sample from the colormap.
+    - min_n : int (default=5)
+        Minimum number to initially sample (prevents colours from being too 
+        spread apart).
 
     Returns
     -------
@@ -38,10 +41,78 @@ def get_cmap_colors(cmap_name="Blues", n_vals=5, min_n=5):
     """
 
     cmap = mpl.cm.get_cmap(cmap_name)
-    samples = np.linspace(1.0, 0.3, max(min_n, n_vals))
+    samples = np.linspace(1.0, 0.3, max(min_n, n_vals))[: n_vals]
     colors = [cmap(s) for s in samples]
 
     return colors
+
+
+#############################################
+def add_sets_of_ticks(ax, label_dict, secondary=False, 
+                      remove_primary_ticks=False, rotate_primary_x=True, 
+                      rotate_secondary_x=False, top=True, right=True):
+    """
+    add_sets_of_ticks(ax, label_dict)
+
+    Add a set of ticks to a subplot.
+
+    Required args
+    -------------
+    - ax : plt subplot
+        Axis on which to add the labels.
+    - label_dict : dict
+        Dictionary where each key is the axis position and each 
+        item is the corresponding class name. 
+
+    Optional args
+    -------------        
+    - secondary : bool (default=False)
+        If True, labels are added as a secondary set, along the top and 
+        right axes, instead of the bottom and left ones.
+    - remove_primary_ticks : bool (default=False)
+        If True, primary tick marks are removed. 
+    - rotate_primary_x : bool (default=True)
+        If True, primary labels are rotated vertically on the x axis.
+    - rotate_secondary_x : bool (default=False)
+        If True, secondary labels are rotated vertically on the x axis.
+    - top : bool (default=True)
+        If True, secondary labels are plotted at the top.
+    - right : bool (default=True)
+        If True, secondary labels are plotted on the right.
+    """
+
+    ticks = np.sort(list(label_dict.keys()))
+    n_ticks = len(ticks)
+    fontsize = 10
+    fact = 8 if secondary else 13
+    if n_ticks >= fact:
+        fontsize = np.max([np.min([10, int(10 - n_ticks / fact)]), 1])
+
+    ax_x, ax_y = ax, ax
+    x_rotation = "vertical" if rotate_primary_x else None
+    if secondary:
+        if top:
+            ax_x = ax.secondary_xaxis("top")
+            ax_x.tick_params(axis="x", top=False, pad=0.2)
+        if right:
+            ax_y = ax.secondary_yaxis("right")
+            ax_y.tick_params(axis="y", right=False, pad=0.2)
+        x_rotation = "vertical" if rotate_secondary_x else None
+    
+    elif remove_primary_ticks:
+        ax_x.tick_params(axis="x", bottom=False, pad=0.4)
+        ax_y.tick_params(axis="y", left=False, pad=0.4)
+
+    if top or not secondary:
+        ax_x.set_xticks(
+            ticks, [label_dict[i] for i in ticks], rotation=x_rotation, 
+            fontsize=fontsize, 
+            )
+    
+    if right or not secondary:
+        ax_y.set_yticks(
+            ticks, [label_dict[i] for i in ticks], fontsize=fontsize, 
+            )
 
 
 #############################################
@@ -397,7 +468,7 @@ def plot_gabor_data(sub_ax, data_dict, epoch_ns, datatype="image_types",
 
 #############################################
 def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101", 
-                        plot_what="main"):
+                        plot_what="main", log_best=False):
     """
     plot_from_loss_dict(loss_dict)
 
@@ -458,6 +529,9 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
     - plot_what : str (default="main")
         What to plot, i.e. the main loss and accuracy data ("main"), data by 
         batch ("by_batch") or data by Gabor split ("by_gabor").
+    - log_best : bool (default=False)
+        If True, the values for the best epoch are logged for the validation 
+        set.
 
     Returns
     -------
@@ -506,6 +580,7 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
     lab_best = 1
     poss_best_epoch_keys = ["epoch_n_best", "epoch_n_best_unexp"]
     best_epoch_key_colors = ["k", "darkred"]
+    best_log = ""
     for m, mode in enumerate(modes):
         epoch_ns = loss_dict[mode]["epoch_n"]
         cmap_name = f"{colors[m].capitalize()}s"
@@ -558,7 +633,6 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
                     continue
                 unexp_str = " (unexp)" if best_key.endswith("_unexp") else ""
                 best_epoch_n = loss_dict[mode][best_key]
-                best_idx = np.argmax(loss_dict[mode]["acc"])
                 best_idx = epoch_ns.index(best_epoch_n)
                 for s, sub_ax in enumerate(ax.reshape(-1)):
                     label = None
@@ -570,6 +644,21 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
                         best_epoch_n, color=best_epoch_key_colors[b], 
                         ls="dashed", alpha=0.8, label=label
                         )
+                
+                best_log = f"{best_log}\n\n" if len(best_log) else best_log
+                best_log = (
+                    f"{best_log}Best epoch{unexp_str} (epoch {best_epoch_n}):"
+                    )
+                for key in sorted(loss_dict[mode].keys()):
+                    if key in ["loss", "acc"] or key.startswith("top"):
+                        val = loss_dict[mode][key][best_idx]
+                        if key == "loss":
+                            val_str = f"{val:.6f}"
+                        else:
+                            val_str = f"{val * 100:.2f}%"
+                        best_log = (
+                            f"{best_log}\n{TAB}{key.capitalize()}: {val_str}"
+                            )
 
     min_x, max_x = ax[0, 0].get_xlim()
     for s, sub_ax in enumerate(ax.reshape(-1)):
@@ -586,6 +675,7 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
                     v1, v2, color="red", alpha=0.08, lw=0, zorder=-12
                     )
         sub_ax.set_xlim(min_x, max_x)
+        sub_ax.set_ylim(min(sub_ax.get_ylim()[0], 0), None)
 
     ax[0, 0].set_ylabel("Loss")
     for c in range(ncols):
@@ -594,6 +684,9 @@ def plot_from_loss_dict(loss_dict, num_classes=None, dataset="UCF101",
         ax[1, 0].set_ylabel("U/(D+U) frequency (%)")        
     else:
         ax[1, 0].set_ylabel("Accuracy (%)")
+    
+    if log_best:
+        logger.info(best_log, extra={"spacing": "\n"})
 
     return fig
 

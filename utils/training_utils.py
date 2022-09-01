@@ -1,3 +1,4 @@
+import copy
 from datetime import datetime
 import logging
 import multiprocessing
@@ -557,6 +558,43 @@ def init_optimizer(model, lr=1e-3, wd=1e-5, dataset="UCF101", img_dim=256,
     return optimizer, scheduler
     
     
+#############################################
+def get_new_model_optimizer(model, optimizer, factor=1):
+    """
+    get_new_model_optimizer(model, optimizer)
+
+    Required args
+    -------------
+    - model : torch nn.Module or nn.DataParallel
+        Model or wrapped model.
+    - optimizer : torch.optim object
+        Optimizer
+    
+    Optional args
+    -------------
+    - factor : float (default=1)
+        Value by which to multiply learning rate and weight decay in the new 
+        optimizer.
+
+    Returns
+    -------
+    - model : torch nn.Module or nn.DataParallel
+        Deep copy of the input model.
+    - new_optimizer : torch.optim object
+        Optimizer tied to the new model, but with parameters derived from the 
+        input optimizer.
+    """
+    
+    model = copy.deepcopy(model)
+    new_optimizer = optim.Adam(model.parameters())
+    new_optimizer.load_state_dict(optimizer.state_dict())
+    for param_group in new_optimizer.param_groups: 
+        param_group["lr"] = param_group["lr"] * factor
+        param_group["weight_decay"] = param_group["weight_decay"] * factor
+
+    return model, new_optimizer  
+
+
 #############################################
 def get_num_classes_sup(model):
     """

@@ -1,3 +1,4 @@
+import copy
 import logging
 from pathlib import Path
 import time
@@ -18,9 +19,6 @@ TOPK = [1, 3, 5]
 logger = logging.getLogger(__name__)
 
 TAB = "    "
-
-
-RUN_GABOR_ANALYSIS = True
 
 
 #############################################
@@ -114,6 +112,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
     is_gabor = gabor_sequences.check_if_is_gabor(dataloader.dataset)
         
     model = model.to(device)
+    model.train()
 
     train, spacing = training_utils.set_model_train_mode(
         model, epoch_n, train_off
@@ -164,6 +163,7 @@ def train_epoch(dataloader, model, optimizer, epoch_n=0, num_epochs=50,
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+        model.zero_grad()
 
         # update meters, in-place
         losses.update(loss.item(), input_seq_shape[0])
@@ -507,7 +507,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                dataset="UCF101", num_epochs=10, topk=TOPK, scheduler=None, 
                device="cuda", val_loader=None, seed=None, unexp_epoch=10, 
                log_freq=5, use_tb=False, save_by_batch=False, 
-               reload_kwargs=dict()):
+               run_gabor_analysis=False, reload_kwargs=dict()):
     """
     train_full(train_loader, model, optimizer)
 
@@ -626,17 +626,21 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         if is_gabor:
             data_seed, gabor_suffix = gabor_utils.update_gabors(
                 main_loader, val_loader, seed=data_seed, epoch_n=epoch_n, 
-                unexp_epoch=unexp_epoch, test=test
+                unexp_epoch=unexp_epoch, test=test, num_pre_post=3
                 )
             gabor_unexp = main_loader.dataset.unexp
             gab_unexp_str = "_unexp" if gabor_unexp else ""
             if not test:
                 best_acc = best_accs[int(gabor_unexp)]
             
-            if RUN_GABOR_ANALYSIS and not supervised and gabor_suffix is not None: # run analysis
+            ep_run_analysis = (
+                run_gabor_analysis and not supervised and 
+                gabor_suffix is not None
+                )
+            if ep_run_analysis: # run analysis
                 gabor_analysis.gabor_analysis(
-                    model, main_loader, device=device, output_dir=output_dir, 
-                    suffix=gabor_suffix
+                    model, main_loader, optimizer, device=device, 
+                    output_dir=output_dir, ep_suffix=f"pre_{gabor_suffix}"
                     )
 
         if not test:
@@ -659,6 +663,12 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             loss_utils.populate_loss_dict(
                 src_dict=train_dict, target_dict=loss_dict["train"]
                 )
+
+        if is_gabor and ep_run_analysis:
+                gabor_analysis.gabor_analysis(
+                    model, main_loader, None, device=device, 
+                    output_dir=output_dir, ep_suffix=f"post_{gabor_suffix}"
+                    )            
 
         if test or save_best:
             eval_loader = main_loader if test else val_loader
@@ -707,7 +717,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
         # Save and log loss information
         loss_utils.save_loss_dict(
             loss_dict, output_dir=output_dir, seed=seed, dataset=dataset, 
-            num_classes=num_classes, plot=True
+            num_classes=num_classes, plot=True, log_best=(epoch_n == num_epochs)
             )
 
         if use_tb:

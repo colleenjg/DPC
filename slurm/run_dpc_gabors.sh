@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:rtx8000:2
 #SBATCH --mem=48GB
 #SBATCH --array=0-5
-#SBATCH --time=5:00:00
+#SBATCH --time=8:00:00
 #SBATCH --job-name=dpc_gab
 #SBATCH --output=/home/mila/g/gillonco/scratch/dpc_gabors_%A_%a.out
 
@@ -31,6 +31,7 @@ FIXED_SEQ_LEN="$FIXED_GAB_IMG_LEN"
 FIXED_PRED_STEP=1
 FIXED_U_PROB=0.08
 FIXED_U_POSSIZE_ARG="--diff_U_possizes"
+FIXED_GAB_ANALYSIS_ARG="--analysis"
 FIXED_NUM_WORKERS=8
 
 
@@ -47,44 +48,30 @@ echo -e "\nFIXED HYPERPARAMETERS\n" \
 "number of steps to predict: $FIXED_PRED_STEP\n" \
 "U probability: $FIXED_U_PROB\n" \
 "U position/size argument: $FIXED_U_POSSIZE_ARG\n" \
+"Gabor analysis argument: $FIXED_GAB_ANALYSIS_ARG\n" \
 "number of workers: $FIXED_NUM_WORKERS\n" \
 
 
 # 3. Externally set parameters
 if [[ "$SEED" == "" ]]; then
-    SEED_ARG=""
-else
-    SEED_ARG="--seed $SEED"
+    SEED=100
 fi
 
-echo -e "EXTERNALLY SET HYPERPARAMETERS\n" \
-"seed argument: $SEED_ARG\n" \
-
-
 # 4. Array ID hyperparameters
+ROLL_ARGS=( "--roll" "" ) # 2
 PRETRAINEDS=( "MouseSim" "Kinetics400" "no" ) # 3
-ROLL_ARGS=( "" "--roll" ) # 2
 
 # set values for task ID
 # inner loop
-PRETRAINEDS_LEN=${#PRETRAINEDS[@]}
-PRETRAINEDS_IDX=$(( SLURM_ARRAY_TASK_ID % PRETRAINEDS_LEN ))
-PRETRAINED=${PRETRAINEDS[$PRETRAINEDS_IDX]}
-
-# outer loop
 ROLL_ARGS_LEN=${#ROLL_ARGS[@]}
-ROLL_ARGS_IDX=$(( SLURM_ARRAY_TASK_ID / PRETRAINEDS_LEN % ROLL_ARGS_LEN ))
+ROLL_ARGS_IDX=$(( SLURM_ARRAY_TASK_ID % ROLL_ARGS_LEN ))
 ROLL_ARG=${ROLL_ARGS[$ROLL_ARGS_IDX]}
 
+# outer loop
+PRETRAINEDS_LEN=${#PRETRAINEDS[@]}
+PRETRAINEDS_IDX=$(( SLURM_ARRAY_TASK_ID / ROLL_ARGS_LEN % PRETRAINEDS_LEN ))
+PRETRAINED=${PRETRAINEDS[$PRETRAINEDS_IDX]}
 
-# Set the pretrain path, if applicable
-if [[ "$PRETRAINED" == "MouseSim" ]]; then
-    PRETRAINED_ARG="--pretrained ${SCRATCH}/dpc/pretrained/mousesim_right-128_r18_dpc-rnn/model/mousesim_right_best_epoch767.pth.tar"
-elif [[ "$PRETRAINED" == "Kinetics400" ]]; then
-    PRETRAINED_ARG="--pretrained ${SCRATCH}/dpc/pretrained/k400_128_r18_dpc-rnn/model/k400_128_r18_dpc-rnn.pth.tar"
-else
-    PRETRAINED_ARG=""
-fi
 
 # Set the sequence parameters
 if [[ "$ROLL_ARG" == "" ]]; then
@@ -95,13 +82,19 @@ else
     TRAIN_LEN=4096
 fi
 
-if [[ "$PRETRAINED_ARG" == "" ]]; then
-    UNEXP_EPOCH=20
+if [[ "$PRETRAINED" == "MouseSim" ]]; then
+    PRETRAINED_ARG="set in loop"
+elif [[ "$PRETRAINED" == "Kinetics400" ]]; then
+    PRETRAINED_ARG="--pretrained ${SCRATCH}/dpc/pretrained/k400_128_r18_dpc-rnn/model/k400_128_r18_dpc-rnn.pth.tar"
 else
-    UNEXP_EPOCH=10
+    PRETRAINED_ARG=""
 fi
 
-NUM_EPOCHS=$(( UNEXP_EPOCH + 5 ))
+if [[ "$PRETRAINED_ARG" == "" ]]; then
+    UNEXP_EPOCH=12
+else
+    UNEXP_EPOCH=6
+fi
 
 if [[ "$ROLL_ARG" ]]; then
     if [[ $SUFFIX_ARG ]]; then
@@ -110,6 +103,8 @@ if [[ "$ROLL_ARG" ]]; then
         SUFFIX_ARG="--suffix roll"
     fi
 fi
+
+NUM_EPOCHS=$(( UNEXP_EPOCH + 4 ))
 
 
 echo -e "\nARRAY ID HYPERPARAMETERS\n" \
@@ -121,42 +116,63 @@ echo -e "\nARRAY ID HYPERPARAMETERS\n" \
 "suffix argument: $SUFFIX_ARG\n" \
 "pretrained argument: $PRETRAINED_ARG\n" \
 
+# 5. Pretrained paths
+MOUSESIM_SEEDS=(  100 101 102 103 ) # 4
+MOUSESIM_EPOCHS=( 944 761 709 812 ) # 4
 
-# 5. Train model
+# 6. Train model
 EXIT=0
 
-set -x # echo commands to console
+for i in {0..3}; do
 
-python run_model.py \
-    --output_dir "$SCRATCH/dpc/gabor_models" \
-    --dataset "$FIXED_DATASET" \
-    --model "$FIXED_MODEL" \
-    --net "$FIXED_NET" \
-    --train_what "$FIXED_TRAIN_WHAT" \
-    --img_dim "$FIXED_IMG_DIM" \
-    $FIXED_AUGM_ARG \
-    --batch_size "$FIXED_BATCH_SIZE" \
-    --gab_img_len "$FIXED_GAB_IMG_LEN" \
-    --seq_len "$FIXED_SEQ_LEN" \
-    --pred_step "$FIXED_PRED_STEP" \
-    --U_prob "$FIXED_U_PROB" \
-    $FIXED_U_POSSIZE_ARG \
-    --num_workers "$FIXED_NUM_WORKERS" \
-    $SEED_ARG \
-    $ROLL_ARG \
-    --num_seq_in "$NUM_SEQ_IN" \
-    --train_len "$TRAIN_LEN" \
-    --unexp_epoch "$UNEXP_EPOCH" \
-    --num_epochs "$NUM_EPOCHS" \
-    $SUFFIX_ARG \
-    $PRETRAINED_ARG \
+    LOOP_SEED=$(( SEED + i )) 
+
+    echo -e "LOOP HYPERPARAMETERS\n" \
+    "loop argument: $LOOP_SEED\n" \
+
+    # Set the pretrain path, if applicable
+    if [[ "$PRETRAINED" == "MouseSim" ]]; then
+        MOUSESIM_SEED=${MOUSESIM_SEEDS[$i]}
+        MOUSESIM_EPOCH=${MOUSESIM_EPOCHS[$i]}
+        PRETRAINED_ARG="--pretrained ${SCRATCH}/dpc/pretrained/mousesim_right-128_r18_dpc-rnn_seed${MOUSESIM_SEED}/model/mousesim_right_best_epoch${MOUSESIM_EPOCH}.pth.tar"
+        echo -e "pretrained argument: $PRETRAINED_ARG\n"
+    fi
+
+    set -x # echo commands to console
+
+    python run_model.py \
+        --output_dir "$SCRATCH/dpc/gabor_models" \
+        --dataset "$FIXED_DATASET" \
+        --model "$FIXED_MODEL" \
+        --net "$FIXED_NET" \
+        --train_what "$FIXED_TRAIN_WHAT" \
+        --img_dim "$FIXED_IMG_DIM" \
+        $FIXED_AUGM_ARG \
+        --batch_size "$FIXED_BATCH_SIZE" \
+        --gab_img_len "$FIXED_GAB_IMG_LEN" \
+        --seq_len "$FIXED_SEQ_LEN" \
+        --pred_step "$FIXED_PRED_STEP" \
+        --U_prob "$FIXED_U_PROB" \
+        $FIXED_U_POSSIZE_ARG \
+        $FIXED_GAB_ANALYSIS_ARG \
+        --num_workers "$FIXED_NUM_WORKERS" \
+        $ROLL_ARG \
+        --num_seq_in "$NUM_SEQ_IN" \
+        --train_len "$TRAIN_LEN" \
+        --unexp_epoch "$UNEXP_EPOCH" \
+        --num_epochs "$NUM_EPOCHS" \
+        --seed "$LOOP_SEED" \
+        $SUFFIX_ARG \
+        $PRETRAINED_ARG \
 
 
-code="$?"
-if [[ "$code" -gt "$EXIT" ]]; then EXIT="$code"; fi # collect exit code
+    code="$?"
+    if [[ "$code" -gt "$EXIT" ]]; then EXIT="$code"; fi # collect exit code
 
-set +x # stop echoing commands to console
-  
+    set +x # stop echoing commands to console
+
+done
+
 
 if [[ "$EXIT" -ne 0 ]]; then exit "$EXIT"; fi # exit with highest exit code
 

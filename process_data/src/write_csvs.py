@@ -490,7 +490,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--d_root", type=Path,
         help=("root directory for the datasets, which should have the "
-              "structure {args.d_root}/{args.dataset}/splits."))
+              "structure {args.d_root}/{args.dataset}."))
     parser.add_argument("--csv_root", type=Path, default=Path("..", "data"),
         help="root directory in which to save the csv with the list of paths.")
 

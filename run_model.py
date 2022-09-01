@@ -30,6 +30,7 @@ def check_adjust_args(args):
         - args.use_scheduler from args.supervised
     - Checks that values are accepted and inter-compatible for:
         - args.model
+        - args.analysis, given args.supervised
         - args.temp_data_dir
         - args.train_what
         - args.test, given args.supervised
@@ -101,6 +102,12 @@ def check_adjust_args(args):
         raise ValueError(
             "args.train_what must be 'all', 'ft' or 'last', but found "
             f"{args.train_what}'."
+            )
+
+    # check the analysis argument
+    if args.supervised and args.analysis:
+        raise NotImplementedError(
+            "args.analysis is only implemented in the unsupervised setting."
             )
 
     # set whether to use scheduler
@@ -395,6 +402,7 @@ def run_training_or_test(args):
         log_freq=args.log_freq,
         use_tb=args.use_tb,
         save_by_batch=args.save_by_batch,
+        run_gabor_analysis=args.analysis,
         reload_kwargs=reload_kwargs,
         )
     
@@ -531,6 +539,8 @@ if __name__ == "__main__":
         help="if True, U positions/sizes are different from D ones")
     parser.add_argument("--train_len", default=1000, type=int,
         help="size of Gabors training dataset")
+    parser.add_argument("--analysis", action="store_true", 
+        help="if True, an extended activations and errors analysis is run")
 
     # supervised only
     parser.add_argument("--dropout", default=0.5, type=float, 

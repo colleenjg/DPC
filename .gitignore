@@ -9,10 +9,12 @@
 !/slurm/
 !/utils/
 
-analysis/*.sh
+analysis/*
 utils/*.sh
 process_data/data
 .ipynb_checkpoints
+
+analysis/*.py
 
 *.pyc
 *.swp

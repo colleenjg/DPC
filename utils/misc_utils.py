@@ -991,7 +991,7 @@ def get_model_hyperparams(supervised=False, resume=False, test=False):
 
 
 #############################################
-def get_dataset_hyperparams(dataset="UCF101"):
+def get_dataset_hyperparams(dataset="UCF101", supervised=False):
     """
     get_dataset_hyperparams()
 
@@ -1001,6 +1001,10 @@ def get_dataset_hyperparams(dataset="UCF101"):
     -------------
     - dataset : str (default="UCF101")
         Dataset name, used to identify parameters to ignore or retain.
+    - supervised : bool (default=False)
+        If True, parameters not relevant to the supervised task are 
+        ignored. Otherwise, those not relevant to the self-supervised task 
+        are ignored.
 
     Returns
     -------
@@ -1028,6 +1032,9 @@ def get_dataset_hyperparams(dataset="UCF101"):
         "diff_U_possizes", "gab_img_len", "gray", "num_gabors", 
         "same_possizes", "roll", "train_len", "U_prob", "unexp_epoch"
         ]
+    if not supervised:
+        gabor_params.append("analysis")
+
     if dataset == "Gabors":
         dataset_params.extend(gabor_params)
     else:
@@ -1177,7 +1184,9 @@ def save_hyperparameters(hyperparams, direc=None):
 
 
     # set dataset parameters
-    dataset_params, add_ignore_params = get_dataset_hyperparams(dataset)
+    dataset_params, add_ignore_params = get_dataset_hyperparams(
+        dataset, supervised=supervised
+        )
     ignore_params = ignore_params + add_ignore_params
 
     hyperparams = add_nested_dict(
@@ -1385,7 +1394,8 @@ def update_resume_args(args, resume_dir):
         # dataset and model: go through all keys
         elif key in ["dataset", "model"]: # go through all
             update_keys = [
-                "dropout", "lr", "num_epochs", "wd", "U_prob", "unexp_epoch"
+                "analysis", "dropout", "lr", "num_epochs", "wd", "U_prob", 
+                "unexp_epoch"
                 ]
             for subkey, item in sub_dict.items():
                 if subkey in update_keys:

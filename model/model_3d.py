@@ -20,6 +20,9 @@ class DPC_RNN(torch.nn.Module):
     ----------
     - agg : convrnn.ConvGRU
         Convolution GRU neural network module.
+    - avg_pool : AvgPool3D
+        Average pool layer for pooling feature representation in the temporal 
+        dimension.
     - backbone : ResNet2d3d_full
         Backbone ResNet network.
     - D_out : int
@@ -116,6 +119,9 @@ class DPC_RNN(torch.nn.Module):
         self.backbone, self.param = resnet_2d3d.select_ResNet(
             network, track_running_stats=False
             )
+
+        self.avg_pool = torch.nn.AvgPool3d((self.L_out, 1, 1), stride=1)
+
         self.param["num_layers"] = 1 # param for GRU
         self.param["hidden_size"] = self.param["feature_size"] # param for GRU
 
@@ -356,11 +362,7 @@ class DPC_RNN(torch.nn.Module):
         batch = batch.reshape(B * N, C, L, D, D)
         feature = self.backbone(batch)
         del batch
-        feature = F.avg_pool3d(
-            feature, 
-            (self.L_out, 1, 1), 
-            stride=(1, 1, 1)
-            )
+        feature = self.avg_pool(feature)
 
         feature = feature.reshape(
             B, N, self.param["feature_size"], self.D_out, self.D_out
@@ -396,8 +398,14 @@ class LC_RNN(torch.nn.Module):
     ----------
     - agg : convrnn.ConvGRU
         Convolution GRU neural network module.
+    - avg_pool : AvgPool3D
+        Average pool layer for pooling feature representation in the temporal 
+        dimension.
     - backbone : ResNet2d3d_full
         Backbone ResNet network.
+    - context_avg_pool : AvgPool3D
+        Average pool layer for pooling the contextual representation in the 
+        spatial dimension.
     - D_out : int
         Final spatial dimension of each feature (D_out x D_out) 
         (approx 1/32 of input_size D).
@@ -467,6 +475,9 @@ class LC_RNN(torch.nn.Module):
             network, 
             track_running_stats=track_running_stats
             )
+
+        self.avg_pool = torch.nn.AvgPool3d((self.L_out, 1, 1), stride=1)
+
         self.param["num_layers"] = 1
         self.param["hidden_size"] = self.param["feature_size"]
         self.param["kernel_size"] = 1
@@ -483,6 +494,10 @@ class LC_RNN(torch.nn.Module):
             num_layers=self.param["num_layers"]
             )
         self._initialize_weights(self.agg)
+
+        self.context_avg_pool = torch.nn.AvgPool3d(
+            (1, self.D_out, self.D_out), stride=1
+            )
 
         self.final_bn = torch.nn.BatchNorm1d(self.param["feature_size"])
         self.final_bn.weight.data.fill_(1)
@@ -524,15 +539,14 @@ class LC_RNN(torch.nn.Module):
         del batch 
         feature = F.relu(feature)
         
-        feature = F.avg_pool3d(feature, (self.L_out, 1, 1), stride=1)
+        feature = self.avg_pool(feature)
         feature = feature.reshape(
             B, N, self.param["feature_size"], self.D_out, self.D_out
             ) 
         context, _ = self.agg(feature)
         context = context[:, -1, :].unsqueeze(1)
-        context = F.avg_pool3d(
-            context, (1, self.D_out, self.D_out), stride=1
-            ).squeeze(-1).squeeze(-1)
+
+        self.context_avg_pool(context).squeeze(-1).squeeze(-1)
         del feature
 
         # [B, N, C] -> [B, C, N] for BN() (operates on dim 1), then [B, N, C] 

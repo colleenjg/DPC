@@ -1054,11 +1054,14 @@ def update_unexp(main_loader, val_loader=None, epoch_n=0, unexp_epoch=10,
 
     if not test:
         suffix = None
-        n = int(epoch_n - unexp_epoch  + 1)
-        if -num_pre_post < n <= num_pre_post:
+        n = int(epoch_n - unexp_epoch)
+        if -num_pre_post <= n < num_pre_post or epoch_n == 0:
             suffix = misc_utils.get_order_str(np.absolute(n))
-            if n <= 0:
-                suffix = f"pre_{suffix}"
+            if n < 0:
+                suffix = f"-{suffix}"
+            elif n >= 0:
+                suffix = f"{suffix}_unexp"
+
 
     return suffix
 

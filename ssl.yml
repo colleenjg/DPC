@@ -31,4 +31,5 @@ dependencies:
       - torch
       - torchvision
       - tensorboardX
+      - umap-learn
 
