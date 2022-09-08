@@ -563,6 +563,8 @@ def get_new_model_optimizer(model, optimizer, factor=1):
     """
     get_new_model_optimizer(model, optimizer)
 
+    Returns a new model with optimizer parameters, adjusted by the input factor.
+
     Required args
     -------------
     - model : torch nn.Module or nn.DataParallel
@@ -585,7 +587,7 @@ def get_new_model_optimizer(model, optimizer, factor=1):
         input optimizer.
     """
     
-    model = copy.deepcopy(model)
+    model = copy.deepcopy(model) # will stay on the same device
     new_optimizer = optim.Adam(model.parameters())
     new_optimizer.load_state_dict(optimizer.state_dict())
     for param_group in new_optimizer.param_groups: 
@@ -809,8 +811,8 @@ def prep_supervised_loss(output, target, shared_pred=False, SUB_B=None):
         Target values, flattened to group sequences across batches,            
             with dims: B if shared_pred, else B * N.
     - loss_reshape : tuple
-        Shape to which loss can be reshaped to separate loss values by batch: 
-        (B, ) if pred_shared is True, and (B, N) otherwise.
+        Shape to which loss can be reshaped to separate loss values by batch 
+        item: (B, ) if pred_shared is True, and (B, N) otherwise.
     """
     
     if shared_pred:
@@ -874,8 +876,8 @@ def prep_self_supervised_loss(output, mask, input_seq_shape=None):
         other pairs (negative) by 0s, with the same dimensions as 
         output_flattened.
     - loss_reshape : tuple
-        Shape to which loss can be reshaped to separate loss values by batch, 
-        i.e. (B, P, D_out2)
+        Shape to which loss can be reshaped to separate loss values by batch 
+        item, predicted step and spatial dimension, i.e. (B, P, D_out2)
     - target : 6D Tensor
         Unflattened target mask identifying all positive pairs by 1s, and all 
         other pairs (negative) by 0s, with dims: 
@@ -961,7 +963,8 @@ def prep_loss(output, mask=None, sup_target=None, input_seq_shape=None,
         Flattened target. For details, see prep_supervised_loss() if 
         supervised is True, and prep_self_supervised_loss() otherwise.
     - loss_reshape : tuple
-        Shape to which loss can be reshaped to separate loss values by batch.
+        Shape to which loss can be reshaped to separate loss values by batch 
+        item.
     - target : 2 or 6D Tensor
         Unflattened target. If supervised is True, dims are B x N. 
         See prep_self_supervised_loss() for details otherwise. 

@@ -11,7 +11,7 @@ import torch
 from dataset import gabor_sequences
 from utils import checkpoint_utils, gabor_utils, loss_utils, misc_utils, \
     training_utils
-from analysis import gabor_analysis
+from analysis import hook_analysis
 
 # a few global variables
 TOPK = [1, 3, 5]
@@ -622,9 +622,9 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
     for epoch_n in range(start_epoch_n, num_epochs + 1):
         start_time = time.perf_counter()
 
-        gabor_suffix = None
+        gabor_epoch_str = None
         if is_gabor:
-            data_seed, gabor_suffix = gabor_utils.update_gabors(
+            data_seed, gabor_epoch_str = gabor_utils.update_gabors(
                 main_loader, val_loader, seed=data_seed, epoch_n=epoch_n, 
                 unexp_epoch=unexp_epoch, test=test, num_pre_post=3
                 )
@@ -635,12 +635,12 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             
             ep_run_analysis = (
                 run_gabor_analysis and not supervised and 
-                gabor_suffix is not None
+                gabor_epoch_str is not None
                 )
             if ep_run_analysis: # run analysis
-                gabor_analysis.gabor_analysis(
+                hook_analysis.collect_save_hook_data(
                     model, main_loader, optimizer, device=device, 
-                    output_dir=output_dir, ep_suffix=f"pre_{gabor_suffix}"
+                    output_dir=output_dir, epoch_str=gabor_epoch_str, pre=True
                     )
 
         if not test:
@@ -665,9 +665,9 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 )
 
         if is_gabor and ep_run_analysis:
-                gabor_analysis.gabor_analysis(
+                hook_analysis.gabor_analysis(
                     model, main_loader, None, device=device, 
-                    output_dir=output_dir, ep_suffix=f"post_{gabor_suffix}"
+                    output_dir=output_dir, epoch_str=gabor_epoch_str, pre=False
                     )            
 
         if test or save_best:
@@ -748,7 +748,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
             output_dir=model_direc,
             gabor_unexp=gabor_unexp,
             keep_all=False,
-            suffix=gabor_suffix,
+            suffix=gabor_epoch_str,
         )
 
         stop_time = time.perf_counter()

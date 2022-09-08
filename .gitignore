@@ -14,7 +14,8 @@ utils/*.sh
 process_data/data
 .ipynb_checkpoints
 
-analysis/*.py
+
+!/analysis/*.py
 
 *.pyc
 *.swp

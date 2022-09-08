@@ -1724,7 +1724,7 @@ def update_records(dataset, loss_dict, acc_dict, output, sup_target,
 
         n_vals = sum(idx).item()
         if n_vals == 0:
-            loss_dict[key].append(np.nan)
+            loss_dict[key].append(np.nan) # something odd is happening here? NaNs
             acc_dict[key].append(np.nan)
         else:
             loss_dict[key].append(batch_loss[idx].mean().item())
