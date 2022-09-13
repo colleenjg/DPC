@@ -240,25 +240,30 @@ def run_analysis_checks(model, dataloader):
 
 
 #############################################
-def get_digit_in_key(key):
+def get_digit_in_key(epoch_str):
     """
-    get_digit_in_key(key)
+    get_digit_in_key(epoch_str)
 
     Retrieves a digit (positive or negative) for an epoch string key.
 
     Required args
     -------------
-    - key : str
-        Dictionary key containing a digit.
+    - epoch_str : str
+        Dictionary epoch key containing a digit.
+    
+    Returns
+    -------
+    - digit : int
+        Epoch number.
     """
 
-    digits = re.findall(r"\d+", key)
+    digits = re.findall(r"\d+", epoch_str)
     if len(digits) != 1:
-        raise ValueError(f"Expected to find exactly one digit in {key}.")
+        raise ValueError(f"Expected to find exactly one digit in {epoch_str}.")
 
     digit = digits[0]
-    idx = key.index(digit)
-    if idx > 0 and key[idx - 1] == "-":
+    idx = epoch_str.index(digit)
+    if idx > 0 and epoch_str[idx - 1] == "-":
         digit = f"-{digit}"
 
     digit = int(digit)

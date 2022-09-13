@@ -2,9 +2,9 @@ import copy
 import logging
 import time
 
-
 import numpy as np
 import pandas as pd
+import pickle as pkl
 import torch
 
 from utils import loss_utils, misc_utils, training_utils
@@ -293,7 +293,7 @@ def compile_data(ep_hook_dict, dataset):
 
 #############################################
 def plot_save_hook_data(hook_dict, epoch_str="0", pre=True, learn=False, 
-                        output_dir="."):
+                        output_dir=".", save_data=False):
     """
     plot_save_hook_data(hook_dict)
 
@@ -327,19 +327,46 @@ def plot_save_hook_data(hook_dict, epoch_str="0", pre=True, learn=False,
         slower rate.
     - output_dir : str or path (default=".")
         Main output directory in which to save collected data.
+    - save_data : bool (default=False)
+        If True, data is saved to h5 file in the output directory.
     """
 
-    hook_dir = analysis_utils.save_dict_pkl(
-        hook_dict, output_dir=output_dir, epoch_str=epoch_str, pre=pre, 
-        learn=learn, dict_type="hook", 
+    if save_data:
+        analysis_utils.save_dict_pkl(
+            hook_dict, output_dir=output_dir, epoch_str=epoch_str, pre=pre, 
+            learn=learn, dict_type="hook", 
+            )
+
+    plot_kw = {
+        "resp_ep_ns": usi_diffs.RESP_EP_NS,
+        "diff_ep_ns": usi_diffs.DIFF_EP_NS,
+        "corr_ep_ns": usi_diffs.CORR_EP_NS,
+        "pre": pre,
+        "learn": learn,
+    }
+
+    max_ep_ns = [max(plot_kw[key]) for key in ["resp_ep_ns", "diff_ep_ns"]]
+    max_corr_ep_ns = max([i for vals in plot_kw["corr_ep_ns"] for i in vals])
+    max_ep_n = max(*max_ep_ns, max_corr_ep_ns)
+
+    epoch_n = analysis_utils.get_digit_in_key(epoch_str)
+    if epoch_n != max_ep_n:
+        return
+
+    hook_path = analysis_utils.get_dict_path(output_dir, dict_type="hook")
+    with open(hook_path, "rb") as f:
+        hook_dict = pkl.load(f)
+    hook_df = usi_diffs.get_hook_df(hook_dict)
+
+    plot_err = usi_diffs.check_plotting(hook_df, raise_err=False, **plot_kw)
+    if len(plot_err):
+        logger.warning(plot_err)
+        return
+
+    usi_diffs.plot_all(
+        hook_df, output_dir=hook_path.parent, log_stats=False, **plot_kw
         )
-    
-    return
-
-    hook_df = get_hook_df(hook_dict, ep_suffix)
-
-    breakpoint()
-    
+     
 
 #############################################
 def plot_and_save_results(ep_hook_dict, dataset, epoch_str="0", pre=True, 
@@ -383,6 +410,7 @@ def plot_and_save_results(ep_hook_dict, dataset, epoch_str="0", pre=True,
         )
     start_time = time.perf_counter()
 
+
     stop_time = time.perf_counter()
     time_str = misc_utils.format_time(stop_time - start_time, sep_min=True)
     logger.info(
@@ -393,11 +421,11 @@ def plot_and_save_results(ep_hook_dict, dataset, epoch_str="0", pre=True,
     ep_hook_dict, ep_umap_df, ep_rsm_dict = compile_data(
         ep_hook_dict, dataset
         )
-
     umap.plot_save_umaps(
-        ep_umap_df, output_dir=output_dir, epoch_str=epoch_str, pre=pre, 
-        learn=learn
+        ep_umap_df, epoch_str=epoch_str, pre=pre, learn=learn, 
+        output_dir=output_dir, save_data=True
         )
+
 
     stop_time = time.perf_counter()
     time_str = misc_utils.format_time(stop_time - start_time, sep_min=True)
@@ -406,19 +434,23 @@ def plot_and_save_results(ep_hook_dict, dataset, epoch_str="0", pre=True,
         f"\n4/{NUM_STEPS}. Plotting and saving RSM data..."
         )
     start_time = time.perf_counter() 
-    rsm.plot_save_rsms(ep_rsm_dict, epoch_str, pre=pre, learn=learn, 
-                       output_dir=output_dir)
+    rsm.plot_save_rsms(
+        ep_rsm_dict, epoch_str, pre=pre, learn=learn, 
+        output_dir=output_dir, save_data=True
+        )
 
 
     stop_time = time.perf_counter()
     time_str = misc_utils.format_time(stop_time - start_time, sep_min=True)
     logger.info(
         f"{TAB}[{time_str}] RSM data plotted and saved."
-        f"\n5/{NUM_STEPS}. Saving summarized USI/diffs data."
+        f"\n5/{NUM_STEPS}. Saving and plotting summarized USI/diffs data."
         )
     start_time = time.perf_counter() 
-    plot_save_hook_data(ep_hook_dict, epoch_str, pre=pre, learn=learn, 
-                        output_dir=output_dir)
+    plot_save_hook_data(
+        ep_hook_dict, epoch_str, pre=pre, learn=learn, 
+        output_dir=output_dir
+        )
 
 
     stop_time = time.perf_counter()

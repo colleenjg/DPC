@@ -92,10 +92,19 @@ def extract_output(output, batch_size=32, pred_step=2, hook_module="encoder",
 
     Optional args
     -------------
-    - batch_size : int
-    - pred_step : int
-    - hook_module : str
+    - batch_size : int (default=32)
+        The batch size for the dataset.
+    - pred_step : int (default=2)
+        The number of steps predicted.
+    - hook_module : str (default="encoder")
+        Module for which dataframe is being created. 
     - count : int
+        Count of extracted outputs to date.
+
+    Returns
+    -------
+    - output : 5D tensor
+        Output data, with dimensions B x N x C x D x D
     """
 
     if hook_module == "contextual" and count >= pred_step:

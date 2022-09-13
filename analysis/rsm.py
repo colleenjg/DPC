@@ -1,12 +1,23 @@
+#!/usr/bin/env python
+
+import argparse
 import copy
+import glob
+import logging
 from pathlib import Path
+import sys
 
 import h5py
 from matplotlib import pyplot as plt
 import numpy as np
 
+sys.path.extend(["..", str(Path("..", "utils")), str(Path("..", "analysis"))])
 from analysis import analysis_utils, hooks
-from utils import plot_utils
+from utils import misc_utils, plot_utils
+
+logger = logging.getLogger(__name__)
+
+TAB = "    "
 
 
 #############################################
@@ -267,7 +278,7 @@ def get_binned_rsm_data(data):
 
     upp = np.triu_indices(N * P, k=0)
     rsm_upp = calculate_rsm_corr(data.reshape(N * P, -1))[upp]
-    rsm_binned = np.maximum(np.digitize(rsm_upp, rsm_bin_vals) - 1, 0)
+    rsm_binned = np.maximum(np.digitize(rsm_upp, rsm_bin_edges) - 1, 0)
     
     return rsm_binned, rsm_bin_vals
 
@@ -390,13 +401,15 @@ def expand_idxs_for_rare(idx_dict):
         if old in outer_ends:
             l = outer_ends.tolist().index(old)
             exp_idx_dict["outer_ends"][l] = new
+    
+    exp_idx_dict["sorter"] = np.asarray(idx_dict["sorter"])[np.asarray(sorter)]
 
     return exp_idx_dict
 
 
 #############################################
 def plot_save_rsms(ep_rsm_dict, epoch_str="0", pre=True, learn=False, 
-                   output_dir="."):
+                   output_dir=".", save_data=False):
     """
     plot_save_rsms(ep_rsm_dict)
 
@@ -437,13 +450,20 @@ def plot_save_rsms(ep_rsm_dict, epoch_str="0", pre=True, learn=False,
         slower rate.
     - output_dir : str or path (default=".")
         Main output directory in which to save collected data.
+    - save_data : bool (default=False)
+        If True, data is saved to h5 file in the output directory.
     """
 
     epoch_str, pre_str = analysis_utils.get_epoch_pre_str(epoch_str, pre, learn)
-    rsm_dir = save_rsm_h5(
-        ep_rsm_dict, output_dir=output_dir, epoch_str=epoch_str, pre=pre, 
-        learn=learn
-        )
+    if save_data:
+        rsm_dir = save_rsm_h5(
+            ep_rsm_dict, output_dir=output_dir, epoch_str=epoch_str, pre=pre, 
+            learn=learn
+            )
+    else:
+        rsm_dir = analysis_utils.get_dict_path(
+            output_dir, dict_type="rsm").parent
+        rsm_dir.mkdir(parents=True, exist_ok=True)
 
     idxs_im = ep_rsm_dict["idxs_im"]
     idxs_ori = ep_rsm_dict["idxs_ori"]
@@ -468,14 +488,15 @@ def plot_save_rsms(ep_rsm_dict, epoch_str="0", pre=True, learn=False,
         cm_w = 0.03 / ncols
         cbar_ax = fig.add_axes([0.93, 0.11, cm_w, 0.78])
 
-        upper_idxs = np.triu_indices(len(sorter), k=0)
+        orig_sorter = idx_dict["sorter"]
+        exp_idx_dict = expand_idxs_for_rare(idx_dict)
+        sorter = exp_idx_dict["sorter"]
+        upper_idxs = np.triu_indices(len(orig_sorter), k=0)
         lower_idxs = (upper_idxs[1], upper_idxs[0])
         rasterize_ax = []
         for m, hook_module in enumerate(hooks.HOOK_MODULES):
-            for t, hook_type in enumerate(hooks.HOOK_TYPES):
-                exp_idx_dict = expand_idxs_for_rare(rsm, idx_dict)
-                sorter = exp_idx_dict["sorter"]
-                rsm = np.empty((len(sorter), len(sorter)))
+            for t, hook_type in enumerate(hooks.HOOK_TYPES):                
+                rsm = np.empty((len(orig_sorter), len(orig_sorter)))
                 rsm_binned = ep_rsm_dict[hook_module][hook_type]
                 rsm[upper_idxs] = rsm_binned
                 rsm[lower_idxs] = rsm_binned
@@ -500,9 +521,46 @@ def plot_save_rsms(ep_rsm_dict, epoch_str="0", pre=True, learn=False,
         for subax in rasterize_ax:
             subax.set_rasterization_zorder(-9)
 
-        savepath = Path(rsm_dir, f"{epoch_str}_{pre_str}_{labels[i]}.svg")
+        savepath = Path(rsm_dir, f"{pre_str}_{epoch_str}_{labels[i]}.svg")
+        savepath.parent.mkdir(exist_ok=True, parents=True)
         fig.savefig(savepath, format="svg", bbox_inches="tight", dpi=300)
 
     return
 
+
+#############################################
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--output_dir", default="output_dir", 
+        help="directory in which to find RSM h5 files for replotting")
+    parser.add_argument('--log_level', default='info', 
+                        help='logging level, e.g., debug, info, error')
+    args = parser.parse_args()
+
+    misc_utils.get_logger_with_basic_format(level=args.log_level)
+
+    rsm_h5s = glob.glob(
+        str(Path(args.output_dir, "**", "*rsm*.h5")), recursive=True
+        )
+    
+    for rsm_h5 in rsm_h5s:
+        logger.info(f"Replotting from {rsm_h5}.", extra={"spacing": "\n"})
+
+        rsm_dict = load_rsm_h5(rsm_h5)
+        rsm_h5_dir = Path(rsm_h5).parent.parent
+        
+        for pre_learn_str, pre_dict in rsm_dict.items():
+            pre = "pre" in pre_learn_str
+            learn = "learn" in pre_learn_str
+            for epoch_str, epoch_dict in pre_dict.items():
+                logger.info(
+                    f"{pre_learn_str}/{epoch_str}", extra={"spacing": TAB}
+                    )
+                plot_save_rsms(
+                    epoch_dict, epoch_str=epoch_str, pre=pre, 
+                    learn=learn, output_dir=rsm_h5_dir, save_data=False
+                    )
+                plt.close("all")
 

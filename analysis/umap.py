@@ -1,13 +1,27 @@
+#!/usr/bin/env python
+ 
+import argparse
+import glob
+import logging
 from pathlib import Path
+import sys
 
+from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
+import pickle as pkl
 import seaborn as sns
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 import umap.umap_ as umap
 
+sys.path.extend(["..", str(Path("..", "utils")), str(Path("..", "analysis"))])
 from analysis import analysis_utils, hooks
+from utils import misc_utils
+
+logger = logging.getLogger(__name__)
+
+TAB = "    "
 
 
 #############################################
@@ -89,8 +103,8 @@ def get_umap_df(data, labels, hook_module="encoder", hook_type="activations",
 
 
 #############################################
-def plot_save_umaps(umap_df, output_dir=".", epoch_str="0", pre=True, 
-                    learn=False):
+def plot_save_umaps(umap_df, epoch_str="0", pre=True, learn=False, 
+                    output_dir=".", save_data=False):
     """
     plot_save_umaps(umap_df)
 
@@ -111,8 +125,6 @@ def plot_save_umaps(umap_df, output_dir=".", epoch_str="0", pre=True,
 
     Optional args
     -------------
-    - output_dir : str or path (default=".")
-        Main output directory in which to save collected data.
     - epoch_str : str (default: "0")
         String providing epoch information, for saving.
     - pre : bool (default: True)
@@ -122,13 +134,23 @@ def plot_save_umaps(umap_df, output_dir=".", epoch_str="0", pre=True,
         If True, hook data is collected while model is being trained at a 
         slower rate. If True, UMAPs colour-coded by batch number are also 
         plotted.
+    - output_dir : str or path (default=".")
+        Main output directory in which to save collected data.
+    - save_data : bool (default=False)
+        If True, data is saved to h5 file in the output directory.
     """
 
     epoch_str, pre_str = analysis_utils.get_epoch_pre_str(epoch_str, pre, learn)
-    umap_dir = analysis_utils.save_dict_pkl(
-        umap_df.to_dict(), output_dir=output_dir, epoch_str=epoch_str, pre=pre, 
-        learn=learn, dict_type="umap", 
-        )
+
+    if save_data:
+       umap_dir = analysis_utils.save_dict_pkl(
+            umap_df.to_dict(), output_dir=output_dir, epoch_str=epoch_str, 
+            pre=pre, learn=learn, dict_type="umap", 
+            )
+    else:
+        umap_dir = analysis_utils.get_dict_path(
+            output_dir, dict_type="umap").parent
+        umap_dir.mkdir(parents=True, exist_ok=True)
 
     for label in ["image", "orientation", "pred_step", "batch_num"]:
         palette = "viridis"
@@ -137,10 +159,10 @@ def plot_save_umaps(umap_df, output_dir=".", epoch_str="0", pre=True,
         if len(unique) == 1:
             continue
 
-        if label == "orientation" and "N/A" in unique:
-            order = np.sort(
-                unique[np.where(unique != "N/A")]
-                ).tolist() + ["N/A"]
+        if label == "orientation" and "N/A" in unique.astype(str):
+            no_na = unique[np.where(unique != "N/A")]
+            idx_order = np.argsort(no_na.astype(float))
+            order = [no_na[o] for o in idx_order] + ["N/A"]
         elif label == "batch_num" and not learn:
             continue
         else:
@@ -156,8 +178,8 @@ def plot_save_umaps(umap_df, output_dir=".", epoch_str="0", pre=True,
             hue=label, hue_order=order, 
             col="hook_module", col_order=hooks.HOOK_MODULES,
             row="hook_type", row_order=hooks.HOOK_TYPES,
-            alpha=0.3, palette=palette,
-            facet_kws={"sharex": False, "sharey": False}
+            alpha=0.3, palette=palette, zorder=-10,
+            facet_kws={"sharex": False, "sharey": False},
             )
         
         sns.despine(left=True, bottom=True)
@@ -165,12 +187,53 @@ def plot_save_umaps(umap_df, output_dir=".", epoch_str="0", pre=True,
         for m, hook_module in enumerate(hooks.HOOK_MODULES):
             for t, hook_type in enumerate(hooks.HOOK_TYPES):
                 g.axes[t, m].set_title("")
+                g.axes[t, m].set_xlabel("")
                 if t == 0:
                     g.axes[t, m].set_title(hook_module.capitalize())
                 if m == 0:
                     g.axes[t, m].set_ylabel(hook_type.capitalize())
 
-        savepath = Path(umap_dir, f"{epoch_str}_{pre_str}_{label}.svg")
+        for subax in g.axes.ravel():
+            subax.set_rasterization_zorder(-9)
+
+        savepath = Path(umap_dir, f"{pre_str}_{epoch_str}_{label}.svg")
+        savepath.parent.mkdir(exist_ok=True, parents=True)
         g.savefig(savepath, format="svg", bbox_inches="tight", dpi=600)
+
+
+#############################################
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--output_dir", default="output_dir", 
+        help="directory in which to find UMAP pickles for replotting")
+    parser.add_argument('--log_level', default='info', 
+                        help='logging level, e.g., debug, info, error')
+    args = parser.parse_args()
+
+    misc_utils.get_logger_with_basic_format(level=args.log_level)
+
+    umap_pickles = glob.glob(
+        str(Path(args.output_dir, "**", "*umap*.pkl")), recursive=True
+        )
+    
+    for umap_pickle in umap_pickles:
+        logger.info(f"Replotting from {umap_pickle}.", extra={"spacing": "\n"})
+
+        with open(umap_pickle, "rb") as f:
+            data_dict = pkl.load(f)
+        umap_pickle_dir = Path(umap_pickle).parent.parent
+        
+        for pre_learn_str, pre_dict in data_dict.items():
+            pre = "pre" in pre_learn_str
+            learn = "learn" in pre_learn_str
+            logger.info(f"{pre_learn_str}/{epoch_str}", extra={"spacing": TAB})
+            for epoch_str, umap_dict in pre_dict.items():
+                plot_save_umaps(
+                    pd.DataFrame(umap_dict), epoch_str=epoch_str, pre=pre, 
+                    learn=learn, output_dir=umap_pickle_dir, save_data=False
+                    )
+                plt.close("all")
 
 

@@ -4,10 +4,12 @@ import argparse
 import copy
 import logging
 from pathlib import Path
+import sys
 
 import matplotlib.pyplot as plt
 import torch
 
+sys.path.extend(["..", str(Path("..", "utils")), str(Path("..", "model"))])
 from model import run_manager
 from utils import data_utils, misc_utils, training_utils
 

@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 
 import logging
+from pathlib import Path
 import warnings
+import sys
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import numpy as np
 
+sys.path.extend(["..", str(Path("..", "utils"))])
 from utils import misc_utils
 
 logger = logging.getLogger(__name__)
@@ -45,6 +48,94 @@ def get_cmap_colors(cmap_name="Blues", n_vals=5, min_n=5):
     colors = [cmap(s) for s in samples]
 
     return colors
+
+
+#############################################
+def set_shared_axes(axis_set, axes="x"):
+    """
+    set_shared_axes(ax)
+
+    Sets axis set passed to be shared, and adjusts tick label positions. 
+
+    Required args:
+        - axis_set (list): axes to group
+
+    Optional args:
+        - axes (str or list)       : axes ("x", "y") to group
+                                     default: "x"
+    """
+
+    axes = [axes] if not isinstance(axes, list) else axes
+    for axis in axes:
+        if axis == "x":
+            grper = axis_set[0].get_shared_x_axes()
+            ns = [subax.get_subplotspec().rowspan.start for subax in axis_set]
+            keep_n = np.max(ns)
+            kwargs = {"labelbottom": False}
+
+        elif axis == "y":
+            grper = axis_set[0].get_shared_y_axes()
+            ns = [subax.get_subplotspec().colspan.start for subax in axis_set]
+            keep_n = np.min(ns)
+            kwargs = {"labelleft": False}
+        else:
+            raise ValueError("'axes' must be 'x' or 'y'.")
+
+        grper.join(*axis_set)
+
+        for subax, n in zip(axis_set, ns):
+            if n != keep_n:
+                subax.tick_params(axis=axis, **kwargs)
+
+        
+#############################################
+def expand_axis(ax, axis="x", pad_each=None, min_val=None, max_val=None):
+    """
+    expand_axis(ax)
+
+    Expands axis limits.
+
+    Required args
+    -------------
+    - ax : plt subplot
+        Axis on which to add the labels.
+
+    Optional args
+    -------------
+    - axis : str (default="x")
+        Axis to expand
+    - pad_each : float (default=None)
+        Additional padding to use in expanding the axis (proportion of the 
+        axis limits)
+    - min_val : float (default=None)
+        Minimum value for the axis, used if beyond the axis limits.
+    - max_val : float (default=None)
+        Maximum value for the axis, used if beyond the axis limits.
+    """
+    
+    if axis == "x":
+        curr_min_val, curr_max_val = ax.get_xlim()
+        setter = ax.set_xlim
+    elif axis == "y":
+        curr_min_val, curr_max_val = ax.get_ylim()
+        setter = ax.set_ylim
+    else:
+        raise ValueError("'axis' must be 'x' or 'y'.")
+    
+    if min_val is None:
+        min_val = curr_min_val
+    if max_val is None:
+        max_val = curr_max_val
+    
+    min_val = min(curr_min_val, min_val)
+    max_val = max(curr_max_val, max_val)
+    
+    if pad_each is not None:
+        pad_use = (max_val - min_val) * pad_each
+        min_val = min_val - pad_use
+        max_val = max_val + pad_use
+    
+    setter(min_val, max_val)
 
 
 #############################################
