@@ -1573,7 +1573,7 @@ def init_gabor_records(dataset):
         '{image_type}' (list)       : image type loss, for each batch
         '{mean ori}' (list)         : orientation loss, for each batch
         'image_types_overall' (list): overall image type loss, for each 
-                                        batch
+                                      batch
         'mean_oris_overall'   (list): overall mean ori loss, for each batch
         'overall'             (list): overall loss, for each batch
     - acc_dict : dict

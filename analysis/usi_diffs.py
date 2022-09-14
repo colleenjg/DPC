@@ -224,21 +224,26 @@ def get_mean_sem_USI(sub_dict, df, common_dict, targ_classes, ns,
     
     indiv_dict = dict()
     for i, ((image, ori), n) in enumerate(zip(targ_classes, ns)):
-        idx = len(df)
-        for k, v in common_dict.items():
-            df.loc[idx, k] = v
-        df.loc[idx, "image"] = image
-        df.loc[idx, "orientation"] = ori
-        df.loc[idx, "num_trials"] = sum(n)
+        for suffix in ["", "_abs"]:
+            idx = len(df)
+            for k, v in common_dict.items():
+                df.loc[idx, k] = v
+            df.loc[idx, "image"] = f"{image}{suffix}"
+            df.loc[idx, "orientation"] = ori
+            df.loc[idx, "num_trials"] = sum(n)
 
-        mean, sems, stds = np.nan, np.nan, np.nan
-        if n > 0:
-            mean = sub_dict["means"][i].mean()
-            sems = scipy.stats.sem(sub_dict["means"][i].reshape(-1))
-            stds = sub_dict["means"][i].reshape(-1).std()
-        df.loc[idx, "mean"] = mean
-        df.loc[idx, "sem"] = sems
-        df.loc[idx, "std"] = stds
+            mean, sems, stds = np.nan, np.nan, np.nan
+            if n > 0:
+                data = sub_dict["means"][i]
+                if "abs" in suffix:
+                    data = np.absolute(data)
+                mean = data.mean()
+                sems = scipy.stats.sem(data.reshape(-1))
+                stds = data.reshape(-1).std()
+
+            df.loc[idx, "mean"] = mean
+            df.loc[idx, "sem"] = sems
+            df.loc[idx, "std"] = stds
 
         if ori == "any" and (pop_indiv or image in ["D", "U"]):
             indiv_dict[image] = sub_dict["means"][i].reshape(-1)
@@ -259,6 +264,7 @@ def get_mean_sem_USI(sub_dict, df, common_dict, targ_classes, ns,
                 df.loc[idx, "mean"] = diffs.mean()
                 df.loc[idx, "sem"] = scipy.stats.sem(diffs)
                 df.loc[idx, "std"] = diffs.std()
+                all_data = diffs
 
             elif image == "USI":
                 stds = [indiv_dict.pop(f"{im}_stds") for im in ["U", "D"]]
@@ -267,24 +273,25 @@ def get_mean_sem_USI(sub_dict, df, common_dict, targ_classes, ns,
                 df.loc[idx, "mean"] = all_USIs.mean()
                 df.loc[idx, "sem"] = scipy.stats.sem(all_USIs)
                 df.loc[idx, "std"] = all_USIs.std()
+                all_data = all_USIs
+            abs_data = np.absolute(all_data)
 
-                # also add absolute values
-                idx = len(df)
-                for k, v in common_dict.items():
-                    df.loc[idx, k] = v
-                df.loc[idx, "image"] = "USI_abs"
-                df.loc[idx, "orientation"] = "any"                
-                df.loc[idx, "mean"] = np.absolute(all_USIs).mean()
-                df.loc[idx, "sem"] = scipy.stats.sem(np.absolute(all_USIs))
-                df.loc[idx, "std"] = np.absolute(all_USIs).std()
+            # also add absolute values
+            idx = len(df)
+            for k, v in common_dict.items():
+                df.loc[idx, k] = v
+            df.loc[idx, "image"] = f"{image}_abs"
+            df.loc[idx, "orientation"] = "any"                
+            df.loc[idx, "mean"] = abs_data.mean()
+            df.loc[idx, "sem"] = scipy.stats.sem(abs_data)
+            df.loc[idx, "std"] = abs_data.std()
 
-                if pop_indiv:
-                    indiv_dict["USI"] = all_USIs
-                    indiv_dict["USI_abs"] = np.absolute(all_USIs)
+            if pop_indiv:
+                indiv_dict[image] = all_data
     
-        for key in indiv_dict.keys():
-            if "stds" in key:
-                indiv_dict.pop(key)
+    for key in list(indiv_dict.keys()):
+        if "stds" in key:
+            indiv_dict.pop(key)
     
     if not pop_indiv:
         indiv_dict = dict()
@@ -406,41 +413,27 @@ def add_epoch_data(hook_df, hook_dicts, pre_str, epoch_str, common_dict,
     common_dict["unexp"] = unexps[0] if len(set(unexps)) == 1 else None
 
     ep_dict = dict()
-    for key, data in full_dict.items():
-        idx = len(hook_df)
-        for k, v in common_dict.items():
-            hook_df.loc[idx, k] = v
-        hook_df.loc[idx, "image"] = key
-        hook_df.loc[idx, "orientation"] = "any"
-        data = np.concatenate(data)
-        hook_df.loc[idx, "mean"] = data.mean()
-        hook_df.loc[idx, "sem"] = scipy.stats.sem(data)
-        hook_df.loc[idx, "std"] = data.std()
-
-        if key in ["USI", "USI_abs"]:
-            hook_df.loc[idx, "pval"] = scipy.stats.ttest_rel(
-                data, np.zeros_like(data)
-                )[1]
-            if epoch_n in diff_ep_ns:
-                ep_dict[key] = (data, idx)
-
-        if key == "U" and "D" in full_dict.keys():
+    for suffix in ["", "_abs"]:
+        for key, data in full_dict.items():
             idx = len(hook_df)
             for k, v in common_dict.items():
                 hook_df.loc[idx, k] = v
-            hook_df.loc[idx, "image"] = "U-D"
+            hook_df.loc[idx, "image"] = f"{key}{suffix}"
             hook_df.loc[idx, "orientation"] = "any"
-            diffs = data - np.concatenate(full_dict["D"])
-            hook_df.loc[idx, "mean"] = diffs.mean()
-            hook_df.loc[idx, "sem"] = scipy.stats.sem(diffs)
-            hook_df.loc[idx, "std"] = diffs.std()
-            hook_df.loc[idx, "pval"] = scipy.stats.ttest_rel(
-                diffs, np.zeros_like(diffs)
-                )[1]
+            data = np.concatenate(data)
+            if "abs" in suffix:
+                data = np.absolute(data)
+            hook_df.loc[idx, "mean"] = data.mean()
+            hook_df.loc[idx, "sem"] = scipy.stats.sem(data)
+            hook_df.loc[idx, "std"] = data.std()
 
-            if epoch_n in diff_ep_ns:
-                ep_dict["diffs"] = (diffs, idx)
-            del diffs
+            if key in ["USI", "U-D"]:
+                hook_df.loc[idx, "pval"] = scipy.stats.ttest_rel(
+                    data, np.zeros_like(data)
+                    )[1]
+                if epoch_n in diff_ep_ns:
+                    ep_dict[f"{key}{suffix}"] = (data, idx)
+                del data
     
     return common_dict, ep_dict
 
@@ -546,7 +539,9 @@ def get_hook_df(hook_dicts, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS,
     for hook_module in hooks.HOOK_MODULES:
         for hook_type in hooks.HOOK_TYPES:
             for pre_str in pre_strs:
-                gen_dict = {key: dict() for key in ["diffs", "USI", "USI_abs"]}
+                gen_dict = {
+                    key: dict() for key in ["U-D", "USI", "U-D_abs", "USI_abs"]
+                    }
                 for e in np.argsort(epoch_ns):
                     epoch_n = str(epoch_ns[e])           
                     common_dict = {
@@ -569,6 +564,7 @@ def get_hook_df(hook_dicts, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS,
                 for key, use_dict in gen_dict.items():
                     if len(use_dict) == 0:
                         continue
+
                     for e, e1 in enumerate(diff_ep_ns):
                         for e2 in diff_ep_ns[e + 1:]:
                             if int(e1) in use_dict.keys() and int(e2) in use_dict.keys():
@@ -582,7 +578,7 @@ def get_hook_df(hook_dicts, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS,
                         for e1, e2 in corr_ep_ns:
                             if e1 in use_dict.keys() and e2 in use_dict.keys():
                                 data1, _ = use_dict[int(e1)]
-                                data2, _ = use_dict[int(e1)]
+                                data2, _ = use_dict[int(e2)]
 
                                 idx = len(hook_df)
                                 for k, v in common_dict.items():
@@ -593,7 +589,7 @@ def get_hook_df(hook_dicts, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS,
 
                                 corr, pval = scipy.stats.pearsonr(data1, data2)
                                 corr_std = bootstrapped_corr(
-                                    data1, data1, seed=seed
+                                    data1, data2, seed=seed
                                     )
                                 
                                 hook_df.loc[idx, "corr"] = corr
@@ -615,6 +611,9 @@ def format_pval(pval, n_comps=1):
     
     """
 
+    if not np.isfinite(pval):
+        return "NaN"
+
     pval = min(1, pval * n_comps)
     star = ""
     if pval < 0.001:
@@ -629,7 +628,7 @@ def format_pval(pval, n_comps=1):
 
 #############################################
 def plot_responses(hook_data_df, ep_ns=RESP_EP_NS, pre=True, learn=False, 
-                   exp_only=True, output_dir="."):
+                   exp_only=True, absolute=False, output_dir="."):
     """
     plot_responses(hook_data_df)
 
@@ -657,6 +656,8 @@ def plot_responses(hook_data_df, ep_ns=RESP_EP_NS, pre=True, learn=False,
     half_span = (all_xs[4] - all_xs[3]) / 2
     start, stop = all_xs[4] - half_span, all_xs[4] + half_span
 
+    suffix = "_abs" if absolute else ""
+
     for n, hook_module in enumerate(hooks.HOOK_MODULES):
         for t, hook_type in enumerate(hooks.HOOK_TYPES):
             for i, ep_n in enumerate(ep_ns):
@@ -680,7 +681,7 @@ def plot_responses(hook_data_df, ep_ns=RESP_EP_NS, pre=True, learn=False,
                 for model_n in data["model_n"].unique():
                     model_data = data.loc[data["model_n"] == model_n]
                     lines = [
-                        model_data.loc[data["image"] == letter] 
+                        model_data.loc[model_data["image"] == f"{letter}{suffix}"] 
                         for letter in all_letters
                         ]
                     means, sems = [], []
@@ -721,14 +722,11 @@ def plot_responses(hook_data_df, ep_ns=RESP_EP_NS, pre=True, learn=False,
                 ax[row, n].set_xticklabels(xtick_letters)
 
     for i in range(ncols):
-        if exp_only: # force exponential
-            for subax in ax[len(ep_ns) : , i]:
-                subax.yaxis.get_major_formatter().set_powerlimits((0, 0)) 
         for s, subax in enumerate([ax[0, i], ax[len(ep_ns), i]]):
             if s == 0:
                 subax.yaxis.set_major_formatter(
                     ticker.FormatStrFormatter("%0.2f")
-                    )
+                )
             subax.yaxis.set_major_locator(ticker.MaxNLocator(2)) 
             plot_utils.expand_axis(subax, axis="x", pad_each=0.1)
             plot_utils.expand_axis(subax, axis="y", pad_each=0.04)
@@ -736,10 +734,13 @@ def plot_responses(hook_data_df, ep_ns=RESP_EP_NS, pre=True, learn=False,
             if s != len(ep_ns) - 1 and s != len(ep_ns) * 2 - 1:
                 subax.xaxis.set_visible(False)
                 subax.spines.bottom.set_visible(False)
+        if exp_only: # force exponential
+            for subax in ax[len(ep_ns) : , i]:
+                subax.yaxis.get_major_formatter().set_powerlimits((0, 0))
 
     if output_dir is not None:
         _, pre_str = analysis_utils.get_epoch_pre_str(pre=pre, learn=learn)
-        savepath = Path(output_dir, f"{pre_str}_resp.svg")
+        savepath = Path(output_dir, f"{pre_str}{suffix}_resp.svg")
         savepath.parent.mkdir(exist_ok=True, parents=True)
         fig.savefig(savepath, format="svg", bbox_inches="tight", dpi=300)
 
@@ -757,18 +758,21 @@ def plot_acr_epochs(hook_data_df, ep_ns=DIFF_EP_NS, pre=True, learn=False,
 
     ep_ns = [ep_ns] if not isinstance(ep_ns, list) else ep_ns
 
-    n_comps = (
-        get_n_comps(n_vals=len(ep_ns)) * len(hooks.HOOK_TYPES) * 
-        len(hooks.HOOK_MODULES)
-    )
+    n_comps_per = get_n_comps(n_vals=len(ep_ns))
+    if "abs" in image:
+        n_comps_per = n_comps_per - len(ep_ns) # only compare between epochs
+    n_comps = (n_comps_per * len(hooks.HOOK_TYPES) * len(hooks.HOOK_MODULES))
 
     if image not in hook_data_df["image"].tolist():
         raise ValueError(f"{image} not recognized.")
     
     nrows = len(hooks.HOOK_TYPES)
     ncols = len(hooks.HOOK_MODULES)
+
+    col_wid = 1.9 if "abs" in image else 2.67 
+    row_hei = 3 if "abs" in image else 4 
     fig, ax = plt.subplots(
-        nrows, ncols, figsize=[ncols * 2.67, nrows * 4], sharex="col"
+        nrows, ncols, figsize=[ncols * col_wid, nrows * row_hei], sharex="col"
         )
     
     for ep_n in ep_ns:
@@ -823,10 +827,11 @@ def plot_acr_epochs(hook_data_df, ep_ns=DIFF_EP_NS, pre=True, learn=False,
 
                 if model_n == "all":
                     full_tab = f"{TAB}{TAB}{TAB}"
-                    for s, ep_n in enumerate(ep_ns):
-                        pval = ep_diffs[s]["pval"].tolist()[0]
-                        pval = format_pval(pval, n_comps=n_comps)
-                        log_str = f"{log_str}\n{full_tab}ep {ep_n}: {pval}"
+                    if "abs" not in image:
+                        for s, ep_n in enumerate(ep_ns):
+                            pval = ep_diffs[s]["pval"].tolist()[0]
+                            pval = format_pval(pval, n_comps=n_comps)
+                            log_str = f"{log_str}\n{full_tab}ep {ep_n}: {pval}"
                     for i, s1 in enumerate(ep_ns):
                         for s2 in ep_ns[i + 1:]:
                             pval = ep_diffs[s1][f"pval_ep{s1}v{s2}"].tolist()[0]
@@ -988,14 +993,17 @@ def plot_all(hook_df, output_dir=None, resp_ep_ns=RESP_EP_NS,
     """
 
     with plt.rc_context(PLT_PARAMS):
-        plot_responses(hook_df, ep_ns=resp_ep_ns, pre=pre, learn=learn, 
-                    exp_only=True, output_dir=output_dir)
+        for absolute in [False, True]:
+            plot_responses(hook_df, ep_ns=resp_ep_ns, pre=pre, learn=learn, 
+                        exp_only=True, output_dir=output_dir, absolute=absolute)
 
-        for image in ["U-D", "USI", "USI_abs"]:
-            plot_acr_epochs(
-                hook_df, ep_ns=diff_ep_ns, pre=pre, learn=learn, image=image, 
-                output_dir=output_dir, log_stats=log_stats
-                )
+            suffix = "_abs" if absolute else ""
+            for image in ["U-D", "USI"]:
+                plot_acr_epochs(
+                    hook_df, ep_ns=diff_ep_ns, pre=pre, learn=learn, 
+                    image=f"{image}{suffix}", output_dir=output_dir, 
+                    log_stats=log_stats
+                    )
 
         get_corr_df(
             hook_df, ep_ns=corr_ep_ns, pre=pre, learn=learn, 

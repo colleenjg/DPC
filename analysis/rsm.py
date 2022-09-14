@@ -329,8 +329,8 @@ def mark_rsm_axes(ax, idx_dict):
 
                 if tick_type == "outer" and len(edge_marks) > 2:
                     for edge in edge_marks[1:-1]:
-                        subax.axhline(edge, lw=1, color="k")
-                        subax.axvline(edge, lw=1, color="k")
+                        subax.axhline(edge - 0.5, lw=1, color="k")
+                        subax.axvline(edge - 0.5, lw=1, color="k")
 
 
 #############################################
