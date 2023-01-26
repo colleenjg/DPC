@@ -174,7 +174,7 @@ def bootstrapped_corr(data1, data2, seed=100, n_samples=1000):
 
 #############################################
 def get_mean_sem_USI(sub_dict, df, common_dict, targ_classes, ns, 
-                     pop_indiv=False):
+                     pop_indiv=False, seed=None):
     """
     get_mean_sem_USI(sub_dict, df, common_dict, targ_classes, ns)
 
@@ -221,7 +221,15 @@ def get_mean_sem_USI(sub_dict, df, common_dict, targ_classes, ns,
         '{image}': node means for the specified Gabor image
 
     """
-    
+
+    if seed is None:
+        sample_idx = None
+    else:
+        _, c, d, _ = sub_dict["means"][0].shape
+        randst = np.random.RandomState(seed)
+        n_sample = int((c * d * d) // 50)
+        sample_idx = np.sort(randst.choice(c * d * d, n_sample, replace=False))
+
     indiv_dict = dict()
     for i, ((image, ori), n) in enumerate(zip(targ_classes, ns)):
         for suffix in ["", "_abs"]:
@@ -234,21 +242,21 @@ def get_mean_sem_USI(sub_dict, df, common_dict, targ_classes, ns,
 
             mean, sems, stds = np.nan, np.nan, np.nan
             if n > 0:
-                data = sub_dict["means"][i]
+                data = sub_dict["means"][i].reshape(-1)[sample_idx]
                 if "abs" in suffix:
                     data = np.absolute(data)
                 mean = data.mean()
-                sems = scipy.stats.sem(data.reshape(-1))
-                stds = data.reshape(-1).std()
+                sems = scipy.stats.sem(data)
+                stds = data.std()
 
             df.loc[idx, "mean"] = mean
             df.loc[idx, "sem"] = sems
             df.loc[idx, "std"] = stds
 
         if ori == "any" and (pop_indiv or image in ["D", "U"]):
-            indiv_dict[image] = sub_dict["means"][i].reshape(-1)
+            indiv_dict[image] = sub_dict["means"][i].reshape(-1)[sample_idx]
             if image in ["D", "U"]:
-                indiv_dict[f"{image}_stds"] = sub_dict["stds"][i].reshape(-1)
+                indiv_dict[f"{image}_stds"] = sub_dict["stds"][i].reshape(-1)[sample_idx]
     
     # add diffs and USIs
     if "D" in indiv_dict.keys() and "U" in indiv_dict.keys():
@@ -320,9 +328,35 @@ def get_n_comps(n_vals=3):
 
 
 #############################################
+def get_paired_p_val(data1, data2=None, n_perms=1e5, corr=False):
+    """
+    get_paired_p_val(data1)
+    """
+    from util import rand_util
+
+    if data2 is None:
+        if corr:
+            raise ValueError("If 'corr' is True, 'data2' cannot be None.")
+        data2 = np.zeros_like(data1)
+
+    if corr:
+        _, p_val = scipy.stats.pearsonr(data1, data2)
+        # p_val = rand_util.get_op_p_val(
+        #     [data1, data2], n_perms=n_perms, paired="within", op="corr"
+        #     )
+    else:
+        p_val = scipy.stats.ttest_rel(data1, data2)[1]
+        # p_val = rand_util.get_op_p_val(
+        #     [data1, data2], n_perms=n_perms, paired=True
+        #     )
+
+    return p_val
+
+
+#############################################
 def add_epoch_data(hook_df, hook_dicts, pre_str, epoch_str, common_dict, 
                    hook_module="encoder", hook_type="activations", 
-                   resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS):
+                   resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS, n_perms=1e4):
     """
     add_epoch_data(hook_dicts, pre_str, epoch_str, common_dict)
 
@@ -374,6 +408,8 @@ def add_epoch_data(hook_df, hook_dicts, pre_str, epoch_str, common_dict,
         Session numbers for which to compute and plot responses.
     - diff_ep_ns : list
         Session numbers for which to compute and plot U/D differences and USIs.
+    - n_perms : int (default=1e4)
+        Number of permutations for statistics tests.
 
     Returns
     -------
@@ -397,11 +433,12 @@ def add_epoch_data(hook_df, hook_dicts, pre_str, epoch_str, common_dict,
         common_dict["unexp"] = unexps[-1]
         common_dict["model_n"] = h
 
+        seed = h if len(hook_dicts) > 1 else None
         hook_df, indiv_dict = get_mean_sem_USI(
             sub_dict, hook_df, common_dict,
             hook_dict[pre_str][epoch_str]["targ_classes"], 
             hook_dict[pre_str][epoch_str]["ns"],
-            pop_indiv=(epoch_n in resp_ep_ns)
+            pop_indiv=(epoch_n in resp_ep_ns), seed=seed
             )
         for key, data in indiv_dict.items():
             if key not in full_dict.keys():
@@ -428,9 +465,9 @@ def add_epoch_data(hook_df, hook_dicts, pre_str, epoch_str, common_dict,
             hook_df.loc[idx, "std"] = data.std()
 
             if key in ["USI", "U-D"]:
-                hook_df.loc[idx, "pval"] = scipy.stats.ttest_rel(
-                    data, np.zeros_like(data)
-                    )[1]
+                hook_df.loc[idx, "pval"] = get_paired_p_val(
+                    data, n_perms=n_perms
+                    )
                 if epoch_n in diff_ep_ns:
                     ep_dict[f"{key}{suffix}"] = (data, idx)
                 del data
@@ -440,7 +477,7 @@ def add_epoch_data(hook_df, hook_dicts, pre_str, epoch_str, common_dict,
 
 #############################################
 def get_hook_df(hook_dicts, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS, 
-                corr_ep_ns=CORR_EP_NS):
+                corr_ep_ns=CORR_EP_NS, n_perms=1e4):
     """
     get_hook_df(hook_dicts)
     
@@ -474,12 +511,14 @@ def get_hook_df(hook_dicts, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS,
     
     Optional args
     -------------
-    - resp_ep_ns : list
+    - resp_ep_ns : list (default=RESP_EP_NS)
         Epoch numbers for which to compute and plot responses.
-    - diff_ep_ns : list
+    - diff_ep_ns : list (default=DIFF_EP_NS)
         Epoch numbers for which to compute and plot U/D differences and USIs.
-    - corr_ep_ns : list
+    - corr_ep_ns : list (default=CORR_EP_NS)
         Tuples of epochs for which to compute USI correlations.
+    - n_perms : int (default=1e4)
+        Number of permutations for statistics tests.
 
     Returns
     -------
@@ -555,7 +594,7 @@ def get_hook_df(hook_dicts, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS,
                         hook_df, hook_dicts, pre_str, epoch_strs[e], 
                         common_dict=common_dict, hook_module=hook_module, 
                         hook_type=hook_type, resp_ep_ns=resp_ep_ns, 
-                        diff_ep_ns=diff_ep_ns
+                        diff_ep_ns=diff_ep_ns, n_perms=n_perms
                         )
                     for key, ep_val in ep_dict.items():
                         gen_dict[key][int(epoch_n)] = ep_val
@@ -570,7 +609,10 @@ def get_hook_df(hook_dicts, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS,
                             if int(e1) in use_dict.keys() and int(e2) in use_dict.keys():
                                 data1, idx1 = use_dict[e1]
                                 data2, idx2 = use_dict[e2]
-                                p_val_diff = scipy.stats.ttest_rel(data1, data2)[1]
+
+                                p_val_diff = get_paired_p_val(
+                                    data1, data2, n_perms=n_perms
+                                    )
                                 hook_df.loc[idx1, f"pval_ep{e1}v{e2}"] = p_val_diff
                                 hook_df.loc[idx2, f"pval_ep{e1}v{e2}"] = p_val_diff
 
@@ -587,14 +629,17 @@ def get_hook_df(hook_dicts, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS,
                                 hook_df.loc[idx, "orientation"] = "any"
                                 hook_df.loc[idx, "epoch_n"] = f"{e1}v{e2}"
 
-                                corr, pval = scipy.stats.pearsonr(data1, data2)
+                                corr, _ = scipy.stats.pearsonr(data1, data2)
                                 corr_std = bootstrapped_corr(
                                     data1, data2, seed=seed
+                                    )
+                                corr_pval = get_paired_p_val(
+                                    data1, data2, corr=True, n_perms=n_perms
                                     )
                                 
                                 hook_df.loc[idx, "corr"] = corr
                                 hook_df.loc[idx, "corr_std"] = corr_std
-                                hook_df.loc[idx, "pval"] = pval
+                                hook_df.loc[idx, "pval"] = corr_pval
 
                                 seed += 1
 
@@ -769,8 +814,8 @@ def plot_acr_epochs(hook_data_df, ep_ns=DIFF_EP_NS, pre=True, learn=False,
     nrows = len(hooks.HOOK_TYPES)
     ncols = len(hooks.HOOK_MODULES)
 
-    col_wid = 1.9 if "abs" in image else 2.67 
-    row_hei = 3 if "abs" in image else 4 
+    col_wid = 2.67 
+    row_hei = 4 
     fig, ax = plt.subplots(
         nrows, ncols, figsize=[ncols * col_wid, nrows * row_hei], sharex="col"
         )
