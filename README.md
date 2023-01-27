@@ -33,10 +33,11 @@ Bash scripts are provided under `slurm` for running analyses with Slurm on GPU n
     `python run_model.py --model dpc-rnn --dataset k400 --net resnet18 --img_dim 128 --num_epochs 100 --output_dir /path/to/save/directory`
 
 - ### Finetuning a pre-trained DPC model on a classification task
-W
+
     To finetune a ResNet18 model on classifying images from the UCF101 dataset, with weights pre-trained on the Kinetics400 dataset:  
-    1. Download the [3D-ResNet18-Kinetics400-128x128](https://drive.google.com/file/d/1jbMg2EAX8armIQA6_0YwfATh_h7rQz4u/view?usp=sharing) pre-trained DPC weights provided on the [DPC GitHub repo](https://github.com/TengdaHan/DPC).
-    2. Run `run_model.py`, ensuring that the `pretrained` argument points to the pre-trained weights path, e.g.:  
+
+    1. Download the [3D-ResNet18-Kinetics400-128x128](https://drive.google.com/file/d/1jbMg2EAX8armIQA6_0YwfATh_h7rQz4u/view?usp=sharing) pre-trained DPC weights provided on the [DPC GitHub repo](https://github.com/TengdaHan/DPC).  
+    2. Run `run_model.py`, ensuring that the `pretrained` argument points to the pre-trained weights path, e.g.:   
     `python run_model.py --model lc-rnn --dataset ucf101 --net resnet18 --img_dim 128 --num_epochs 100 --train_what ft --pretrained /path/to/pretrained/model.pth.tar --output_dir /path/to/save/directory`
 
 
