@@ -246,7 +246,7 @@ def get_mean_sem_USI(sub_dict, df, common_dict, targ_classes, ns,
                 if "abs" in suffix:
                     data = np.absolute(data)
                 mean = data.mean()
-                sems = scipy.stats.sem(data)
+                sems = scipy.stats.sem(data, axis=None)
                 stds = data.std()
 
             df.loc[idx, "mean"] = mean
@@ -270,7 +270,7 @@ def get_mean_sem_USI(sub_dict, df, common_dict, targ_classes, ns,
 
             if image == "U-D":                            
                 df.loc[idx, "mean"] = diffs.mean()
-                df.loc[idx, "sem"] = scipy.stats.sem(diffs)
+                df.loc[idx, "sem"] = scipy.stats.sem(diffs, axis=None)
                 df.loc[idx, "std"] = diffs.std()
                 all_data = diffs
 
@@ -279,7 +279,7 @@ def get_mean_sem_USI(sub_dict, df, common_dict, targ_classes, ns,
                 div = np.sqrt(0.5 * np.sum(np.power(stds, 2), axis=0))
                 all_USIs = diffs / div
                 df.loc[idx, "mean"] = all_USIs.mean()
-                df.loc[idx, "sem"] = scipy.stats.sem(all_USIs)
+                df.loc[idx, "sem"] = scipy.stats.sem(all_USIs, axis=None)
                 df.loc[idx, "std"] = all_USIs.std()
                 all_data = all_USIs
             abs_data = np.absolute(all_data)
@@ -291,7 +291,7 @@ def get_mean_sem_USI(sub_dict, df, common_dict, targ_classes, ns,
             df.loc[idx, "image"] = f"{image}_abs"
             df.loc[idx, "orientation"] = "any"                
             df.loc[idx, "mean"] = abs_data.mean()
-            df.loc[idx, "sem"] = scipy.stats.sem(abs_data)
+            df.loc[idx, "sem"] = scipy.stats.sem(abs_data, axis=None)
             df.loc[idx, "std"] = abs_data.std()
 
             if pop_indiv:
@@ -461,12 +461,12 @@ def add_epoch_data(hook_df, hook_dicts, pre_str, epoch_str, common_dict,
             if "abs" in suffix:
                 data = np.absolute(data)
             hook_df.loc[idx, "mean"] = data.mean()
-            hook_df.loc[idx, "sem"] = scipy.stats.sem(data)
+            hook_df.loc[idx, "sem"] = scipy.stats.sem(data, axis=None)
             hook_df.loc[idx, "std"] = data.std()
 
             if key in ["USI", "U-D"]:
                 hook_df.loc[idx, "pval"] = get_paired_p_val(
-                    data, n_perms=n_perms
+                    data.reshape(-1), n_perms=n_perms
                     )
                 if epoch_n in diff_ep_ns:
                     ep_dict[f"{key}{suffix}"] = (data, idx)
@@ -611,7 +611,8 @@ def get_hook_df(hook_dicts, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS,
                                 data2, idx2 = use_dict[e2]
 
                                 p_val_diff = get_paired_p_val(
-                                    data1, data2, n_perms=n_perms
+                                    data1.reshape(-1), data2.reshape(-1), 
+                                    n_perms=n_perms
                                     )
                                 hook_df.loc[idx1, f"pval_ep{e1}v{e2}"] = p_val_diff
                                 hook_df.loc[idx2, f"pval_ep{e1}v{e2}"] = p_val_diff
@@ -629,12 +630,16 @@ def get_hook_df(hook_dicts, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS,
                                 hook_df.loc[idx, "orientation"] = "any"
                                 hook_df.loc[idx, "epoch_n"] = f"{e1}v{e2}"
 
-                                corr, _ = scipy.stats.pearsonr(data1, data2)
+                                corr, _ = scipy.stats.pearsonr(
+                                    data1.reshape(-1), data2.reshape(-1)
+                                    )
                                 corr_std = bootstrapped_corr(
-                                    data1, data2, seed=seed
+                                    data1.reshape(-1), data2.reshape(-1), 
+                                    seed=seed
                                     )
                                 corr_pval = get_paired_p_val(
-                                    data1, data2, corr=True, n_perms=n_perms
+                                    data1.reshape(-1), data2.reshape(-1), 
+                                    corr=True, n_perms=n_perms
                                     )
                                 
                                 hook_df.loc[idx, "corr"] = corr
@@ -730,8 +735,11 @@ def plot_responses(hook_data_df, ep_ns=RESP_EP_NS, pre=True, learn=False,
                         for letter in all_letters
                         ]
                     means, sems = [], []
-                    for line in lines:
+                    for l, line in enumerate(lines):
                         if len(line) == 0:
+                            if not (ep_n < 0 and all_letters[l] == "U"):
+                                means.append(np.nan)
+                                sems.append(np.nan)
                             continue
                         elif len(line) != 1:
                             raise ValueError("Expected exactly one line.")
@@ -984,7 +992,6 @@ def get_corr_df(hook_data_df, ep_ns=CORR_EP_NS, pre=True, learn=False,
                 corr_df.loc[corr_idx, ep_col] = ep_ns_for_df[s]
                 corr_df.loc[corr_idx, hook_module] = f"{corr_val:.4f}{star}"
                 
-
     if log_stats:
         logger.info(log_str)
 
@@ -1008,7 +1015,7 @@ def check_plotting(hook_df, resp_ep_ns=RESP_EP_NS, diff_ep_ns=DIFF_EP_NS,
     """
 
     corr_ep_ns = [int(i) for vals in corr_ep_ns for i in vals]
-    ep_ns = set(resp_ep_ns + diff_ep_ns + corr_ep_ns)
+    ep_ns = set([str(ep_n) for ep_n in resp_ep_ns + diff_ep_ns + corr_ep_ns])
     
     hook_df_sub = hook_df.loc[
         (hook_df["pre"] == pre) & (hook_df["learn"] == learn)

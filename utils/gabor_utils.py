@@ -1712,8 +1712,11 @@ def update_records(dataset, loss_dict, acc_dict, output, sup_target,
             )
 
     # add to lists
+    overall_keys = ["image_types_overall", "mean_oris_overall", "overall"]
     batch_loss = batch_loss.reshape(-1)
     for key in loss_dict.keys():
+        if key in overall_keys:
+            continue
         str_key = str(key)
         if str_key == "N/A" or "." in str_key or str_key.isdigit(): # oris
             idx = (target_mean_oris == str_key)
@@ -1723,20 +1726,19 @@ def update_records(dataset, loss_dict, acc_dict, output, sup_target,
             n_correct = correct_image_types[idx].sum()
 
         n_vals = sum(idx).item()
-        if n_vals == 0:
-            loss_dict[key].append(np.nan) # something odd is happening here? NaNs
+        if n_vals == 0: # e.g., for "U" on epochs where unexp is False
+            loss_dict[key].append(np.nan)
             acc_dict[key].append(np.nan)
         else:
             loss_dict[key].append(batch_loss[idx].mean().item())
             acc_dict[key].append(n_correct.item() / n_vals)
 
-    keys = ["image_types_overall", "mean_oris_overall", "overall"]
     all_data = [correct_image_types, correct_mean_oris, correct_both]
-    for key, data in zip(keys, all_data):
+    for key, data in zip(overall_keys, all_data):
         n_total = len(data)
         acc_dict[key].append(data.sum().item() / n_total)
         loss_dict[key].append(batch_loss.mean().item()) # can't distinguish
-
+    
 
 #############################################
 if __name__ == "__main__":

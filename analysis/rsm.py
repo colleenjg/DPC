@@ -334,12 +334,13 @@ def mark_rsm_axes(ax, idx_dict):
 
 
 #############################################
-def expand_idxs_for_rare(idx_dict):
+def expand_idxs_for_rare(idx_dict, strech_perc=60):
     """
     expand_idxs_for_rare(idx_dict)
 
     Expands index edges and adjusts sorting index to stretch underrepresented 
-    categories to match the median width and height across categories.
+    categories to match a certain percentile of the width and height across 
+    categories.
 
     Required args
     -------------
@@ -352,6 +353,11 @@ def expand_idxs_for_rare(idx_dict):
         'outer_labels' (1D array): Outer labels
         'sorter' (1D array)      : Sorting indices
     
+    Optional args
+    -------------
+    - strech_perc : int
+        Percentile to stretch underrepresented categories to. Default is 60.
+
     Returns
     -------
     - exp_idx_dict : dict
@@ -365,7 +371,7 @@ def expand_idxs_for_rare(idx_dict):
         u = end
 
     lengths = np.asarray(lengths)
-    min_len = int(np.around(np.median(lengths)))
+    min_len = int(np.around(np.percentile(lengths, strech_perc)))
     if 0 in lengths:
         raise ValueError("No label should be for 0 items.")
 

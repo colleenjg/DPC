@@ -4,12 +4,12 @@
 #SBATCH --gres=gpu:rtx8000:2
 #SBATCH --mem=48GB
 #SBATCH --array=0-5
-#SBATCH --time=8:00:00
+#SBATCH --time=11:00:00
 #SBATCH --job-name=dpc_gab
 #SBATCH --output=/home/mila/g/gillonco/scratch/dpc_gabors_%A_%a.out
 
 
-# Current longest: ?
+# Current longest: 9h40
 
 # 1. Load modules
 module load anaconda/3
@@ -118,7 +118,7 @@ echo -e "\nARRAY ID HYPERPARAMETERS\n" \
 
 # 5. Pretrained paths
 MOUSESIM_SEEDS=(  100 101 102 103 ) # 4
-MOUSESIM_EPOCHS=( 944 761 709 812 ) # 4
+MOUSESIM_EPOCHS=( 770 761 950 891 ) # 4
 
 # 6. Train model
 EXIT=0
