@@ -46,6 +46,8 @@ And keeps the downloaded csv files, stored as:
 
 Run, e.g., `python extract_frames.py --d_root main_path --dataset UCF101` to extract video frames. 
 
+If frame extraction is very slow, consider running it on a disk with high read/write speeds.
+
 ### 3. Collect all paths into csvs
 
 Run, e.g., `python write_csvs.py --f_root main_path --dataset UCF101` to collect paths into a csv file.

@@ -1691,6 +1691,9 @@ def get_loss_plot_kwargs(hp_dict, num_classes=None):
         num_classes = int(num_classes)
     
     loss_plot_kwargs["num_classes"] = num_classes
+    
+    if "seed" in hp_dict["technical"].keys():
+        loss_plot_kwargs["seed"] = hp_dict["technical"]["seed"]
 
     return loss_plot_kwargs
 

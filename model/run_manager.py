@@ -665,7 +665,7 @@ def train_full(main_loader, model, optimizer, output_dir=".", net_name=None,
                 )
 
         if is_gabor and ep_run_analysis:
-                hook_analysis.gabor_analysis(
+                hook_analysis.collect_save_hook_data(
                     model, main_loader, None, device=device, 
                     output_dir=output_dir, epoch_str=gabor_epoch_str, pre=False
                     )            

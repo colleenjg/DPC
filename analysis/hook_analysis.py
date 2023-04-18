@@ -107,7 +107,7 @@ def get_class_idxs(targets, dataset):
 
     all_idxs, ns, targ_classes = get_unique_class_idxs(targets, dataset)
     class_images, class_oris = zip(*targ_classes)
-    B, P, _ = targets.shape[1]
+    B, P, _ = targets.shape
 
     # combine data for image/ori values of 'any'
     comb_ns = [[] for _ in range(P)]
@@ -130,7 +130,7 @@ def get_class_idxs(targets, dataset):
     targ_classes.append(("any", "any"))
     all_idxs.append([])
     for p in range(P):
-        all_idxs[-1].append(idxs(np.arange(B)))
+        all_idxs[-1].append(np.arange(B))
         if ns[:, p].sum() != B:
             raise NotImplementedError(
                 "Implementation error. Sum across unique classes should be "
@@ -221,7 +221,7 @@ def compile_data(ep_hook_dict, dataset):
     ep_hook_dict = copy.deepcopy(ep_hook_dict)
     ep_rsm_dict = dict()
 
-    targets = torch.cat(ep_hook_dict.pop("targets")).numpy()
+    targets = ep_hook_dict.pop("targets")
     all_idxs, ns, targ_classes = get_class_idxs(targets, dataset)
 
     targ_classes_flat = dataset.image_label_to_class(
@@ -242,7 +242,7 @@ def compile_data(ep_hook_dict, dataset):
             umap_df = umap.get_umap_df(
                 data.mean(axis=(3, 4)).reshape(N_all * P, C), targ_classes_flat, 
                 hook_module=hook_module, hook_type=hook_type, 
-                num_batches=B, num_pred_step=P
+                num_batches=B, pred_step=P
                 )
             umap_dfs.append(umap_df)
 
@@ -271,9 +271,9 @@ def compile_data(ep_hook_dict, dataset):
     for i, pred_idxs in enumerate(all_idxs):
         for p, idxs in enumerate(pred_idxs):
             losses["means"][i, p] = \
-                ep_hook_dict["losses"][idxs, p].mean(axis=0).numpy()
+                ep_hook_dict["losses"][idxs, p].mean(axis=0)
             losses["stds"][i, p] = \
-                ep_hook_dict["losses"][idxs, p].std(axis=0).numpy()
+                ep_hook_dict["losses"][idxs, p].std(axis=0)
     ep_hook_dict["losses"] = losses
 
     # hooks data
@@ -569,7 +569,7 @@ def collect_save_hook_data(model, dataloader, optimizer, device="cuda",
         hook.remove()
 
     for key in ["losses", "targets"]:
-        ep_hook_dict[key] = torch.stack(ep_hook_dict[key]).numpy()
+        ep_hook_dict[key] = torch.cat(ep_hook_dict[key]).numpy()
 
     stop_time = time.perf_counter()
     time_str = misc_utils.format_time(stop_time - start_time, sep_min=True)
