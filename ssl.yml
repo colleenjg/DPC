@@ -24,7 +24,6 @@ dependencies:
       - shapely
       - tables
       - unrar
-      - zipline
       - wurlitzer
       - pillow
       - tqdm
